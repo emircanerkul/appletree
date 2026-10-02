@@ -15,7 +15,7 @@ it any changed pixel fails. Ring gradients retain their original serial raster
 path. Non-Retina scenes and scenes with fewer than 24 arcs retain the original
 serial stroke too.
 
-Add `--check-only` to omit timings. `--build-only --output /tmp/blitztree-rendering-bench`
+Add `--check-only` to omit timings. `--build-only --output /tmp/appletree-rendering-bench`
 builds an executable that can be timed later while other benchmarks are idle.
 Use `--rings-only --check-only --scale 1` for the 42-case non-Retina matrix;
 repeat with `--scale 2 --allow-ring-rounding` for Retina. `--rings-only` without

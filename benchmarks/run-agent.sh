@@ -2,7 +2,7 @@
 # Freeze production Swift and exercise agent data algorithms entirely offline.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-AGENT_BENCH_TMP=$(mktemp -d /tmp/blitztree-agent-bench.XXXXXX)
+AGENT_BENCH_TMP=$(mktemp -d /tmp/appletree-agent-bench.XXXXXX)
 trap 'rm -rf "$AGENT_BENCH_TMP"' EXIT
 mkdir "$AGENT_BENCH_TMP/app"
 cp app/*.swift "$AGENT_BENCH_TMP/app/"
@@ -25,13 +25,12 @@ old='try FileManager.default.trashItem(at: URL(fileURLWithPath: item.path), resu
 assert source.count(old)==1, 'Expected one manual-trash operation'
 p.write_text(source.replace(old, 'try AgentBenchmarkTrash.move(item)'))
 p=Path(sys.argv[3]); source=p.read_text()
-old='''        if let agent = preferredAgent {
-            startAgent(agent)
-        } else {'''
-new='''        if preferredAgent != nil {
-            if !cleanupTrash.running { AgentBenchmarkLaunch.autoStarts += 1 }
-        } else {'''
-assert source.count(old)==1, 'Expected one automatic agent launch'
+old='''    func startAgent(_ agent: InstalledAgent) {
+'''
+new='''    func startAgent(_ agent: InstalledAgent) {
+        AgentBenchmarkLaunch.agentStarts += 1
+'''
+assert source.count(old)==1, 'Expected one agent start'
 p.write_text(source.replace(old, new))
 PY
 clang -O2 -mmacosx-version-min=14.0 -c benchmarks/ui_fixture.c -o "$AGENT_BENCH_TMP/fixture.o"

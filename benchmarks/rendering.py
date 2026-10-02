@@ -30,7 +30,7 @@ parser.add_argument("--real", action="append", default=[], metavar="FOLDER",
                     help="scan FOLDER and compare the treemaps on it (repeatable)")
 parser.add_argument("--iterations", type=int, default=11, help="timing pairs per --real case")
 args = parser.parse_args()
-work = pathlib.Path(tempfile.mkdtemp(prefix="blitztree-rendering-"))
+work = pathlib.Path(tempfile.mkdtemp(prefix="appletree-rendering-"))
 sources = ["Treemap.swift", "TreemapView.swift"] + ([] if args.real else ["SunburstView.swift"])
 renames = ["TMRect", "TMLabel", "TMLeafIndex", "Squarify", "TypeColor", "TreemapNSView", "NodeMenu",
            "TreemapView", "SBSegment", "SunburstNSView", "SunburstView", "TreemapRenderer", "Scan"]
@@ -117,7 +117,7 @@ if args.real:
     app = [str(f) for f in sorted((ROOT / "app").glob("*.swift"))
            if f.name not in ("Main.swift", "Treemap.swift", "TreemapView.swift")]
     extra = [*app, "-import-objc-header", str(ROOT / "app" / "bz.h"),
-             "-L", str(ROOT / "target" / "release"), "-lblitztree"]
+             "-L", str(ROOT / "target" / "release"), "-lappletree"]
 else:
     extra = []
 subprocess.run(["swiftc", *files, str(runner_path), *extra,

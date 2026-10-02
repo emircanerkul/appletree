@@ -65,7 +65,7 @@ struct ContentView: View {
         .toolbar { toolbar }
         .task {
             model.agentEnv = await AgentLocator.find()
-            model.autoStartIfReady()
+            model.openPanelAfterLaunchScan()
         }
         // An agent run or the setup offer always shows in the panel.
         .onChange(of: model.agentRun == nil) { if model.agentRun != nil { showCleanup = true } }
@@ -85,14 +85,13 @@ struct ContentView: View {
     @State private var needsFDA = false
 
     private var fdaOverlay: some View {
-        VStack(spacing: 18) {
-            Image(systemName: "lock.shield")
-                .font(.system(size: 44, weight: .light))
-                .foregroundStyle(.secondary)
-            Text("BlitzTree needs Full Disk Access")
-                .font(.title2.weight(.semibold))
-            Text("System Settings → Privacy & Security → Full Disk Access.\nRemove any old BlitzTree rows, then add /Applications/BlitzTree.app.\nmacOS only applies the permission to a freshly launched app.")
-                .multilineTextAlignment(.center)
+        // Top-anchored like the window's other states: dead-center made the
+        // permission card float in the middle of an empty scan area.
+        VStack(alignment: .leading, spacing: 14) {
+            Label("AppleTree needs Full Disk Access", systemImage: "lock.shield")
+                .font(.title3.weight(.semibold))
+            Text("System Settings → Privacy & Security → Full Disk Access.\nRemove any old AppleTree rows, then add /Applications/AppleTree.app.\nmacOS only applies the permission to a freshly launched app.")
+                .multilineTextAlignment(.leading)
                 .foregroundStyle(.secondary)
                 .font(.callout)
             HStack(spacing: 12) {
@@ -108,6 +107,10 @@ struct ContentView: View {
             .font(.caption)
             .foregroundStyle(.tertiary)
         }
+        .frame(maxWidth: 480, alignment: .leading)
+        .padding(28)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .padding(.top, 56)
     }
 
     // MARK: toolbar
@@ -217,7 +220,7 @@ struct ContentView: View {
 
     private func displayRootName() -> String {
         let p = model.scanRoot
-        if p == "/System/Volumes/Data" { return "Macintosh HD" }
+        if p == "/System/Volumes/Data" { return String(localized: "Macintosh HD") }
         return (p as NSString).lastPathComponent.isEmpty ? p : (p as NSString).lastPathComponent
     }
 
@@ -292,14 +295,14 @@ private struct ScanStatusBar: View {
                             // not a permissions problem the user can fix.
                             let gap = model.unscannedBytes > 1_000_000_000
                                 ? " · ~\(Fmt.size(model.unscannedBytes)) root-only" : ""
-                            Text("\(tree.errors) system folders unreadable\(gap)")
+                            Text("\(String(tree.errors)) system folders unreadable\(gap)")
                                 .font(.caption)
                                 .foregroundStyle(.tertiary)
                         } else {
                             Button {
                                 openFullDiskAccessSettings()
                             } label: {
-                                Label("\(tree.errors) folders skipped — grant Full Disk Access", systemImage: "lock.shield")
+                                Label("\(String(tree.errors)) folders skipped — grant Full Disk Access", systemImage: "lock.shield")
                                     .font(.caption)
                             }
                             .buttonStyle(.borderless)
@@ -310,7 +313,7 @@ private struct ScanStatusBar: View {
                         .monospacedDigit()
                 }
             } else {
-                Text("BlitzTree").foregroundStyle(.tertiary)
+                Text("AppleTree").foregroundStyle(.tertiary)
                 Spacer()
             }
         }
@@ -654,10 +657,10 @@ struct OutlinePanel: NSViewRepresentable {
         outline.autoresizesOutlineColumn = false
 
         let name = NSTableColumn(identifier: .init("name"))
-        name.title = "Name"
+        name.title = String(localized: "Name")
         name.minWidth = 120
         let size = NSTableColumn(identifier: .init("size"))
-        size.title = "Size"
+        size.title = String(localized: "Size")
         size.width = 92; size.minWidth = 84; size.maxWidth = 116
         let pct = NSTableColumn(identifier: .init("pct"))
         pct.title = "%"

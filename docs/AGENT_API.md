@@ -1,16 +1,16 @@
 # Read-only JSON CLI
 
-The `blitztree` executable exposes a versioned JSON interface over the same Rust
+The `appletree` executable exposes a versioned JSON interface over the same Rust
 scanner as the GUI. It does not launch the GUI, an AI agent, a shell, a server or
 any network request. It reads filesystem metadata; it never deletes files or
 reads regular file contents. No daemon or API key is needed.
 
 ```sh
-cargo build --locked --release --features cli --bin blitztree
-./target/release/blitztree quick-wins
-./target/release/blitztree quick-wins --root "$HOME/projects" --limit 30
-./target/release/blitztree scan --root "$HOME/Downloads" --min-bytes 104857600
-./target/release/blitztree --help
+cargo build --locked --release --features cli --bin appletree
+./target/release/appletree quick-wins
+./target/release/appletree quick-wins --root "$HOME/projects" --limit 30
+./target/release/appletree scan --root "$HOME/Downloads" --min-bytes 104857600
+./target/release/appletree --help
 ```
 
 This optional binary is built from source on macOS; it is not included in the
@@ -18,7 +18,7 @@ app bundle or DMG. The default GUI build does not enable `cli` or compile its
 JSON dependencies. For an optional installation into Cargo's bin directory:
 
 ```sh
-cargo install --locked --path . --features cli --bin blitztree
+cargo install --locked --path . --features cli --bin appletree
 ```
 
 The CLI's permissions belong to its launching terminal/agent, independently of
@@ -140,13 +140,13 @@ tool. Never reuse a stale report as authorization or as an identity guarantee.
 
 ```sh
 cargo test --locked --release --features cli
-cargo build --locked --release --features cli --bin blitztree
+cargo build --locked --release --features cli --bin appletree
 python3 -m unittest discover -s tests -v
 ```
 
 The Rust tests cover the existing rule set, traversal, threshold, stable ordering
 and the C bridge, including empty results. The contract tests require Python 3 and use temporary fixtures only. Set
-`BLITZTREE_BIN` to test a binary in a custom target directory. To verify that
+`APPLETREE_BIN` to test a binary in a custom target directory. To verify that
 the default engine/GUI build remains independent of the CLI, also run
 `cargo test --locked --release --no-default-features` and
 `cargo tree --locked --no-default-features`.
