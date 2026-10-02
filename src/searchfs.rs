@@ -7,18 +7,8 @@ use std::ffi::{c_char, c_int, c_uint, c_ulong, c_void, CString};
 use std::path::Path;
 use std::sync::atomic::Ordering;
 
+use crate::attrs::{u32_at, u64_at, AttrList};
 use crate::Progress;
-
-#[repr(C)]
-struct AttrList {
-    bitmapcount: u16,
-    reserved: u16,
-    commonattr: u32,
-    volattr: u32,
-    dirattr: u32,
-    fileattr: u32,
-    forkattr: u32,
-}
 
 #[repr(C)]
 struct FsSearchBlock {
@@ -90,13 +80,6 @@ pub struct CatEntry {
     pub is_dir: bool,
     pub size: u64,
     pub alloc: u64,
-}
-
-fn u32_at(b: &[u8], off: usize) -> u32 {
-    u32::from_le_bytes(b[off..off + 4].try_into().unwrap())
-}
-fn u64_at(b: &[u8], off: usize) -> u64 {
-    u64::from_le_bytes(b[off..off + 8].try_into().unwrap())
 }
 
 /// Dump the entire catalog of the volume mounted at `vol_path`.
