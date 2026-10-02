@@ -4,9 +4,9 @@ import Observation
 import SwiftUI
 
 // "Clean up with Claude Code / Codex": the agent runs headless in the
-// background, read-only, and only writes a plan from the scan BlitzTree
+// background, read-only, and only writes a plan from the scan AppleTree
 // already has. Its steps and plan cards stream into the side panel as they
-// happen. BlitzTree then does the cleanup itself, behind its own guards:
+// happen. AppleTree then does the cleanup itself, behind its own guards:
 // moving folders to the Trash or running the owning tool's cleanup command.
 
 // MARK: - Agents on this Mac
@@ -65,7 +65,7 @@ nonisolated enum AgentLocator {
             }
         }
         let home = NSHomeDirectory()
-        // Where BlitzTree's own setup installs them, even if no shell knows yet.
+        // Where AppleTree's own setup installs them, even if no shell knows yet.
         if !env.path.split(separator: ":").contains("\(home)/.local/bin"[...]) {
             env.path += ":\(home)/.local/bin"
         }
@@ -119,13 +119,29 @@ nonisolated enum AgentLocator {
         process.standardError = FileHandle.nullDevice
         process.standardInput = FileHandle.nullDevice
         guard (try? process.run()) != nil else { return ("", -1) }
+        // Read while it runs: output past the pipe's 64 KB would stall it.
+        let text = OutputText()
+        let read = DispatchGroup()
+        read.enter()
+        DispatchQueue.global(qos: .userInitiated).async {
+            text.set(out.fileHandleForReading.readDataToEndOfFile())
+            read.leave()
+        }
         // A slow shell profile shouldn't hold the panel up.
         let deadline = Date().addingTimeInterval(timeout)
         while process.isRunning, Date() < deadline { usleep(20_000) }
         if process.isRunning { process.terminate(); return ("", -1) }
-        return (String(decoding: out.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self),
-                process.terminationStatus)
+        // Something the shell left running may hold the pipe open; don't wait on it.
+        _ = read.wait(timeout: .now() + 1)
+        return (text.value, process.terminationStatus)
     }
+}
+
+nonisolated final class OutputText: @unchecked Sendable {
+    private let lock = NSLock()
+    private var data = Data()
+    func set(_ new: Data) { lock.lock(); data = new; lock.unlock() }
+    var value: String { lock.lock(); defer { lock.unlock() }; return String(decoding: data, as: UTF8.self) }
 }
 
 // MARK: - One-click setup
@@ -182,10 +198,20 @@ final class AgentSetup {
             // Anthropic's own installer: everything under ~/.local, no sudo.
             return "curl -fsSL https://claude.ai/install.sh | bash"
         case .codex:
-            // OpenAI's standalone build: no Node needed.
+            // OpenAI's standalone build: no Node needed. The version and its
+            // SHA-256 are pinned so a new upstream release cannot change what
+            // gets installed silently (S5). To update the pin: set VER to the
+            // wanted release tag (github.com/openai/codex/releases), download
+            // the codex-aarch64-apple-darwin.tar.gz of that release once,
+            // run `shasum -a 256` on it, and paste the hash below.
             return """
             set -e; t=$(mktemp -d); mkdir -p "$HOME/.local/bin"
-            curl -fsSL https://github.com/openai/codex/releases/latest/download/codex-aarch64-apple-darwin.tar.gz | tar -xz -C "$t"
+            VER="0.157.1"
+            URL="https://github.com/openai/codex/releases/download/rust-v$VER/codex-aarch64-apple-darwin.tar.gz"
+            curl -fsSL "$URL" -o "$t/codex.tar.gz"
+            # SHA-256 of codex-aarch64-apple-darwin.tar.gz for $VER.
+            echo "3c45b162b7a76f51325015b1d0a8112c73219b7a9b59cd5762c37c9ba55894fa  $t/codex.tar.gz" | shasum -a 256 -c - || { echo "Codex download failed the checksum check; nothing was installed." >&2; rm -rf "$t"; exit 1; }
+            tar -xzf "$t/codex.tar.gz" -C "$t"
             mv "$t/codex-aarch64-apple-darwin" "$HOME/.local/bin/codex"; rm -rf "$t"
             """
         }
@@ -223,99 +249,36 @@ final class AgentSetup {
     }
 }
 
-// MARK: - The plan
+// MARK: - Guards (enforced here, never left to the model)
 
-nonisolated struct PlanItemSpec: Decodable, Sendable {
-    let title: String
-    let detail: String
-    let group: String
-    let bytes: Int64
-    let paths: [String]
-    let action: String
-    let command: String
-}
-
-/// The JSON shape both agents must answer in (Claude: --json-schema, Codex:
-/// --output-schema; strict, so every field is required).
-nonisolated let planSchema = """
-{"type":"object","additionalProperties":false,"required":["summary","items"],"properties":{\
-"summary":{"type":"string"},"items":{"type":"array","items":{"type":"object","additionalProperties":false,\
-"required":["title","detail","group","bytes","paths","action","command"],"properties":{\
-"title":{"type":"string"},"detail":{"type":"string"},"group":{"type":"string","enum":["safe","ask"]},\
-"bytes":{"type":"integer"},"paths":{"type":"array","items":{"type":"string"}},\
-"action":{"type":"string","enum":["trash","command"]},"command":{"type":"string"}}}}}}
-"""
-
-/// Pulls finished item objects out of the plan JSON while it is still being
-/// written, so cards appear one by one instead of all at the end.
-nonisolated struct PartialPlanParser {
-    private(set) var hasInput = false
-    private static let itemsKey = Array("\"items\"".utf8)
-    private var keyBytes = 0
-    private var foundKey = false
-    private var inItems = false
-    private var finished = false
-    private var depth = 0
-    private var inString = false
-    private var escaped = false
-    private var object: [UInt8] = []
-
-    mutating func append(_ chunk: String) -> [PlanItemSpec] {
-        hasInput = hasInput || !chunk.isEmpty
-        guard !finished else { return [] }
-        var fresh: [PlanItemSpec] = []
-        // Only inspect the new bytes. State survives arbitrary delta
-        // boundaries, including a key, escape, or unfinished item.
-        for c in chunk.utf8 {
-            if !foundKey {
-                if c == Self.itemsKey[keyBytes] {
-                    keyBytes += 1
-                    if keyBytes == Self.itemsKey.count { foundKey = true }
-                } else {
-                    keyBytes = c == Self.itemsKey[0] ? 1 : 0
-                }
-                continue
-            }
-            if !inItems {
-                if c == UInt8(ascii: "[") { inItems = true }
-                continue
-            }
-            if depth > 0 { object.append(c) }
-            if inString {
-                if escaped { escaped = false }
-                else if c == UInt8(ascii: "\\") { escaped = true }
-                else if c == UInt8(ascii: "\"") { inString = false }
-            } else if c == UInt8(ascii: "\"") {
-                inString = true
-            } else if c == UInt8(ascii: "{") {
-                if depth == 0 {
-                    object.removeAll(keepingCapacity: true)
-                    object.append(c)
-                }
-                depth += 1
-            } else if c == UInt8(ascii: "}") {
-                depth -= 1
-                if depth == 0, !object.isEmpty {
-                    if let item = try? JSONDecoder().decode(PlanItemSpec.self, from: Data(object)) {
-                        fresh.append(item)
-                    }
-                    object.removeAll(keepingCapacity: true)
-                }
-            } else if c == UInt8(ascii: "]"), depth == 0 {
-                finished = true
-                break
-            }
+/// When Codex last worked in each folder, from its session logs: every
+/// rollout file opens with the chat's working folder and is appended to as
+/// the chat goes on.
+nonisolated enum CodexSessions {
+    static func lastActive(since: Date? = nil) -> [String: Date] {
+        let home = ProcessInfo.processInfo.environment["CODEX_HOME"] ?? NSHomeDirectory() + "/.codex"
+        let root = URL(fileURLWithPath: home + "/sessions")
+        guard let files = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.contentModificationDateKey])
+        else { return [:] }
+        var active: [String: Date] = [:]
+        for case let url as URL in files where url.pathExtension == "jsonl" {
+            guard let date = try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate,
+                  since.map({ date > $0 }) ?? true,
+                  let file = try? FileHandle(forReadingFrom: url) else { continue }
+            let head = String(decoding: (try? file.read(upToCount: 8192)) ?? Data(), as: UTF8.self)
+            try? file.close()
+            guard let match = head.firstMatch(of: /"cwd":"((?:[^"\\]|\\.)*)"/) else { continue }
+            let cwd = String(match.1).replacingOccurrences(of: "\\/", with: "/")
+            active[cwd] = max(active[cwd] ?? date, date)
         }
-        return fresh
+        return active
     }
 }
-
-// MARK: - Guards (enforced here, never left to the model)
 
 nonisolated enum CleanupGuard {
     static let home = NSHomeDirectory()
 
-    /// Folders BlitzTree never cleans, whatever the agent says.
+    /// Folders AppleTree never cleans, whatever the agent says.
     static let protected = [
         "Documents", "Desktop", "Pictures", "Movies", "Music", ".ssh", ".gnupg", ".Trash",
         "Library/Mobile Documents", "Library/Mail", "Library/Messages", "Library/Keychains",
@@ -338,28 +301,64 @@ nonisolated enum CleanupGuard {
         ".local", ".local/share", "Downloads",
     ].reduce(into: []) { $0.insert(home + "/" + $1) }
 
-    /// The only commands BlitzTree runs: each tool's own cleanup.
-    static let commands = [
-        "uv cache clean", "uv cache prune", "bun pm cache rm", "npm cache clean", "pnpm store prune",
-        "yarn cache clean", "brew cleanup", "brew autoremove", "docker system prune",
-        "docker image prune", "docker builder prune", "docker container prune",
-        "xcrun simctl delete unavailable", "xcrun simctl runtime delete", "pip cache purge",
-        "pip3 cache purge", "ollama rm ", "go clean -cache", "go clean -modcache", "gem cleanup",
-        "pod cache clean", "conda clean", "mamba clean",
+    /// Folders that alter app behavior or persistence (launch agents, fonts,
+    /// keychain helpers…): the folder and everything inside it is off limits.
+    /// Unlike `Library/Caches`, no named subfolder of these is a rebuildable
+    /// cache, so they block recursively (S1).
+    static let neverClean: [String] = [
+        "Library/LaunchAgents", "Library/LaunchDaemons", "Library/Cookies", "Library/Logs",
+        "Library/Saved Application State", "Library/Spelling", "Library/Frameworks",
+        "Library/PrivilegedHelperTools", "Library/ScriptingAdditions",
+        "Library/Internet Plug-Ins", "Library/PreferencePanes", "Library/Input Methods",
+        "Library/Fonts", "Library/Services", "Library/StartupItems", "Library/Tokens",
+        "Library/Widgets", "Library/Metadata", "Library/Desktop Pictures",
+        "Library/Screen Savers", "Library/Workflows", "Library/Automator",
+        "Library/Contextual Menu Items", "Library/Compositions", "Library/DirectoryServices",
+        "Library/Calendars", "Library/Accounts", "Library/Application Scripts",
+    ].map { home + "/" + $0 }
+
+    /// The only commands AppleTree runs: each tool's own cleanup, in exactly
+    /// these forms (S6). No-argument commands must match to the letter; flag
+    /// variants are separate entries, not prefix matches.
+    static let commands: Set<String> = [
+        "uv cache clean", "uv cache prune", "bun pm cache rm", "npm cache clean",
+        "npm cache clean --force", "pnpm store prune", "yarn cache clean", "brew cleanup",
+        "brew cleanup --prune=all", "brew autoremove", "docker system prune",
+        "docker system prune -f", "docker image prune", "docker image prune -f",
+        "docker builder prune", "docker builder prune -f", "docker container prune",
+        "xcrun simctl delete unavailable", "conda clean", "conda clean -a -y", "mamba clean",
+        "pip cache purge", "pip3 cache purge", "go clean -cache", "go clean -modcache",
+        "gem cleanup", "pod cache clean --all",
     ]
+
+    /// Commands that take exactly one trailing argument (a model, a runtime
+    /// image, a device…). Nothing beyond that one token — no extra flags — is
+    /// accepted (S6), so upstream's prefix-matched `ollama rm `/`simctl erase`
+    /// forms stay exact here.
+    static let oneArgumentCommands = ["ollama rm", "xcrun simctl runtime delete", "xcrun simctl erase"]
 
     /// Why a path may not be touched, or nil when it may.
     static func blockReason(path: String) -> String? {
-        let p = (path as NSString).standardizingPath
+        // Resolve before matching: `trashItem` follows a symlink in the last
+        // component, so a link pointing into a protected folder must be
+        // judged by where it lands, not what it is called (S3). This also
+        // expands ~ itself, but with the same home the guard checks below.
+        let p = ((path as NSString).resolvingSymlinksInPath as NSString).standardizingPath
         guard p.hasPrefix(home + "/") else { return "Outside your home folder" }
         let rel = p.dropFirst(home.count + 1)
         guard rel.split(separator: "/").count >= 2 || rel.hasPrefix("."), !tooBroad.contains(p) else {
             return "Too broad: other apps keep live data here"
         }
+        // Whole persistence folders: no named subfolder inside is ever fair game (S1).
+        if neverClean.contains(where: { p == $0 || p.hasPrefix($0 + "/") }) {
+            return "Too broad: other apps keep live data here"
+        }
         for dir in protected where p == dir || p.hasPrefix(dir + "/") {
-            // Projects live in Documents too; their build output is still fair game.
-            if !rebuildable.contains((p as NSString).lastPathComponent) || dir.hasSuffix(".Trash") {
-                return "In ~/\(dir.dropFirst(home.count + 1)), which BlitzTree never cleans"
+            // Projects live in Documents too; their build output is still fair
+            // game, and so are Codex's chat folders (the user decides those).
+            let allowed = rebuildable.contains((p as NSString).lastPathComponent) || codexChat(p) != nil
+            if !allowed || dir.hasSuffix(".Trash") {
+                return "In ~/\(dir.dropFirst(home.count + 1)), which AppleTree never cleans"
             }
         }
         if FileManager.default.fileExists(atPath: p + "/.git") { return "A git repository" }
@@ -371,19 +370,42 @@ nonisolated enum CleanupGuard {
 
     static func blockReason(command: String) -> String? {
         let c = command.trimmingCharacters(in: .whitespaces)
-        guard commands.contains(where: { c == $0.trimmingCharacters(in: .whitespaces) || c.hasPrefix($0.hasSuffix(" ") ? $0 : $0 + " ") }) else {
-            return "BlitzTree only runs tools' own cleanup commands"
+        // Argument discipline (S6): extra flags or arguments beyond the forms
+        // above are rejected, not silently run.
+        guard commands.contains(c) || oneArgumentCommands.contains(where: {
+            c.hasPrefix($0 + " ") && !c.dropFirst($0.count + 1).contains(" ")
+        }) else {
+            return "AppleTree only runs tools' own cleanup commands"
         }
         let banned = [";", "|", "&", ">", "<", "`", "$", "\n", "*", "\\"]
         if banned.contains(where: { c.contains($0) }) { return "Command not allowed" }
         return nil
     }
 
+    /// The Codex app keeps each chat's files in ~/Documents/Codex/<date>/<chat>
+    /// (outputs, work). Returns that chat folder for a path at or inside one.
+    static func codexChat(_ path: String) -> String? {
+        let root = home + "/Documents/Codex/"
+        let p = (path as NSString).standardizingPath
+        guard p.hasPrefix(root) else { return nil }
+        let parts = p.dropFirst(root.count).split(separator: "/")
+        guard parts.count >= 2, parts[0].wholeMatch(of: /\d{4}-\d{2}-\d{2}/) != nil else { return nil }
+        return root + parts[0] + "/" + parts[1]
+    }
+
     /// Whether the project owning this build folder was used in the last two
     /// days: its git index (touched by every status, commit or checkout), the
-    /// project folder or the folder itself changed recently.
+    /// project folder or the folder itself changed recently. A Codex chat
+    /// counts as used when it started or Codex worked in it since (folder
+    /// dates are no help there: Finder's .DS_Store writes bump them).
     static func recentlyUsed(_ path: String, within: TimeInterval = 2 * 86400) -> Bool {
         let fm = FileManager.default
+        let cutoff = Date().addingTimeInterval(-within)
+        if let chat = codexChat(path) {
+            let day = ((chat as NSString).deletingLastPathComponent as NSString).lastPathComponent
+            if let started = try? Date(day + "T23:59:59Z", strategy: .iso8601), started > cutoff { return true }
+            return CodexSessions.lastActive(since: cutoff).keys.contains { $0 == chat || $0.hasPrefix(chat + "/") }
+        }
         let url = URL(fileURLWithPath: path)
         guard rebuildable.contains(url.lastPathComponent) else { return false }
         let project = url.deletingLastPathComponent()
@@ -400,7 +422,6 @@ nonisolated enum CleanupGuard {
                 stamps.append(URL(fileURLWithPath: dir, relativeTo: project).appendingPathComponent("index").path)
             }
         }
-        let cutoff = Date().addingTimeInterval(-within)
         return stamps.contains { p in
             ((try? fm.attributesOfItem(atPath: p))?[.modificationDate] as? Date).map { $0 > cutoff } ?? false
         }
@@ -433,7 +454,7 @@ final class PlanItem: Identifiable {
     let id = UUID()
     let spec: PlanItemSpec
     let paths: [String]
-    /// Why BlitzTree won't do this one (protected folder, bad command…).
+    /// Why AppleTree won't do this one (protected folder, bad command…).
     let blocked: String?
     var selected: Bool
     var status: Status = .waiting
@@ -470,7 +491,7 @@ final class PlanItem: Identifiable {
         var reason: String?
         var kept: [String] = []
         var recent = 0
-        // A cache that is just a folder goes through the Trash and BlitzTree's
+        // A cache that is just a folder goes through the Trash and AppleTree's
         // parallel delete: reversible in step one, and faster than the tool's
         // own single-threaded removal (bun took 20 s for 5 GB).
         let plainCache = ["bun pm cache rm", "npm cache clean", "uv cache clean", "pip cache purge",
@@ -489,19 +510,20 @@ final class PlanItem: Identifiable {
         } else if asked.isEmpty {
             reason = "Nothing to remove"
         } else {
-            // Paths BlitzTree won't touch are dropped; the card is blocked only
+            // Paths AppleTree won't touch are dropped; the card is blocked only
             // when nothing is left.
             for path in asked {
                 if let why = CleanupGuard.blockReason(path: path) {
                     reason = reason ?? why
-                } else if let app = CleanupGuard.runningOwner(of: [path]) {
+                } else if CleanupGuard.codexChat(path) == nil, let app = CleanupGuard.runningOwner(of: [path]) {
                     reason = reason ?? "Quit \(app) to clean this"
                 } else if !FileManager.default.fileExists(atPath: path) {
                     reason = reason ?? "Already gone"
                 } else if CleanupGuard.recentlyUsed(path) {
                     // Never break what the user is working on right now.
                     recent += 1
-                    reason = reason ?? "In projects you used in the last 2 days"
+                    reason = reason ?? (CleanupGuard.codexChat(path) != nil
+                        ? "A Codex chat you used in the last 2 days" : "In projects you used in the last 2 days")
                 } else {
                     kept.append(path)
                 }
@@ -532,7 +554,14 @@ final class AgentRun {
     /// → `staged` → Delete for good → `done`.
     enum Phase: Equatable { case thinking, planned, trashing, staged, deleting, done, failed(String) }
 
-    let agent: InstalledAgent
+    /// Nil when the plan comes from a custom provider over HTTP.
+    let agent: InstalledAgent?
+    /// Nil when the plan comes from a CLI agent. The endpoint never runs
+    /// tools — it only writes the plan; the guards and the two-step delete
+    /// below are identical for both sources.
+    let provider: LLMProvider?
+    /// What the panel calls the planner: the CLI agent's or the provider's name.
+    var displayName: String { agent?.kind.name ?? provider?.displayName ?? "The assistant" }
     private(set) var phase: Phase = .thinking
     /// What the agent has done so far, in plain words; the last one is live.
     private(set) var steps: [String] = ["Reading your scan"]
@@ -548,9 +577,10 @@ final class AgentRun {
     private let onFinish: () -> Void
     private var preparationTask: Task<Void, Never>?
 
-    init(agent: InstalledAgent, env: AgentEnvironment, tree: Tree, scanRoot: String,
-         known: [CleanupItem], onFinish: @escaping () -> Void) {
+    init(agent: InstalledAgent?, env: AgentEnvironment, tree: Tree, scanRoot: String,
+         known: [CleanupItem], provider: LLMProvider? = nil, onFinish: @escaping () -> Void) {
         self.agent = agent
+        self.provider = provider
         self.scanRoot = scanRoot
         self.tree = tree
         self.onFinish = onFinish
@@ -561,12 +591,13 @@ final class AgentRun {
             guard !Task.isCancelled else { return }
             let input = await Task.detached(priority: .userInitiated) {
                 AgentPrompt.build(tree: tree, scanRoot: scanRoot, known: known, running: running)
+                + AgentPrompt.appData(tree: tree)
             }.value
             // Closing or replacing a run while its prompt was being built
             // must not launch an agent after cancellation.
             guard !Task.isCancelled, let self else { return }
             preparationTask = nil
-            step("Asking \(agent.kind.name) what can go")
+            step("Asking \(displayName) what can go")
             start(input: input, env: env)
         }
     }
@@ -580,11 +611,15 @@ final class AgentRun {
 
     /// What step one moves to the Trash (tool caches wait for step two).
     var trashBytes: UInt64 { targets.filter { !$0.isCommand }.reduce(0) { $0 + $1.bytes } }
-    /// What step two deletes for good.
+    /// What step two deletes for good; while it runs, what is still going,
+    /// so the number counts down as each item finishes.
     var pendingBytes: UInt64 {
-        targets.filter { $0.status == .inTrash || ($0.isCommand && $0.status == .waiting) }.reduce(0) { $0 + $1.bytes }
+        targets.filter {
+            $0.status == .inTrash || ($0.isCommand && $0.status == .waiting)
+                || (phase == .deleting && $0.status == .running)
+        }.reduce(0) { $0 + $1.bytes }
     }
-    /// The items the user chose and BlitzTree may touch.
+    /// The items the user chose and AppleTree may touch.
     var targets: [PlanItem] { items.filter { $0.selected && $0.blocked == nil } }
 
     /// Space the disk actually got back (statfs), set when deleting ends.
@@ -599,7 +634,7 @@ final class AgentRun {
         withAnimation(.snappy) { steps.append(text) }
     }
 
-    /// `defaults write dev.ahmed.blitztree bz.claudeModel haiku` to try another.
+    /// `defaults write dev.emircan.appletree bz.claudeModel haiku` to try another.
     private static var claudeModel: String {
         ProcessInfo.processInfo.environment["BZ_CLAUDE_MODEL"]
             ?? UserDefaults.standard.string(forKey: "bz.claudeModel") ?? "sonnet"
@@ -610,13 +645,21 @@ final class AgentRun {
         preparationTask = nil
         process?.terminate()
         process = nil
+        planClient?.cancel()
+        planClient = nil
     }
+
+    /// Custom endpoint runs need no process: the client streams SSE straight
+    /// from the HTTP response into the same event pipeline.
+    private var planClient: LLMPlanClient?
 
     // MARK: Agent process
 
     private func start(input: String, env: AgentEnvironment) {
+        if let provider { startProvider(input: input, provider: provider); return }
+        guard let agent else { return }
         let folder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("BlitzTree", isDirectory: true)
+            .appendingPathComponent("AppleTree", isDirectory: true)
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
 
         let process = Process()
@@ -681,7 +724,7 @@ final class AgentRun {
         do {
             try process.run()
         } catch {
-            phase = .failed("Couldn't start \(agent.kind.name): \(error.localizedDescription)")
+            phase = .failed("Couldn't start \(displayName): \(error.localizedDescription)")
             return
         }
         self.process = process
@@ -693,6 +736,39 @@ final class AgentRun {
             }
         } else {
             reader.begin()
+        }
+    }
+
+    /// Custom provider: stream the plan over HTTP. No process, no PATH, no
+    /// working folder — the endpoint only ever sees the prompt text (folder
+    /// paths and sizes, never file contents) and answers with plan JSON.
+    private func startProvider(input: String, provider: LLMProvider) {
+        let key = ProviderStore.getKey(for: provider.id) ?? ""
+        let client = LLMPlanClient(provider: provider, apiKey: key)
+        planClient = client
+        let name = displayName
+        client.plan(input) { [weak self] event in
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.handleProvider(event, name: name) } }
+        }
+        step("Asking \(name) what can go")
+    }
+
+    private func handleProvider(_ event: LLMEvent, name: String) {
+        guard phase == .thinking else { return }
+        switch event {
+        case .item(let spec):
+            withAnimation(.snappy) { items.append(PlanItem(spec: spec, tree: tree)) }
+        case .plan(let summary, let specs):
+            self.summary = summary
+            // The final JSON is authoritative; keep the cards already shown
+            // (and their checkboxes) when they match.
+            if specs.map(\.title) != items.map(\.spec.title) {
+                withAnimation(.snappy) { items = specs.map { PlanItem(spec: $0, tree: tree) } }
+            }
+            finishPlanning()
+        case .failed(let message):
+            NSLog("[bz] provider \(name) failed: \(message)")
+            if !items.isEmpty { finishPlanning() } else { phase = .failed(message) }
         }
     }
 
@@ -714,7 +790,10 @@ final class AgentRun {
             }
             finishPlanning()
         case .failed(let message):
-            phase = .failed(message)
+            // A CLI run that dies after streaming cards still finishes
+            // planning with what arrived; a provider whose JSON never
+            // decoded strictly gets the same grace.
+            if !items.isEmpty { finishPlanning() } else { phase = .failed(message) }
         }
     }
 
@@ -724,9 +803,9 @@ final class AgentRun {
         if !items.isEmpty {
             finishPlanning()
         } else if status != 0 {
-            phase = .failed(stderr.isEmpty ? "\(agent.kind.name) stopped (exit \(status))." : stderr)
+            phase = .failed(stderr.isEmpty ? "\(displayName) stopped (exit \(status))." : stderr)
         } else {
-            phase = .failed("\(agent.kind.name) didn't return a plan.")
+            phase = .failed("\(displayName) didn't return a plan.")
         }
     }
 
@@ -739,7 +818,7 @@ final class AgentRun {
         withAnimation(.snappy) { phase = .planned }
     }
 
-    // MARK: Cleaning (BlitzTree does this, not the agent)
+    // MARK: Cleaning (AppleTree does this, not the agent)
 
     /// Demo recordings only: walk through both steps without touching disk.
     private let dryRun = ProcessInfo.processInfo.environment["BZ_DEMO_DRYRUN"] != nil
@@ -785,11 +864,14 @@ final class AgentRun {
                 for item in work {
                     let urls = item.trashed
                     let command = item.isCommand ? item.spec.command : nil
+                    let bytes = item.bytes
                     let dryRun = dryRun
                     group.addTask {
                         var error: String?
                         if dryRun {
-                            try? await Task.sleep(for: .milliseconds(command == nil ? 250 : 600))
+                            // Roughly as long as the real delete: bigger items finish later.
+                            let gb = Double(bytes) / 1e9
+                            try? await Task.sleep(for: .seconds(min(3.5, 0.3 + gb / 4)))
                         } else if let command {
                             error = await Self.runCommand(command, path: env.path)
                         } else {
@@ -828,6 +910,13 @@ final class AgentRun {
             var moved: [URL] = []
             var error: String?
             for path in paths where FileManager.default.fileExists(atPath: path) {
+                // Re-check at action time: minutes can have passed since the
+                // plan was validated, so anything changed in between is not
+                // acted on (S2).
+                if let reason = CleanupGuard.blockReason(path: path) {
+                    error = error ?? reason
+                    continue
+                }
                 do {
                     var out: NSURL?
                     try FileManager.default.trashItem(at: URL(fileURLWithPath: path), resultingItemURL: &out)
@@ -844,7 +933,7 @@ final class AgentRun {
     /// threads remove a 100k-file node_modules 2x faster than `rm -rf`, and
     /// more threads only contend (8 and 16 were slower).
     nonisolated private static let deleteSlots = DispatchSemaphore(value: 4)
-    nonisolated private static let deleteQueue = DispatchQueue(label: "blitztree.delete", qos: .userInitiated,
+    nonisolated private static let deleteQueue = DispatchQueue(label: "appletree.delete", qos: .userInitiated,
                                                                attributes: .concurrent)
 
     /// Deletes folders for good, fast: each folder's children go through
@@ -881,6 +970,9 @@ final class AgentRun {
     /// Runs a vetted cleanup command; returns an error message on failure.
     nonisolated static func runCommand(_ command: String, path: String) async -> String? {
         await Task.detached(priority: .userInitiated) {
+            // Re-check at action time: the plan was validated while streaming,
+            // so the guard runs again before anything is spawned (S2).
+            if let reason = CleanupGuard.blockReason(command: command) { return reason }
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/bin/zsh")
             process.arguments = ["-c", command]
@@ -890,11 +982,11 @@ final class AgentRun {
             // Some tools only run inside a project (`bun pm cache rm` wants a
             // package.json), so they run in an empty stand-in one.
             let folder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-                .appendingPathComponent("BlitzTree/tools", isDirectory: true)
+                .appendingPathComponent("AppleTree/tools", isDirectory: true)
             try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             let manifest = folder.appendingPathComponent("package.json")
             if !FileManager.default.fileExists(atPath: manifest.path) {
-                try? #"{"name":"blitztree-cleanup","private":true}"#.write(to: manifest, atomically: true, encoding: .utf8)
+                try? #"{"name":"appletree-cleanup","private":true}"#.write(to: manifest, atomically: true, encoding: .utf8)
             }
             process.currentDirectoryURL = folder
             process.standardInput = FileHandle.nullDevice
@@ -971,7 +1063,7 @@ nonisolated final class AgentStreamReader: @unchecked Sendable {
     /// Codex app server: say hello; the rest follows its replies.
     func begin() {
         send(["id": 1, "method": "initialize",
-              "params": ["clientInfo": ["name": "blitztree", "title": "BlitzTree", "version": "1"]]])
+              "params": ["clientInfo": ["name": "appletree", "title": "AppleTree", "version": "1"]]])
     }
 
     private func send(_ message: [String: Any]) {
@@ -1103,10 +1195,8 @@ nonisolated final class AgentStreamReader: @unchecked Sendable {
         }
     }
 
-    private static func decodePlan(_ obj: [String: Any]) -> (String, [PlanItemSpec])? {
-        guard let data = try? JSONSerialization.data(withJSONObject: obj["items"] ?? []),
-              let items = try? JSONDecoder().decode([PlanItemSpec].self, from: data) else { return nil }
-        return ((obj["summary"] as? String) ?? "", items)
+    static func decodePlan(_ obj: [String: Any]) -> (String, [PlanItemSpec])? {
+        PlanJSON.decode(obj)
     }
 
     /// "du -sk ~/a ~/b" → "Measuring a, b"; the rest in a few plain words.
@@ -1172,10 +1262,10 @@ nonisolated enum AgentPrompt {
         let (folders, files) = largestNodes(in: tree)
 
         var md = """
-        You are the cleanup agent inside BlitzTree, a macOS disk-space app. The user clicked \
+        You are the cleanup agent inside AppleTree, a macOS disk-space app. The user clicked \
         "Clean up" and is watching a live view of your steps, so be fast. Their home folder is \(home).
 
-        Below is BlitzTree's scan (\(scanRoot == "/System/Volumes/Data" ? "whole disk" : scanRoot), \
+        Below is AppleTree's scan (\(scanRoot == "/System/Volumes/Data" ? "whole disk" : scanRoot), \
         allocated sizes, measured seconds ago). Use it; do not re-scan the disk. Most plans need no \
         commands at all. Only check what you really cannot judge from the tables, batched (one \
         `du -sk a b c` beats several), at most 3 commands.
@@ -1190,13 +1280,18 @@ nonisolated enum AgentPrompt {
           - bytes: size in bytes.
           - paths: the absolute paths it covers.
           - action: "command" when the owning tool has its own cleanup and the item is that tool's \
-        cache, otherwise "trash" (BlitzTree moves the paths to the Trash itself). BlitzTree only runs \
-        commands starting with one of: `uv cache clean`, `bun pm cache rm`, `npm cache clean --force`, \
-        `pnpm store prune`, `yarn cache clean`, `brew cleanup --prune=all`, `docker system prune -f`, \
-        `docker builder prune -f`, `xcrun simctl delete unavailable`, `pip cache purge`, \
-        `ollama rm <model>`, `go clean -modcache`, `gem cleanup`, `pod cache clean --all`, \
-        `conda clean -a -y`. Nothing else, no pipes, `;`, `$` or globs; it must not prompt.
-          - command: the exact command for "command", "" for "trash".
+        cache, otherwise "trash" (AppleTree moves the paths to the Trash itself). AppleTree only runs \
+        exactly one of these commands — no extra arguments or flags: `uv cache clean`, \
+        `uv cache prune`, `bun pm cache rm`, `npm cache clean`, `npm cache clean --force`, \
+        `pnpm store prune`, `yarn cache clean`, `brew cleanup`, `brew cleanup --prune=all`, \
+        `brew autoremove`, `docker system prune`, `docker system prune -f`, `docker image prune`, \
+        `docker image prune -f`, `docker builder prune`, `docker builder prune -f`, \
+        `docker container prune`, `xcrun simctl delete unavailable`, `conda clean`, \
+        `conda clean -a -y`, `mamba clean`, `pip cache purge`, `pip3 cache purge`, \
+        `go clean -cache`, `go clean -modcache`, `gem cleanup`, `pod cache clean --all` — \
+        or exactly one of: `ollama rm <model>`, `xcrun simctl runtime delete <id>`, \
+        `xcrun simctl erase <udid>`. \
+        Nothing else, no pipes, `;`, `$` or globs; it must not prompt.          - command: the exact command for "command", "" for "trash".
         `npm cache clean` only empties ~/.npm/_cacache; ~/.npm/_npx is a separate "trash" item. Only \
         list caches that appear in the tables above with their real size; skip ones that are not there.
         Name specific folders. Never a whole ~/Library, ~/Library/Caches, ~/Library/Application \
@@ -1204,14 +1299,15 @@ nonisolated enum AgentPrompt {
         Never include: ~/Documents, ~/Desktop, ~/Pictures, the Photos library, ~/Movies, ~/Music, Mail, \
         Messages, iCloud Drive (~/Library/Mobile Documents), keychains, ~/.ssh, dotfile configs, source \
         code, git repositories themselves, or files of the running apps below. Build output inside \
-        projects (node_modules, target, .next, dist, DerivedData) is fine.
+        projects (node_modules, target, .next, dist, DerivedData) is fine, and so are the Codex chat \
+        folders and Xcode simulators listed at the end.
 
         ## Apps running now
         \(running.joined(separator: ", "))
 
         """
         if !known.isEmpty {
-            md += "\n## Recognised by BlitzTree as rebuildable\n\n| Size | Path | What |\n|---:|---|---|\n"
+            md += "\n## Recognised by AppleTree as rebuildable\n\n| Size | Path | What |\n|---:|---|---|\n"
             for item in known.prefix(120) {
                 md += "| \(Fmt.size(item.bytes)) | \(item.path) | \(item.kind) |\n"
             }
@@ -1226,11 +1322,129 @@ nonisolated enum AgentPrompt {
         }
         return md
     }
+
+    /// Big folders the scan alone can't explain: Xcode's simulators (runtime
+    /// images live outside the home folder and go only through `simctl`) and
+    /// the Codex app's chat folders, which sit in the otherwise off-limits
+    /// ~/Documents. Listed with what the agent needs to plan them.
+    static func appData(tree: Tree) -> String {
+        // simctl and Codex's logs are independent: look them up side by side.
+        let sims = OutputText()
+        let done = DispatchGroup()
+        DispatchQueue.global(qos: .userInitiated).async(group: done) { sims.set(Data(simulators().utf8)) }
+        let chats = codexChats(tree: tree)
+        done.wait()
+        return sims.value + chats
+    }
+
+    private static func ago(_ date: Date?) -> String {
+        guard let date else { return "never" }
+        let days = Int(Date().timeIntervalSince(date) / 86400)
+        return days < 1 ? "today" : days == 1 ? "yesterday" : "\(days) days ago"
+    }
+
+    private static func simulators() -> String {
+        // Run simctl straight from the selected Xcode: /usr/bin/xcrun would
+        // offer to install the command line tools on a Mac without them.
+        let developer = AgentLocator.run("/usr/bin/xcode-select", ["-p"]).out
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let simctl = developer + "/usr/bin/simctl"
+        guard !developer.isEmpty, FileManager.default.isExecutableFile(atPath: simctl) else { return "" }
+        func json(_ args: [String]) -> [String: Any] {
+            let text = AgentLocator.run(simctl, args, timeout: 10).out
+            return (try? JSONSerialization.jsonObject(with: Data(text.utf8))) as? [String: Any] ?? [:]
+        }
+        func date(_ any: Any?) -> Date? { (any as? String).flatMap { try? Date($0, strategy: .iso8601) } }
+
+        var runtimes = ""
+        let images = json(["runtime", "list", "-j"]).values.compactMap { $0 as? [String: Any] }
+        for image in images.sorted(by: { ($0["sizeBytes"] as? Int64 ?? 0) > ($1["sizeBytes"] as? Int64 ?? 0) }) {
+            guard let id = image["identifier"] as? String, image["deletable"] as? Bool ?? true,
+                  let size = image["sizeBytes"] as? Int64, size >= 100_000_000 else { continue }
+            // "com.apple.CoreSimulator.SimRuntime.iOS-27-0" → "iOS"
+            let platform = (image["runtimeIdentifier"] as? String)?.split(separator: ".").last?
+                .split(separator: "-").first.map(String.init) ?? "Simulator"
+            let version = image["version"] as? String ?? ""
+            runtimes += "| \(Fmt.size(UInt64(size))) | \(platform) \(version) | \(ago(date(image["lastUsedAt"]))) "
+                + "| \(id) | \(image["path"] as? String ?? "") |\n"
+        }
+
+        var devices = ""
+        let byRuntime = json(["list", "devices", "-j"])["devices"] as? [String: Any] ?? [:]
+        let all = byRuntime.values.flatMap { $0 as? [[String: Any]] ?? [] }
+        for device in all.sorted(by: { ($0["dataPathSize"] as? Int64 ?? 0) > ($1["dataPathSize"] as? Int64 ?? 0) }) {
+            guard let udid = device["udid"] as? String, let data = device["dataPath"] as? String,
+                  let size = device["dataPathSize"] as? Int64, size >= 100_000_000 else { continue }
+            let folder = (data as NSString).deletingLastPathComponent
+            let state = device["state"] as? String ?? ""
+            devices += "| \(Fmt.size(UInt64(size))) | \(device["name"] as? String ?? "") (\(state)) "
+                + "| \(ago(date(device["lastUsedAt"]))) | \(udid) | \(folder) |\n"
+        }
+        guard !runtimes.isEmpty || !devices.isEmpty else { return "" }
+
+        var md = """
+
+        ## Xcode simulators
+
+        Simulator runtimes are system images Xcode downloads again when a simulator needs one. Plan \
+        each as its own item: action "command", command `xcrun simctl runtime delete <id>`, paths = \
+        [its path], group "safe" if unused for 30+ days, else "ask". Device data is one simulator's \
+        installed apps and files: action "command", command `xcrun simctl erase <udid>` (empties it, \
+        the device stays), paths = [its folder], group "ask". Never trash simulator folders directly.
+
+        """
+        if !runtimes.isEmpty {
+            md += "\n| Size | Runtime | Last used | Id | Path |\n|---:|---|---|---|---|\n" + runtimes
+        }
+        if !devices.isEmpty {
+            md += "\n| Size | Device | Last used | UDID | Folder |\n|---:|---|---|---|---|\n" + devices
+        }
+        return md
+    }
+
+    private static func codexChats(tree: Tree) -> String {
+        let root = NSHomeDirectory() + "/Documents/Codex"
+        guard let codex = tree.node(at: root) else { return "" }
+        var chats: [(node: Int, path: String)] = []
+        for day in tree.children(codex).map(Int.init) {
+            guard tree.alloc[day] >= 100_000_000 else { break }
+            let dayPath = root + "/" + tree.name(day)
+            for chat in tree.children(day).map(Int.init) {
+                guard tree.alloc[chat] >= 100_000_000 else { break }
+                let path = dayPath + "/" + tree.name(chat)
+                if tree.isDir(chat), CleanupGuard.codexChat(path) == path { chats.append((chat, path)) }
+            }
+        }
+        guard !chats.isEmpty else { return "" }
+        chats.sort { tree.alloc[$0.node] > tree.alloc[$1.node] }
+
+        var md = """
+
+        ## Codex chat folders
+
+        The Codex app keeps each chat's files in ~/Documents/Codex/<date>/<chat>: `outputs` holds what \
+        the chat produced (exports, downloads, renders), `work` its scratch files. Nothing recreates \
+        them, so group "ask", action "trash". One item per chat over 1 GB, titled from the chat name \
+        with its date in the detail; smaller ones may share one item. The chat folder or its \
+        `outputs`/`work` subfolders are valid paths. AppleTree keeps chats used in the last 2 days.
+
+        | Size | Chat | Last used | Inside |
+        |---:|---|---|---|
+
+        """
+        let sessions = CodexSessions.lastActive()
+        for (node, path) in chats.prefix(40) {
+            let used = sessions.filter { $0.key == path || $0.key.hasPrefix(path + "/") }.values.max()
+            let inside = tree.children(node).prefix(3).map { "\(tree.name(Int($0))) \(Fmt.size(tree.alloc[Int($0)]))" }
+            md += "| \(Fmt.size(tree.alloc[node])) | \(path) | \(used.map(ago) ?? "unknown") | \(inside.joined(separator: ", ")) |\n"
+        }
+        return md
+    }
 }
 
 extension Tree {
     /// The node at an absolute path, if the scan covered it.
-    func node(at path: String) -> Int? {
+    nonisolated func node(at path: String) -> Int? {
         let root = self.path(0)
         var p = (path as NSString).standardizingPath
         // A whole-disk scan is rooted at the Data volume; /Users/… lives there.

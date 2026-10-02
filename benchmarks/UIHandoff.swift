@@ -48,7 +48,7 @@ struct UIHandoff {
         model.showFreeSpace = false
         let window = NSWindow(contentRect: NSRect(x: 80, y: 80, width: 1240, height: 900),
                               styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
-        window.title = "BlitzTree performance harness"
+        window.title = "AppleTree performance harness"
         window.contentView = NSHostingView(rootView: ContentView(model: model).preferredColorScheme(.dark))
         window.makeKeyAndOrderFront(nil)
         let runs = CommandLine.arguments.count > 2 ? Int(CommandLine.arguments[2])! : 5

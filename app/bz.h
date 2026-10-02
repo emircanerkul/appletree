@@ -1,8 +1,9 @@
-// C bridge to the blitztree Rust scan engine.
+// C bridge to the appletree Rust scan engine.
 #ifndef BZ_H
 #define BZ_H
 
 #include <stdint.h>
+#include <removefile.h> // removefile / REMOVEFILE_RECURSIVE, used by Swift
 
 typedef struct BzScan BzScan;
 

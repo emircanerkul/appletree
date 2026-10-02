@@ -3,7 +3,7 @@
 
 Sources are frozen in a temporary directory; only the harness's ContentView gets
 an injected model and loses launch-time scan/agent callbacks. No preferences in
-the installed BlitzTree bundle are changed. Run the binary with a scan path.
+the installed AppleTree bundle are changed. Run the binary with a scan path.
 """
 import argparse
 import pathlib
@@ -19,7 +19,7 @@ parser.add_argument("--output", type=pathlib.Path, required=True)
 parser.add_argument("--wmo", action="store_true")
 parser.add_argument("--ui-current", action="store_true", help="Use current Model/ContentView with --ref renderers")
 args = parser.parse_args()
-work = pathlib.Path(tempfile.mkdtemp(prefix="blitztree-handoff-"))
+work = pathlib.Path(tempfile.mkdtemp(prefix="appletree-handoff-"))
 try:
     files = []
     for path in sorted((ROOT / "app").glob("*.swift")):
@@ -51,7 +51,7 @@ try:
                     "-import-objc-header", str(ROOT / "app/bz.h"),
                     "-O", "-parse-as-library", "-swift-version", "6", "-default-isolation", "MainActor",
                     *( ["-whole-module-optimization"] if args.wmo else [] ),
-                    "-target", "arm64-apple-macos14.0", "-L", str(ROOT / "target/release"), "-lblitztree",
+                    "-target", "arm64-apple-macos14.0", "-L", str(ROOT / "target/release"), "-lappletree",
                     "-framework", "AppKit", "-framework", "SwiftUI", "-o", str(args.output.resolve())], check=True)
 finally:
     shutil.rmtree(work)

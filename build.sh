@@ -1,5 +1,5 @@
 #!/bin/zsh
-# Build BlitzTree.app: Rust engine + Swift UI, assembled into a bundle.
+# Build AppleTree.app: Rust engine + Swift UI, assembled into a bundle.
 set -euo pipefail
 cd "$(dirname "$0")"
 [[ -f "$HOME/.cargo/env" ]] && source "$HOME/.cargo/env"
@@ -12,37 +12,44 @@ export MACOSX_DEPLOYMENT_TARGET=$MIN_MACOS
 echo "==> Rust engine"
 cargo build --release
 
-APP=build/BlitzTree.app
+APP=build/AppleTree.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
 echo "==> Swift UI"
+# -default-isolation needs Swift 6.1 (Xcode 16.3+). Probe it.
+if ! echo 'func bzProbe() {}' | swiftc -swift-version 6 -default-isolation MainActor -typecheck - >/dev/null 2>&1; then
+    echo "error: the installed Swift predates 6.1 and cannot build the UI;" >&2
+    echo "       default-MainActor isolation needs Xcode 16.3 or newer." >&2
+    exit 1
+fi
 swiftc app/*.swift \
     -import-objc-header app/bz.h \
     -O -parse-as-library -swift-version 6 -default-isolation MainActor \
     -target arm64-apple-macos$MIN_MACOS \
-    -L target/release -lblitztree \
+    -L target/release -lappletree \
     -framework AppKit -framework SwiftUI \
-    -o "$APP/Contents/MacOS/BlitzTree"
+    -o "$APP/Contents/MacOS/AppleTree"
 
 cat > "$APP/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleName</key><string>BlitzTree</string>
-    <key>CFBundleDisplayName</key><string>BlitzTree</string>
-    <key>CFBundleIdentifier</key><string>dev.ahmed.blitztree</string>
+    <key>CFBundleName</key><string>AppleTree</string>
+    <key>CFBundleDisplayName</key><string>AppleTree</string>
+    <key>CFBundleIdentifier</key><string>dev.emircan.appletree</string>
     <key>CFBundleVersion</key><string>$VERSION</string>
     <key>CFBundleShortVersionString</key><string>$VERSION</string>
-    <key>CFBundleExecutable</key><string>BlitzTree</string>
+    <key>CFBundleExecutable</key><string>AppleTree</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>LSMinimumSystemVersion</key><string>$MIN_MACOS</string>
     <key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundleIconName</key><string>AppIcon</string>
     <key>NSHighResolutionCapable</key><true/>
-    <key>NSHumanReadableCopyright</key><string>Ahmed Khaleel</string>
+    <key>NSHumanReadableCopyright</key><string>Emircan ERKUL</string>
+    <key>CFBundleDevelopmentRegion</key><string>en</string>
 </dict>
 </plist>
 EOF
@@ -54,15 +61,28 @@ xcrun actool "$PWD/assets/AppIcon.icon" --compile "$PWD/$APP/Contents/Resources"
     --platform macosx --target-device mac --minimum-deployment-target $MIN_MACOS \
     --app-icon AppIcon --output-partial-info-plist "$PWD/build/icon-partial.plist" >/dev/null
 
+# Classic .lproj Localizable.strings tables (swiftc, no Xcode build system).
+for LPROJ in app/*.lproj; do
+    cp -R "$LPROJ" "$APP/Contents/Resources/"
+done
+
 # Prefer a real identity: stable code requirement -> TCC/FDA grants survive
 # rebuilds. Developer ID (paid program) with the hardened runtime and a secure
 # timestamp is what notarization needs; Apple Development is the fallback.
+# The Developer ID key lives in its own keychain so codesign never prompts;
+# unlock it if this machine has one.
+SIGN_KC="$HOME/Library/Keychains/appletree-signing.keychain-db"
+SIGN_PASS="$HOME/.config/appletree-signing/keychain.pass"
+if [[ -f "$SIGN_KC" && -f "$SIGN_PASS" ]]; then
+    security unlock-keychain -p "$(<"$SIGN_PASS")" "$SIGN_KC"
+fi
 IDS=$(security find-identity -v -p codesigning 2>/dev/null)
 IDENTITY=$(awk -F'"' '/Developer ID Application/{print $2; exit}' <<<"$IDS")
 if [[ -n "$IDENTITY" ]]; then
-    codesign --force --options runtime --timestamp --sign "$IDENTITY" "$APP"
+    SIGN=(codesign --force --options runtime --timestamp --sign "$IDENTITY")
 else
     IDENTITY=$(awk -F'"' '/Apple Development/{print $2; exit}' <<<"$IDS")
-    codesign --force --sign "${IDENTITY:--}" "$APP"
+    SIGN=(codesign --force --sign "${IDENTITY:--}")
 fi
+"${SIGN[@]}" "$APP"
 echo "==> Built $APP"

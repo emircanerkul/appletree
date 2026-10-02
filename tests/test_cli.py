@@ -6,12 +6,12 @@ import subprocess
 import tempfile
 import unittest
 
-BIN = Path(os.environ.get("BLITZTREE_BIN", Path(__file__).resolve().parents[1] / "target/release/blitztree"))
+BIN = Path(os.environ.get("APPLETREE_BIN", Path(__file__).resolve().parents[1] / "target/release/appletree"))
 
 
 class AgentCLITests(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(prefix="blitztree-api-")
+        self.temp = tempfile.TemporaryDirectory(prefix="appletree-api-")
         self.root = Path(self.temp.name).resolve()
         self.home = self.root / "home"
         self.home.mkdir()

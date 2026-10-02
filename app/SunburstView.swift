@@ -388,7 +388,9 @@ final class SunburstNSView: NSView {
 
         if !highlights.isEmpty {
             if litSegments == nil {
-                let wanted = Set(highlights)
+                // Folders deeper than the rings light the arc that holds them.
+                let drawn = Dictionary(segments.indices.map { (segments[$0].node, $0) }) { a, _ in a }
+                let wanted = Set(highlights.compactMap { node in tree.drawn(node) { drawn[$0] != nil } })
                 litSegments = segments.indices.filter { wanted.contains(segments[$0].node) }
             }
             let lit = litSegments ?? []
@@ -417,7 +419,9 @@ final class SunburstNSView: NSView {
             ctx.strokePath()
         }
 
-        if let sel = model.selection, let i = segments.firstIndex(where: { $0.node == sel }) {
+        if let sel = model.selection,
+           let shown = tree.drawn(sel, isDrawn: { node in segments.contains { $0.node == node } }),
+           let i = segments.firstIndex(where: { $0.node == shown }) {
             ctx.addPath(segmentPaths[i])
             ctx.setStrokeColor(NSColor.controlAccentColor.cgColor)
             ctx.setLineWidth(2)
@@ -443,20 +447,20 @@ final class SunburstNSView: NSView {
             let s = segments[i]
             size = s.bytes
             switch s.node {
-            case -1: title = "Free space"
-            case -2: title = "\(Fmt.num(UInt64(s.count))) smaller items"
+            case -1: title = String(localized: "Free space")
+            case -2: title = String(localized: "\(Fmt.num(UInt64(s.count))) smaller items")
             default:
                 title = tree.name(s.node)
                 detail = String(format: "%.1f%%", 100 * Double(s.bytes) / Double(rootBytes))
             }
         } else if hoveringCenter && model.viewRoot != 0 {
             let p = Int(tree.parents[model.viewRoot])
-            title = "Back to \(p == 0 || p == Int(UInt32.max) ? rootName(model) : tree.name(p))"
+            title = String(localized: "Back to \(p == 0 || p == Int(UInt32.max) ? rootName(model) : tree.name(p))")
             size = tree.alloc[p == Int(UInt32.max) ? 0 : p]
         } else {
             title = model.viewRoot == 0 ? rootName(model) : tree.name(model.viewRoot)
             size = tree.alloc[model.viewRoot]
-            detail = "\(Fmt.num(UInt64(tree.nFiles[model.viewRoot]))) files"
+            detail = String(localized: "\(Fmt.num(UInt64(tree.nFiles[model.viewRoot]))) files")
         }
 
         let width = (radii[0] - 12) * 1.7
@@ -494,7 +498,7 @@ final class SunburstNSView: NSView {
 
     private func rootName(_ model: ScanModel) -> String {
         let p = model.scanRoot
-        if p == "/System/Volumes/Data" { return "Macintosh HD" }
+        if p == "/System/Volumes/Data" { return String(localized: "Macintosh HD") }
         let last = (p as NSString).lastPathComponent
         return last.isEmpty ? p : last
     }

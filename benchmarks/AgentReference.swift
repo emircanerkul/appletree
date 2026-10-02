@@ -72,7 +72,7 @@ nonisolated final class ReferenceAgentStreamReader: @unchecked Sendable {
     /// Codex app server: say hello; the rest follows its replies.
     func begin() {
         send(["id": 1, "method": "initialize",
-              "params": ["clientInfo": ["name": "blitztree", "title": "BlitzTree", "version": "1"]]])
+              "params": ["clientInfo": ["name": "appletree", "title": "AppleTree", "version": "1"]]])
     }
 
     private func send(_ message: [String: Any]) {
@@ -248,10 +248,10 @@ nonisolated enum ReferenceAgentPrompt {
         files.sort { tree.alloc[$0] > tree.alloc[$1] }
 
         var md = """
-        You are the cleanup agent inside BlitzTree, a macOS disk-space app. The user clicked \
+        You are the cleanup agent inside AppleTree, a macOS disk-space app. The user clicked \
         "Clean up" and is watching a live view of your steps, so be fast. Their home folder is \(home).
 
-        Below is BlitzTree's scan (\(scanRoot == "/System/Volumes/Data" ? "whole disk" : scanRoot), \
+        Below is AppleTree's scan (\(scanRoot == "/System/Volumes/Data" ? "whole disk" : scanRoot), \
         allocated sizes, measured seconds ago). Use it; do not re-scan the disk. Most plans need no \
         commands at all. Only check what you really cannot judge from the tables, batched (one \
         `du -sk a b c` beats several), at most 3 commands.
@@ -266,12 +266,13 @@ nonisolated enum ReferenceAgentPrompt {
           - bytes: size in bytes.
           - paths: the absolute paths it covers.
           - action: "command" when the owning tool has its own cleanup and the item is that tool's \
-        cache, otherwise "trash" (BlitzTree moves the paths to the Trash itself). BlitzTree only runs \
+        cache, otherwise "trash" (AppleTree moves the paths to the Trash itself). AppleTree only runs \
         commands starting with one of: `uv cache clean`, `bun pm cache rm`, `npm cache clean --force`, \
         `pnpm store prune`, `yarn cache clean`, `brew cleanup --prune=all`, `docker system prune -f`, \
-        `docker builder prune -f`, `xcrun simctl delete unavailable`, `pip cache purge`, \
-        `ollama rm <model>`, `go clean -modcache`, `gem cleanup`, `pod cache clean --all`, \
-        `conda clean -a -y`. Nothing else, no pipes, `;`, `$` or globs; it must not prompt.
+        `docker builder prune -f`, `xcrun simctl delete unavailable`, `xcrun simctl runtime delete <id>`, \
+        `xcrun simctl erase <udid>`, `pip cache purge`, `ollama rm <model>`, `go clean -modcache`, \
+        `gem cleanup`, `pod cache clean --all`, `conda clean -a -y`. Nothing else, no pipes, `;`, `$` or \
+        globs; it must not prompt.
           - command: the exact command for "command", "" for "trash".
         `npm cache clean` only empties ~/.npm/_cacache; ~/.npm/_npx is a separate "trash" item. Only \
         list caches that appear in the tables above with their real size; skip ones that are not there.
@@ -280,14 +281,15 @@ nonisolated enum ReferenceAgentPrompt {
         Never include: ~/Documents, ~/Desktop, ~/Pictures, the Photos library, ~/Movies, ~/Music, Mail, \
         Messages, iCloud Drive (~/Library/Mobile Documents), keychains, ~/.ssh, dotfile configs, source \
         code, git repositories themselves, or files of the running apps below. Build output inside \
-        projects (node_modules, target, .next, dist, DerivedData) is fine.
+        projects (node_modules, target, .next, dist, DerivedData) is fine, and so are the Codex chat \
+        folders and Xcode simulators listed at the end.
 
         ## Apps running now
         \(running.joined(separator: ", "))
 
         """
         if !known.isEmpty {
-            md += "\n## Recognised by BlitzTree as rebuildable\n\n| Size | Path | What |\n|---:|---|---|\n"
+            md += "\n## Recognised by AppleTree as rebuildable\n\n| Size | Path | What |\n|---:|---|---|\n"
             for item in known.prefix(120) {
                 md += "| \(Fmt.size(item.bytes)) | \(item.path) | \(item.kind) |\n"
             }

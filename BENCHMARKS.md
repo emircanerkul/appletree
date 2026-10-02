@@ -16,7 +16,7 @@ is `/usr/bin/time -l`'s "peak memory footprint".
 
 ## Scan engines
 
-| target | BlitzTree | [disktree](https://github.com/tobi/disktree) 0.10.1 | |
+| target | AppleTree | [disktree](https://github.com/tobi/disktree) 0.10.1 | |
 |---|---|---|---|
 | home folder (3.1M entries, 227.9 GB) | **10.2 s** (9.9–10.4) | 14.7 s (14.4–15.9) | 1.43× |
 | whole data volume (4.0M entries, 303.5 GB) | **12.6 s** (12.4–13.0) | 18.2 s (18.1–19.3) | 1.45× |
@@ -31,7 +31,7 @@ walk takes 14.4 s and `du -skx` takes 65.3 s.
 Both apps scanning `~/.t3` (720k entries, nothing that needs Full Disk
 Access), three launches each, as reported in each app's status bar:
 
-| | BlitzTree | disktree 0.10.1 |
+| | AppleTree | disktree 0.10.1 |
 |---|---|---|
 | scan time | **1.4–1.5 s** | 3.1–3.2 s |
 | memory after the scan | 237–279 MB | 242–272 MB |
@@ -39,7 +39,7 @@ Access), three launches each, as reported in each app's status bar:
 The finished apps use about the same memory: both keep the whole tree
 loaded for the UI.
 
-BlitzTree scanning the whole data volume in the app takes 13.3–14.0 s when
+AppleTree scanning the whole data volume in the app takes 13.3–14.0 s when
 the machine is quiet and up to 20 s under heavy load. The in-app time is the
 engine scan plus about 0.15 s to hand the tree to the UI.
 
@@ -50,9 +50,9 @@ engine scan plus about 0.15 s to hand the tree to the UI.
   within 2 MB (files being written during the runs).
 - `df` shows 318.7 GB used; the 15.2 GB gap is root-only system data
   (Spotlight index, logs and the like, 231 folders) that no unprivileged app
-  can read. BlitzTree shows that gap in its status bar.
-- BlitzTree counts every name of a hard-linked file in the file count but
-  its bytes once; disktree drops the extra names. That is why BlitzTree lists
+  can read. AppleTree shows that gap in its status bar.
+- AppleTree counts every name of a hard-linked file in the file count but
+  its bytes once; disktree drops the extra names. That is why AppleTree lists
   about 1% more files for identical totals.
 
 ## Findings

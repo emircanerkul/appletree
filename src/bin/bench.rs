@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
-use blitztree::{scan, Progress};
+use appletree::{scan, Progress};
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -56,7 +56,7 @@ fn main() {
             )
         }
         "ffi" | "digest" => {
-            use blitztree::ffi::*;
+            use appletree::ffi::*;
             let path = std::ffi::CString::new(path.as_os_str().as_encoded_bytes()).unwrap();
             let handle = bz_scan_start(path.as_ptr());
             let (mut files, mut dirs, mut bytes, mut done) = (0, 0, 0, 0);
@@ -107,7 +107,7 @@ fn main() {
         }
         "bulk-count" => {
             let progress = Progress::default();
-            blitztree::scan_count(&path, &progress);
+            appletree::scan_count(&path, &progress);
             (
                 progress.files.load(Ordering::Relaxed),
                 progress.dirs.load(Ordering::Relaxed),
@@ -117,7 +117,7 @@ fn main() {
         }
         "searchfs" => {
             let progress = Progress::default();
-            match blitztree::searchfs::catalog_dump(&path, &progress) {
+            match appletree::searchfs::catalog_dump(&path, &progress) {
                 Ok(entries) => {
                     let e = entries.len();
                     eprintln!("  ({e} catalog entries)");

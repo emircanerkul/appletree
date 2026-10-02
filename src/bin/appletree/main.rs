@@ -1,7 +1,7 @@
 //! A local JSON interface. No network, subprocesses, agent launch or deletion.
 mod report;
 
-use blitztree::{cleanup, scan, Progress};
+use appletree::{cleanup, scan, Progress};
 use serde_json::{json, Value};
 use std::io::{self, Write};
 use std::os::macos::fs::MetadataExt;
@@ -9,7 +9,7 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::Ordering;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
-const HELP: &str = "blitztree <scan|quick-wins> [--root PATH] [--min-bytes N] [--limit N]\n\
+const HELP: &str = "appletree <scan|quick-wins> [--root PATH] [--min-bytes N] [--limit N]\n\
 Read-only local disk analysis for macOS. Outputs one JSON object to stdout.\n\
 Default root: your home. Default threshold: 50,000,000 bytes (same as the Clean Up panel). Default limit: 20 (max 1000).\n\
 quick-wins exposes the same folder candidates as the Clean Up panel; review before acting.\n\
@@ -98,7 +98,7 @@ fn run() -> Result<Value, (i32, String)> {
     }
     if args == ["--version"] {
         return Ok(
-            json!({"schema_version": 1, "tool": "blitztree", "version": env!("CARGO_PKG_VERSION")}),
+            json!({"schema_version": 1, "tool": "appletree", "version": env!("CARGO_PKG_VERSION")}),
         );
     }
     let command = &args[0];
@@ -176,7 +176,7 @@ fn run() -> Result<Value, (i32, String)> {
     let cloud = progress.skipped_cloud_dirs.load(Ordering::Relaxed);
     let mounts = progress.skipped_mount_points.load(Ordering::Relaxed);
     Ok(json!({
-        "schema_version": 1, "tool": "blitztree", "version": env!("CARGO_PKG_VERSION"),
+        "schema_version": 1, "tool": "appletree", "version": env!("CARGO_PKG_VERSION"),
         "command": command, "read_only": true, "root": root,
         "generated_at_unix": SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs(),
         "scan_seconds": elapsed,

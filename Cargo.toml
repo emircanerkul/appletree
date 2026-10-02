@@ -1,14 +1,15 @@
 [package]
-name = "blitztree"
-version = "0.5.1"
+name = "appletree"
+version = "0.0.1"
 edition = "2021"
+license = "MIT AND CC-BY-NC-SA-4.0"
 
 [lib]
 crate-type = ["staticlib", "rlib"]
 
 [[bin]]
-name = "blitztree"
-path = "src/bin/blitztree/main.rs"
+name = "appletree"
+path = "src/bin/appletree/main.rs"
 required-features = ["cli"]
 
 [features]

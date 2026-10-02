@@ -79,7 +79,7 @@ struct CleanupPanel: View {
     var body: some View {
         Group {
             if let run = model.agentRun {
-                AgentRunView(run: run, model: model, retry: { model.startAgent(run.agent) }) {
+                AgentRunView(run: run, model: model, retry: { model.restart(run) }) {
                     run.cancel()
                     withAnimation(.snappy) { model.agentRun = nil }
                 }
@@ -89,7 +89,7 @@ struct CleanupPanel: View {
                     .transition(.opacity)
             }
         }
-        .confirmationDialog(picked.count == 1 ? "Move 1 folder to the Trash?" : "Move \(picked.count) folders to the Trash?", isPresented: $confirming) {
+        .confirmationDialog(picked.count == 1 ? "Move 1 folder to the Trash?" : "Move \(String(picked.count)) folders to the Trash?", isPresented: $confirming) {
             Button("Move to Trash (\(Fmt.size(pickedBytes)))", role: .destructive) { trashPicked() }
             Button("Cancel", role: .cancel) {}
         } message: {
@@ -108,7 +108,7 @@ struct CleanupPanel: View {
                 Text("Reclaimable")
                     .font(.headline)
                 Text(model.cleanup.isEmpty ? "Nothing large to clean up"
-                     : "\(Fmt.size(totalBytes)) in \(model.cleanup.count) folders")
+                     : "\(Fmt.size(totalBytes)) in \(String(model.cleanup.count)) folders")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
@@ -137,7 +137,7 @@ struct CleanupPanel: View {
                 }
                 .contentShape(Rectangle())
                 .help(item.display)
-                .onTapGesture { model.selection = item.node }
+                .onTapGesture { model.reveal(item.node) }
                 .contextMenu {
                     Button("Reveal in Finder") {
                         NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: item.path)])
@@ -155,7 +155,7 @@ struct CleanupPanel: View {
                     confirming = true
                 } label: {
                     Text(picked.isEmpty ? "Select folders to clean up"
-                         : "Move \(picked.count) to Trash · \(Fmt.size(pickedBytes))")
+                         : "Move \(String(picked.count)) to Trash · \(Fmt.size(pickedBytes))")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
@@ -179,10 +179,16 @@ struct CleanupPanel: View {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
                 .help("\(agent.kind.name) reads this scan and suggests what can go. Nothing is removed until you say so.")
-                if model.agentEnv.ready.count > 1 {
+                if model.agentEnv.ready.count > 1 || !model.providerStore.providers.isEmpty {
                     Menu {
                         ForEach(model.agentEnv.ready) { other in
                             Button("Clean up with \(other.kind.name)") { model.startAgent(other) }
+                        }
+                        if !model.providerStore.providers.isEmpty {
+                            Divider()
+                            ForEach(model.providerStore.providers) { provider in
+                                Button("Clean up with \(provider.displayName)") { model.startProvider(provider) }
+                            }
                         }
                     } label: {
                         Image(systemName: "chevron.down")
@@ -196,6 +202,22 @@ struct CleanupPanel: View {
                 }
             }
             .disabled(model.tree == nil || model.scanning)
+        } else if let provider = model.preferredProvider ?? model.providerStore.providers.first {
+            // A custom endpoint needs no install or sign-in: it is ready once
+            // its model and key are set in Settings. Preferred when picked in
+            // Settings, else the first configured provider leads and the CLI
+            // sign-in offer stays in Settings — one planner, one call to
+            // action, no stack of alternatives under the button.
+            Button {
+                model.startProvider(provider)
+            } label: {
+                Label("Clean up with \(provider.displayName)", systemImage: "sparkles")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .disabled(model.tree == nil || model.scanning)
+            .help("\(provider.displayName) reads this scan and suggests what can go. Nothing is removed until you say so.")
         } else if let setup = model.agentSetup {
             SetupProgress(setup: setup) {
                 setup.cancel()
@@ -219,7 +241,7 @@ struct CleanupPanel: View {
                 Label("Let AI clean up for you", systemImage: "sparkles")
                     .font(.headline)
                 Text(installed == nil
-                     ? "\(kind.name) reads this scan and plans what can go. \(kind == .codex ? "Free with a ChatGPT account." : "Needs a Claude Pro plan.")"
+                     ? "\(kind.name) reads this scan and plans what can go. \(kind == .codex ? String(localized: "Free with a ChatGPT account.") : String(localized: "Needs a Claude Pro plan."))"
                      : "Sign in to \(kind.name) and it plans what can go from this scan.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
@@ -238,6 +260,13 @@ struct CleanupPanel: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity)
+            HStack(spacing: 4) {
+                Text("Or").font(.caption).foregroundStyle(.tertiary)
+                SettingsLink { Text("Add a model provider").font(.caption) }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity)
         }
     }
 
@@ -254,7 +283,7 @@ struct CleanupPanel: View {
 // MARK: - Agent run
 
 /// The agent's work, live: its steps while it looks, the plan as it is
-/// written, then BlitzTree's own cleanup and the space it gave back.
+/// written, then AppleTree's own cleanup and the space it gave back.
 private struct AgentRunView: View {
     let run: AgentRun
     let model: ScanModel
@@ -289,8 +318,8 @@ private struct AgentRunView: View {
                     if run.phase == .thinking || !run.items.isEmpty {
                         steps
                     }
-                    if !safe.isEmpty { section("Safe to remove", safe) }
-                    if !ask.isEmpty { section("Your call", ask) }
+                    if !safe.isEmpty { section(String(localized: "Safe to remove"), safe) }
+                    if !ask.isEmpty { section(String(localized: "Your call"), ask) }
                     if run.phase == .thinking {
                         SkeletonCard()
                         if run.items.isEmpty { SkeletonCard().opacity(0.6) }
@@ -353,48 +382,48 @@ private struct AgentRunView: View {
 
     private var title: String {
         switch run.phase {
-        case .thinking: "\(run.agent.kind.name) is looking"
-        case .planned: run.items.isEmpty ? "Nothing worth removing" : "Here's the plan"
-        case .trashing: "Moving to the Trash"
-        case .staged: "In the Trash"
-        case .deleting: "Deleting"
-        case .done: "All clean"
-        case .failed: "\(run.agent.kind.name) couldn't finish"
+        case .thinking: String(localized: "\(run.displayName) is looking")
+        case .planned: run.items.isEmpty ? String(localized: "Nothing worth removing") : String(localized: "Here's the plan")
+        case .trashing: String(localized: "Moving to the Trash")
+        case .staged: String(localized: "In the Trash")
+        case .deleting: String(localized: "Deleting")
+        case .done: String(localized: "All clean")
+        case .failed: String(localized: "\(run.displayName) couldn't finish")
         }
     }
 
     private var subtitle: String {
         switch run.phase {
-        case .thinking: run.items.isEmpty ? "Reading your scan, nothing is touched" : "Writing the plan"
+        case .thinking: run.items.isEmpty ? String(localized: "Reading your scan, nothing is touched") : String(localized: "Writing the plan")
         case .planned: run.summary
-        case .trashing: "Nothing is deleted yet"
+        case .trashing: String(localized: "Nothing is deleted yet")
         case .staged: stagedLine
-        case .deleting: "Only what this cleanup moved; the rest of your Trash stays"
+        case .deleting: String(localized: "Only what this cleanup moved; the rest of your Trash stays")
         case .done: finishedLine
-        case .failed: "Nothing was changed."
+        case .failed: String(localized: "Nothing was changed.")
         }
     }
 
     private var heroLine: String {
-        guard run.phase == .done else { return "ready to delete" }
+        guard run.phase == .done else { return String(localized: "ready to delete") }
         // Less can come back than the cards said: clones share blocks, and a
         // tool's own cleanup may leave part of its folder.
         if let back = run.reclaimed, run.freed > back + back / 10 {
-            return "back on your disk · the cards estimated \(Fmt.size(run.freed))"
+            return String(localized: "back on your disk · the cards estimated \(Fmt.size(run.freed))")
         }
-        return "back on your disk"
+        return String(localized: "back on your disk")
     }
 
     private var stagedLine: String {
         let waiting = run.targets.contains { $0.isCommand && $0.status == .waiting }
-        return waiting ? "Put anything back from the Trash, or delete it for good. Tool caches are cleared then too."
-            : "Put anything back from the Trash, or delete it for good."
+        return waiting ? String(localized: "Put anything back from the Trash, or delete it for good. Tool caches are cleared then too.")
+            : String(localized: "Put anything back from the Trash, or delete it for good.")
     }
 
     private var finishedLine: String {
         let failed = run.items.filter { if case .failed = $0.status { true } else { false } }.count
-        if failed > 0 { return failed == 1 ? "One item couldn't be cleaned." : "\(failed) items couldn't be cleaned." }
-        return run.freed > 0 ? "Rescanned. The map is up to date." : "Nothing needed doing."
+        if failed > 0 { return failed == 1 ? String(localized: "One item couldn't be cleaned.") : String(localized: "\(String(failed)) items couldn't be cleaned.") }
+        return run.freed > 0 ? String(localized: "Rescanned. The map is up to date.") : String(localized: "Nothing needed doing.")
     }
 
     // MARK: Steps
@@ -415,7 +444,7 @@ private struct AgentRunView: View {
                         }
                     }
                     .frame(width: 14)
-                    Text(run.phase == .thinking ? step : "Planned in \(Int((run.planSeconds ?? 0).rounded())) s")
+                    Text(run.phase == .thinking ? step : String(localized: "Planned in \(String(Int((run.planSeconds ?? 0).rounded()))) s"))
                         .font(.callout)
                         .foregroundStyle(live ? .primary : .secondary)
                         .lineLimit(1)
@@ -438,7 +467,7 @@ private struct AgentRunView: View {
                 PlanCard(item: item, editable: run.phase == .planned, current: run.current == item.id) {
                     guard let tree = model.tree, let path = item.paths.first,
                           let node = tree.node(at: path) else { return }
-                    model.selection = node
+                    model.reveal(node)
                 }
                 .transition(.asymmetric(insertion: .move(edge: .bottom).combined(with: .opacity), removal: .opacity))
             }
