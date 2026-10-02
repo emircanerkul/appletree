@@ -60,6 +60,18 @@ nonisolated final class Tree: @unchecked Sendable {
         return String(cString: label)
     }
 
+    /// The node at an absolute path, if the scan covered it. NSString
+    /// normalization and the "/System/Volumes/Data" root-refix happen here;
+    /// the engine resolves the already-refixed path against the name blob.
+    nonisolated func node(at path: String) -> Int? {
+        let root = self.path(0)
+        var p = (path as NSString).standardizingPath
+        // A whole-disk scan is rooted at the Data volume; /Users/… lives there.
+        if root == "/System/Volumes/Data", !p.hasPrefix(root + "/") { p = root + p }
+        let found = bz_node_at_path(handle, p)
+        return found == UInt64.max ? nil : Int(found)
+    }
+
     func name(_ i: Int) -> String {
         let start = Int(nameOff[i])
         let end = Int(nameOff[i + 1])

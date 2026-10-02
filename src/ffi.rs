@@ -207,6 +207,55 @@ pub extern "C" fn bz_errors(h: *mut BzScan) -> u64 {
     h.flat.as_ref().map_or(0, |f| f.tree.errors)
 }
 
+/// Resolve an absolute path (already normalized and scan-root-prefixed by the
+/// Swift caller) to its node index; `u64::MAX` when any component is missing.
+/// The root's name is the scanned path (e.g. "/System/Volumes/Data"), so the
+/// path must equal it or extend it with "/"; matching starts after those
+/// bytes. NSString normalization and the "/System/Volumes/Data" root-refix
+/// stay Swift-side: this call takes the final, refixed path only. Matched
+/// against the UTF-8 name blob, no allocation per component.
+///
+/// # Safety
+/// `h` must be a live scan handle obtained from `bz_scan_start`, with no
+/// concurrent mutation or free; `path` must point to a NUL-terminated UTF-8
+/// string that is only read during the call. A null `path` or a handle whose
+/// scan has not finished yet (no flat tree) returns `u64::MAX` rather than
+/// crashing.
+#[no_mangle]
+pub unsafe extern "C" fn bz_node_at_path(h: *mut BzScan, path: *const c_char) -> u64 {
+    const NOT_FOUND: u64 = u64::MAX;
+    if path.is_null() {
+        return NOT_FOUND;
+    }
+    let path = unsafe { CStr::from_ptr(path) }.to_bytes();
+    let Some(flat) = (unsafe { &*h }).flat.as_ref() else {
+        return NOT_FOUND;
+    };
+    let tree = &flat.tree;
+    // Mirror Swift path(0): the root's name minus one trailing slash (a "/"
+    // scan reads as ""), so the prefix rule below is uniform for every root.
+    let root = tree.name_bytes(0);
+    let root = if root.ends_with(b"/") { &root[..root.len() - 1] } else { root };
+    let rest = if path == root {
+        &[][..]
+    } else if path.len() > root.len() && path.starts_with(root) && path[root.len()] == b'/' {
+        &path[root.len() + 1..]
+    } else {
+        return NOT_FOUND;
+    };
+    let mut cur = 0usize;
+    'components: for part in rest.split(|&b| b == b'/').filter(|p| !p.is_empty()) {
+        for &child in tree.kids(cur) {
+            if tree.name_bytes(child as usize) == part {
+                cur = child as usize;
+                continue 'components;
+            }
+        }
+        return NOT_FOUND;
+    }
+    cur as u64
+}
+
 #[no_mangle]
 pub extern "C" fn bz_free(h: *mut BzScan) {
     if !h.is_null() {
@@ -275,5 +324,140 @@ mod tests {
         // own terminator rather than running into the next command's bytes.
         let last = unsafe { CStr::from_ptr(*table.add(count as usize - 1)) };
         assert_eq!(last.to_bytes(), b"pod cache clean --all");
+    }
+
+    /// Port of the deleted Swift `Tree.node(at:)` extension (Agent.swift,
+    /// removed in T4), kept as the differential oracle: the engine must agree
+    /// with the algorithm it replaced. `children`/`name` mirror the Swift
+    /// accessors over the same flat arrays; the `path(0)` trailing-slash
+    /// strip on the root name is Swift-specific and reproduced here.
+    fn swift_node_at_path(tree: &Tree, path: &str) -> Option<u64> {
+        let root_name = tree.name(0);
+        let root = root_name.strip_suffix('/').unwrap_or(root_name);
+        let prefix = if root == "/" { "/".to_string() } else { format!("{root}/") };
+        if path != root && !path.starts_with(&prefix) {
+            return None;
+        }
+        let mut cur = 0usize;
+        for part in path[root.len()..].split('/').filter(|p| !p.is_empty()) {
+            let next = tree
+                .kids(cur)
+                .iter()
+                .find(|&&c| tree.name(c as usize) == part)
+                .copied()?;
+            cur = next as usize;
+        }
+        Some(cur as u64)
+    }
+
+    fn scan_handle(tree: Tree) -> BzScan {
+        BzScan {
+            progress: Arc::new(Progress::default()),
+            done: Arc::new(AtomicBool::new(true)),
+            result: Arc::new(std::sync::Mutex::new(None)),
+            flat: Some(Box::new(Flat { tree, cleanup_nodes: Vec::new(), cleanup_descriptions: Vec::new() })),
+        }
+    }
+
+    fn at_path(h: *mut BzScan, path: &str) -> Option<u64> {
+        let p = CString::new(path).unwrap();
+        let r = unsafe { bz_node_at_path(h, p.as_ptr()) };
+        (r != u64::MAX).then_some(r)
+    }
+
+    #[test]
+    fn node_at_path_matches_the_old_swift_algorithm() {
+        let mut tree = Tree::with_root("/Users/me"); // scanned path, no strip
+        // Each directory's children go in one contiguous batch (run-based link).
+        let d = tree.push("Library", 0, 0, 0, true);
+        let _dot = tree.push("trailing.dot.", 0, 1, 1, false);
+        let _jp = tree.push("日本語フォルダ", d, 20, 20, true); // UTF-8
+        let c = tree.push("Caches", d, 0, 0, true);
+        let deep = tree.push("com.example App", c, 10, 10, false); // space
+        tree.link_children();
+
+        let mut handle = scan_handle(tree);
+        let h = &mut handle as *mut BzScan;
+        let cases = [
+            ("/Users/me", Some(0)),                     // the root itself
+            ("/Users/me/", Some(0)),                    // root with trailing slash
+            ("/Users/me/Library", Some(1)),
+            ("/Users/me/trailing.dot.", Some(2)),
+            ("/Users/me/Library/日本語フォルダ", Some(3)),
+            ("/Users/me/日本語フォルダ", None),   // it lives under Library
+            ("/Users/me/Library/Caches", Some(4)),
+            ("/Users/me/Library/Caches/com.example App", Some(deep as u64)),
+            ("/Users/me/Library/Caches/../Caches", None), // not normalized here
+            ("/Users/me/Library/Missing", None),        // missing component
+            ("/Users/me/Library/Caches/com.example App/x", None), // past a file
+            ("/Users/me//Library", Some(1)),            // empty component, tolerated
+            ("/", None),                                // other filesystem root
+            ("/Users", None),                           // proper prefix of root
+            ("/Users/meX", None),                       // near-miss root
+            ("", None),                                 // empty path
+            ("relative/path", None),                    // not absolute-prefixed
+        ];
+        for path in cases {
+            assert_eq!(at_path(h, path.0), path.1, "path {:?}", path.0);
+            assert_eq!(
+                at_path(h, path.0),
+                swift_node_at_path(&handle.flat.as_ref().unwrap().tree, path.0),
+                "oracle disagrees on {:?}",
+                path.0
+            );
+        }
+        assert_eq!(unsafe { bz_node_at_path(h, std::ptr::null()) }, u64::MAX);
+    }
+
+    #[test]
+    fn node_at_path_supports_slash_roots_and_data_refix() {
+        // A "/" scan: Swift path(0) strips the trailing slash to "", so the
+        // prefix rule degenerates to "starts with /" — the engine mirrors it.
+        let mut tree = Tree::with_root("/");
+        let d = tree.push("usr", 0, 0, 0, true);
+        tree.push("bin", d, 5, 5, true);
+        tree.link_children();
+        let mut handle = scan_handle(tree);
+        let h = &mut handle as *mut BzScan;
+        for path in ["/", "//", "/usr", "/usr/bin"] {
+            assert_eq!(
+                at_path(h, path),
+                swift_node_at_path(&handle.flat.as_ref().unwrap().tree, path),
+                "oracle disagrees on {path}"
+            );
+        }
+        assert_eq!(at_path(h, "/"), Some(0));
+        assert_eq!(at_path(h, "//"), Some(0));
+        assert_eq!(at_path(h, "/usr/bin"), Some(2));
+        assert_eq!(at_path(h, "/usr/nope"), None);
+
+        // The Data root-refix result: Swift prepends "/System/Volumes/Data"
+        // when a caller path misses it, then calls here with the refixed path.
+        let mut tree = Tree::with_root("/System/Volumes/Data");
+        tree.push("Users", 0, 0, 0, true);
+        tree.link_children();
+        let mut handle = scan_handle(tree);
+        let h = &mut handle as *mut BzScan;
+        assert_eq!(at_path(h, "/System/Volumes/Data/Users"), Some(1));
+        assert_eq!(
+            at_path(h, "/System/Volumes/Data"),
+            swift_node_at_path(&handle.flat.as_ref().unwrap().tree, "/System/Volumes/Data")
+        );
+        assert_eq!(at_path(h, "/Users"), None); // unrefixed caller path: miss
+
+        // Non-degenerate trailing-slash root: `AppleTree /Users/me/` on the
+        // CLI makes name(0) == "/Users/me/" — the strip branch must fire for
+        // more than just "/".
+        let mut tree = Tree::with_root("/Users/me/");
+        tree.push("docs", 0, 0, 0, true);
+        tree.link_children();
+        let mut handle = scan_handle(tree);
+        let h = &mut handle as *mut BzScan;
+        assert_eq!(at_path(h, "/Users/me"), Some(0)); // stripped root matches
+        assert_eq!(at_path(h, "/Users/me/docs"), Some(1));
+        assert_eq!(
+            at_path(h, "/Users/me/docs"),
+            swift_node_at_path(&handle.flat.as_ref().unwrap().tree, "/Users/me/docs")
+        );
     }
 }

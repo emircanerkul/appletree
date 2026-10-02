@@ -35,6 +35,16 @@ const char *bz_cleanup_description(BzScan *h, uint64_t index);
 const char *const *bz_cleanup_allowlist(void);
 uint64_t bz_cleanup_allowlist_count(void);
 
+// Resolve an absolute path to its tree node index; u64::MAX = not found.
+// Contract: `path` is already NSString-normalized and scan-root-prefixed by
+// the Swift caller, INCLUDING the "/System/Volumes/Data" root-refix (it stays
+// a Swift-side pre-check; the engine only takes the final, refixed path).
+// A path equal to the root's own name resolves to node 0; a missing
+// component returns u64::MAX. The path pointer is only read during the call.
+// Null path or a handle whose scan has not finished (no flat tree) also
+// returns u64::MAX; `h` must remain valid for the duration of the call.
+uint64_t bz_node_at_path(BzScan *h, const char *path);
+
 void bz_free(BzScan *h);
 
 #endif

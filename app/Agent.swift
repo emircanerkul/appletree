@@ -1452,20 +1452,3 @@ nonisolated enum AgentPrompt {
         return md
     }
 }
-
-extension Tree {
-    /// The node at an absolute path, if the scan covered it.
-    nonisolated func node(at path: String) -> Int? {
-        let root = self.path(0)
-        var p = (path as NSString).standardizingPath
-        // A whole-disk scan is rooted at the Data volume; /Users/… lives there.
-        if root == "/System/Volumes/Data", !p.hasPrefix(root + "/") { p = root + p }
-        guard p == root || p.hasPrefix(root == "/" ? "/" : root + "/") else { return nil }
-        var cur = 0
-        for part in p.dropFirst(root.count).split(separator: "/") {
-            guard let next = children(cur).first(where: { name(Int($0)) == part }) else { return nil }
-            cur = Int(next)
-        }
-        return cur
-    }
-}
