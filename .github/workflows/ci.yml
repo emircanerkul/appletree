@@ -42,3 +42,19 @@ jobs:
           echo "Selecting $LATEST"
           sudo xcode-select -s "$LATEST/Contents/Developer"
       - run: ./build.sh
+
+  swift-tests:
+    name: Swift guard tests
+    runs-on: macos-15 # same Xcode requirement as the build above
+    needs: swift
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: |
+          # Same Xcode selection as the swift job: build.sh-style swiftc flags
+          # need Swift 6.1+ (-default-isolation MainActor).
+          LATEST=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          echo "Selecting $LATEST"
+          sudo xcode-select -s "$LATEST/Contents/Developer"
+      # Never continue-on-error: the guard is the app's trust boundary (plan T8).
+      - run: tests/swift/run.sh
