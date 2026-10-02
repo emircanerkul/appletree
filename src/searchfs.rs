@@ -2,6 +2,11 @@
 //! WizTree's NTFS MFT read. The kernel iterates the filesystem catalog
 //! directly; we never open() a single directory. Entries arrive flat
 //! (with parent object IDs) and the tree is reconstructed afterwards.
+//!
+//! BENCH-ONLY: this module is deliberately excluded from the default
+//! library surface and compiles only under the `bench-tools` cargo
+//! feature (used by `src/bin/bench.rs`). It is kept as the reference
+//! implementation of the catalog-scan experiment (see BENCHMARKS.md).
 
 use std::ffi::{c_char, c_int, c_uint, c_ulong, c_void, CString};
 use std::path::Path;

@@ -10,7 +10,7 @@ every tool. The machine was in normal use (load average 5–9), so runs
 alternate between tools and the table shows the median of five, with the
 range in brackets.
 
-Engines are timed with `cargo run --release --bin bench -- bulk <path>` and
+Engines are timed with `cargo run --release --features bench-tools --bin bench -- bulk <path>` (the bench binary is behind the opt-in `bench-tools` feature) and
 disktree's own `disktree_core::scan::scan` with default options. Peak memory
 is `/usr/bin/time -l`'s "peak memory footprint".
 
