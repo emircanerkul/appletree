@@ -29,6 +29,12 @@ const uint32_t *bz_cleanup_nodes(BzScan *h);
 // index is a candidate-list index, not a tree node index. NULL out of range.
 const char *bz_cleanup_description(BzScan *h, uint64_t index);
 
+// The only cleanup commands AppleTree may run (S6), single source of truth.
+// Static data: valid for the program's lifetime, never freed. Read
+// allowlist[0..allowlist_count]; entries are NUL-terminated `char *`.
+const char *const *bz_cleanup_allowlist(void);
+uint64_t bz_cleanup_allowlist_count(void);
+
 void bz_free(BzScan *h);
 
 #endif

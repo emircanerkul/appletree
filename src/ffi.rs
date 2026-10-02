@@ -159,6 +159,48 @@ pub unsafe extern "C" fn bz_cleanup_description(h: *mut BzScan, index: u64) -> *
         .map_or(std::ptr::null(), |s| s.as_ptr())
 }
 
+/// NUL-terminated C copies of `cleanup::ALLOWLIST` plus the pointer array
+/// exposed over the bridge. `&str` literals are not NUL-terminated, so the C
+/// table cannot point at them directly. Initialized once, leaked for the
+/// program's lifetime by design, never freed, unaffected by `bz_free`.
+struct AllowlistTable {
+    // Owns the NUL-terminated buffers; `pointers` only points into them. The
+    // field is never read after initialization — it exists to keep the
+    // buffers alive for the program's lifetime.
+    #[allow(dead_code)]
+    cstrings: Vec<CString>,
+    pointers: Vec<*const c_char>,
+}
+
+// Safety: the pointers only reference buffers owned by `cstrings` in this
+// struct, which is never mutated after initialization and never dropped.
+unsafe impl Send for AllowlistTable {}
+unsafe impl Sync for AllowlistTable {}
+
+static ALLOWLIST_TABLE: std::sync::OnceLock<AllowlistTable> = std::sync::OnceLock::new();
+
+/// The cleanup-command allowlist, single source of truth in `cleanup::ALLOWLIST`.
+/// Entries stay valid for the program's lifetime and are never freed.
+#[no_mangle]
+pub extern "C" fn bz_cleanup_allowlist() -> *const *const c_char {
+    let table = ALLOWLIST_TABLE.get_or_init(|| {
+        let cstrings: Vec<CString> = cleanup::ALLOWLIST
+            .iter()
+            .map(|cmd| CString::new(*cmd).expect("allowlist command has no interior NUL"))
+            .collect();
+        let pointers = cstrings.iter().map(|s| s.as_ptr()).collect();
+        AllowlistTable { cstrings, pointers }
+    });
+    table.pointers.as_ptr()
+}
+
+/// Number of commands in the allowlist; the count is authoritative (no
+/// sentinel entry terminates the table).
+#[no_mangle]
+pub extern "C" fn bz_cleanup_allowlist_count() -> u64 {
+    cleanup::ALLOWLIST.len() as u64
+}
+
 #[no_mangle]
 pub extern "C" fn bz_errors(h: *mut BzScan) -> u64 {
     let h = unsafe { &*h };
@@ -204,5 +246,34 @@ mod tests {
             }
             assert!(unsafe { bz_cleanup_description(h, expected.len() as u64) }.is_null());
         }
+    }
+
+    #[test]
+    fn allowlist_round_trips_through_the_bridge() {
+        let count = bz_cleanup_allowlist_count();
+        assert_eq!(count as usize, cleanup::ALLOWLIST.len());
+        // No duplicates: a repeated entry would widen nothing but would show a
+        // command twice in the agent prompt.
+        assert_eq!(
+            cleanup::ALLOWLIST.iter().collect::<std::collections::HashSet<_>>().len(),
+            cleanup::ALLOWLIST.len()
+        );
+        let table = bz_cleanup_allowlist();
+        assert!(!table.is_null());
+        for (i, expected) in cleanup::ALLOWLIST.iter().enumerate() {
+            let ptr = unsafe { *table.add(i) };
+            assert!(!ptr.is_null());
+            let cmd = unsafe { CStr::from_ptr(ptr) };
+            assert_eq!(cmd.to_str().unwrap(), *expected);
+        }
+        // Known commands that must stay allowed, and one that must not appear.
+        for known in ["uv cache clean", "brew cleanup --prune=all", "pod cache clean --all"] {
+            assert!(cleanup::ALLOWLIST.contains(&known));
+        }
+        assert!(!cleanup::ALLOWLIST.contains(&"rm -rf /"));
+        // Entries are individually NUL-terminated C strings: each stops at its
+        // own terminator rather than running into the next command's bytes.
+        let last = unsafe { CStr::from_ptr(*table.add(count as usize - 1)) };
+        assert_eq!(last.to_bytes(), b"pod cache clean --all");
     }
 }

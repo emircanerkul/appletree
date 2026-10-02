@@ -317,19 +317,27 @@ nonisolated enum CleanupGuard {
         "Library/Calendars", "Library/Accounts", "Library/Application Scripts",
     ].map { home + "/" + $0 }
 
+    /// The allowlist, single source of truth in Rust (`src/cleanup.rs`), read
+    /// once through the bridge. Order is the table's: the agent prompt depends
+    /// on it to list commands exactly as Rust owns them.
+    static let allowlistCommands: [String] = {
+        let count = Int(bz_cleanup_allowlist_count())
+        // Empty means the bridge failed: the guard then blocks every command
+        // (fail closed). Do not fall back to a literal list here.
+        guard count > 0, let table = bz_cleanup_allowlist() else { return [] }
+        var commands: [String] = []
+        commands.reserveCapacity(count)
+        for i in 0..<count {
+            if let p = table[i] { commands.append(String(cString: p)) }
+        }
+        return commands
+    }()
+
     /// The only commands AppleTree runs: each tool's own cleanup, in exactly
     /// these forms (S6). No-argument commands must match to the letter; flag
-    /// variants are separate entries, not prefix matches.
-    static let commands: Set<String> = [
-        "uv cache clean", "uv cache prune", "bun pm cache rm", "npm cache clean",
-        "npm cache clean --force", "pnpm store prune", "yarn cache clean", "brew cleanup",
-        "brew cleanup --prune=all", "brew autoremove", "docker system prune",
-        "docker system prune -f", "docker image prune", "docker image prune -f",
-        "docker builder prune", "docker builder prune -f", "docker container prune",
-        "xcrun simctl delete unavailable", "conda clean", "conda clean -a -y", "mamba clean",
-        "pip cache purge", "pip3 cache purge", "go clean -cache", "go clean -modcache",
-        "gem cleanup", "pod cache clean --all",
-    ]
+    /// variants are separate entries, not prefix matches. Owned by Rust; this
+    /// is a lookup, not a second copy.
+    static let commands: Set<String> = Set(allowlistCommands)
 
     /// Commands that take exactly one trailing argument (a model, a runtime
     /// image, a device…). Nothing beyond that one token — no extra flags — is
@@ -494,8 +502,13 @@ final class PlanItem: Identifiable {
         // A cache that is just a folder goes through the Trash and AppleTree's
         // parallel delete: reversible in step one, and faster than the tool's
         // own single-threaded removal (bun took 20 s for 5 GB).
-        let plainCache = ["bun pm cache rm", "npm cache clean", "uv cache clean", "pip cache purge",
-                          "pip3 cache purge", "yarn cache clean"]
+        // The cache-clearing commands with no flag variants, straight from
+        // the Rust allowlist: exactly the no-flag `… cache clean|purge|rm`
+        // forms. (Flag variants like the npm force flag match by the
+        // same prefix, which is what this check wants.)
+        let plainCache = CleanupGuard.allowlistCommands.filter {
+            $0.hasSuffix(" cache clean") || $0.hasSuffix(" cache purge") || $0.hasSuffix(" pm cache rm")
+        }
         let trashable = spec.action == "command" && !asked.isEmpty
             && plainCache.contains { spec.command.hasPrefix($0) }
             && asked.allSatisfy { CleanupGuard.blockReason(path: $0) == nil && FileManager.default.fileExists(atPath: $0) }
@@ -1261,6 +1274,11 @@ nonisolated enum AgentPrompt {
 
         let (folders, files) = largestNodes(in: tree)
 
+        // The command list reads straight from the Rust-owned allowlist so
+        // the prompt can never drift from what the guard actually accepts.
+        // The one-argument forms stay literal: they have placeholders, not
+        // allowlist entries.
+        let allowlist = CleanupGuard.allowlistCommands.map { "`\($0)`" }.joined(separator: ", ")
         var md = """
         You are the cleanup agent inside AppleTree, a macOS disk-space app. The user clicked \
         "Clean up" and is watching a live view of your steps, so be fast. Their home folder is \(home).
@@ -1281,14 +1299,7 @@ nonisolated enum AgentPrompt {
           - paths: the absolute paths it covers.
           - action: "command" when the owning tool has its own cleanup and the item is that tool's \
         cache, otherwise "trash" (AppleTree moves the paths to the Trash itself). AppleTree only runs \
-        exactly one of these commands — no extra arguments or flags: `uv cache clean`, \
-        `uv cache prune`, `bun pm cache rm`, `npm cache clean`, `npm cache clean --force`, \
-        `pnpm store prune`, `yarn cache clean`, `brew cleanup`, `brew cleanup --prune=all`, \
-        `brew autoremove`, `docker system prune`, `docker system prune -f`, `docker image prune`, \
-        `docker image prune -f`, `docker builder prune`, `docker builder prune -f`, \
-        `docker container prune`, `xcrun simctl delete unavailable`, `conda clean`, \
-        `conda clean -a -y`, `mamba clean`, `pip cache purge`, `pip3 cache purge`, \
-        `go clean -cache`, `go clean -modcache`, `gem cleanup`, `pod cache clean --all` — \
+        exactly one of these commands — no extra arguments or flags: \(allowlist) — \
         or exactly one of: `ollama rm <model>`, `xcrun simctl runtime delete <id>`, \
         `xcrun simctl erase <udid>`. \
         Nothing else, no pipes, `;`, `$` or globs; it must not prompt.          - command: the exact command for "command", "" for "trash".

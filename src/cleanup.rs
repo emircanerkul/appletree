@@ -4,6 +4,41 @@ use crate::{Tree, NO_PARENT};
 
 pub const MIN_BYTES: u64 = 50_000_000;
 
+/// The only commands AppleTree runs: each tool's own cleanup, in exactly
+/// these forms (S6). No-argument commands must match to the letter; flag
+/// variants are separate entries, not prefix matches. This is the single
+/// source of truth: the Swift guard set and the agent prompt both read it
+/// through `bz_cleanup_allowlist`, in this exact order.
+pub const ALLOWLIST: &[&str] = &[
+    "uv cache clean",
+    "uv cache prune",
+    "bun pm cache rm",
+    "npm cache clean",
+    "npm cache clean --force",
+    "pnpm store prune",
+    "yarn cache clean",
+    "brew cleanup",
+    "brew cleanup --prune=all",
+    "brew autoremove",
+    "docker system prune",
+    "docker system prune -f",
+    "docker image prune",
+    "docker image prune -f",
+    "docker builder prune",
+    "docker builder prune -f",
+    "docker container prune",
+    "xcrun simctl delete unavailable",
+    "conda clean",
+    "conda clean -a -y",
+    "mamba clean",
+    "pip cache purge",
+    "pip3 cache purge",
+    "go clean -cache",
+    "go clean -modcache",
+    "gem cleanup",
+    "pod cache clean --all",
+];
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
     NodeModules,
