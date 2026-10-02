@@ -142,3 +142,21 @@
 
 "Save changes" = "Save changes";
 "HTTP %@: %@" = "HTTP %@: %@";
+
+/* Guard reason strings (T7): user-visible safety communication from
+   CleanupGuard.blockReason and the run planner. Mechanical first-pass
+   translations — please review. */
+"Outside your home folder" = "Outside your home folder";
+"Too broad: other apps keep live data here" = "Too broad: other apps keep live data here";
+"In ~/%@, which AppleTree never cleans" = "In ~/%@, which AppleTree never cleans";
+"A git repository" = "A git repository";
+"Managed by macOS" = "Managed by macOS";
+"AppleTree only runs tools' own cleanup commands" = "AppleTree only runs tools' own cleanup commands";
+"Command not allowed" = "Command not allowed";
+"Already clean" = "Already clean";
+"Nothing to remove" = "Nothing to remove";
+"Quit %@ to clean this" = "Quit %@ to clean this";
+"Already gone" = "Already gone";
+"A Codex chat you used in the last 2 days" = "A Codex chat you used in the last 2 days";
+"In projects you used in the last 2 days" = "In projects you used in the last 2 days";
+"About %@ can go." = "About %@ can go.";

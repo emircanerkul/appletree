@@ -69,11 +69,11 @@ final class PlanItem: Identifiable {
             reason = CleanupGuard.blockReason(command: spec.command)
             // A tool cache whose folders are all gone has nothing left to clear.
             if reason == nil, !asked.isEmpty, asked.allSatisfy({ !FileManager.default.fileExists(atPath: $0) }) {
-                reason = "Already clean"
+                reason = String(localized: "Already clean")
             }
             kept = asked
         } else if asked.isEmpty {
-            reason = "Nothing to remove"
+            reason = String(localized: "Nothing to remove")
         } else {
             // Paths AppleTree won't touch are dropped; the card is blocked only
             // when nothing is left.
@@ -81,14 +81,15 @@ final class PlanItem: Identifiable {
                 if let why = CleanupGuard.blockReason(path: path) {
                     reason = reason ?? why
                 } else if CleanupGuard.codexChat(path) == nil, let app = CleanupGuard.runningOwner(of: [path]) {
-                    reason = reason ?? "Quit \(app) to clean this"
+                    reason = reason ?? String(localized: "Quit \(app) to clean this")
                 } else if !FileManager.default.fileExists(atPath: path) {
-                    reason = reason ?? "Already gone"
+                    reason = reason ?? String(localized: "Already gone")
                 } else if CleanupGuard.recentlyUsed(path) {
                     // Never break what the user is working on right now.
                     recent += 1
                     reason = reason ?? (CleanupGuard.codexChat(path) != nil
-                        ? "A Codex chat you used in the last 2 days" : "In projects you used in the last 2 days")
+                        ? String(localized: "A Codex chat you used in the last 2 days")
+                        : String(localized: "In projects you used in the last 2 days"))
                 } else {
                     kept.append(path)
                 }
@@ -378,7 +379,7 @@ final class AgentRun {
         planSeconds = -startedAt.timeIntervalSinceNow
         items.sort { $0.bytes > $1.bytes }
         if summary.isEmpty {
-            summary = "About \(Fmt.size(items.filter { $0.blocked == nil }.reduce(0) { $0 + $1.bytes })) can go."
+            summary = String(localized: "About \(Fmt.size(items.filter { $0.blocked == nil }.reduce(0) { $0 + $1.bytes })) can go.")
         }
         withAnimation(.snappy) { phase = .planned }
     }

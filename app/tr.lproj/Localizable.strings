@@ -151,3 +151,21 @@
 
 "Save changes" = "Değişiklikleri kaydet";
 "HTTP %@: %@" = "HTTP %@: %@";
+
+/* Guard reason strings (T7): user-visible safety communication from
+   CleanupGuard.blockReason and the run planner. Mechanical first-pass
+   translations — please review. */
+"Outside your home folder" = "Ev klasörünün dışında";
+"Too broad: other apps keep live data here" = "Çok geniş: diğer uygulamalar burada etkin veri tutuyor";
+"In ~/%@, which AppleTree never cleans" = "AppleTree'nin asla temizlemediği ~/%@ içinde";
+"A git repository" = "Bir Git deposu";
+"Managed by macOS" = "macOS tarafından yönetiliyor";
+"AppleTree only runs tools' own cleanup commands" = "AppleTree yalnızca araçların kendi temizlik komutlarını çalıştırır";
+"Command not allowed" = "Komuta izin verilmiyor";
+"Already clean" = "Zaten temiz";
+"Nothing to remove" = "Kaldırılacak bir şey yok";
+"Quit %@ to clean this" = "Bunu temizlemek için %@ uygulamasından çıkın";
+"Already gone" = "Zaten yok";
+"A Codex chat you used in the last 2 days" = "Son 2 günde kullandığınız bir Codex sohbeti";
+"In projects you used in the last 2 days" = "Son 2 günde kullandığınız projelerde";
+"About %@ can go." = "Yaklaşık %@ kaldırılabilir.";

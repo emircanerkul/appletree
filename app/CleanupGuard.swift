@@ -105,27 +105,29 @@ nonisolated enum CleanupGuard {
         // judged by where it lands, not what it is called (S3). This also
         // expands ~ itself, but with the same home the guard checks below.
         let p = ((path as NSString).resolvingSymlinksInPath as NSString).standardizingPath
-        guard p.hasPrefix(home + "/") else { return "Outside your home folder" }
+        // Reason strings are user-visible safety communication (T7): routed
+        // through String(localized:), keys in all 7 .lproj tables.
+        guard p.hasPrefix(home + "/") else { return String(localized: "Outside your home folder") }
         let rel = p.dropFirst(home.count + 1)
         guard rel.split(separator: "/").count >= 2 || rel.hasPrefix("."), !tooBroad.contains(p) else {
-            return "Too broad: other apps keep live data here"
+            return String(localized: "Too broad: other apps keep live data here")
         }
         // Whole persistence folders: no named subfolder inside is ever fair game (S1).
         if neverClean.contains(where: { p == $0 || p.hasPrefix($0 + "/") }) {
-            return "Too broad: other apps keep live data here"
+            return String(localized: "Too broad: other apps keep live data here")
         }
         for dir in protected where p == dir || p.hasPrefix(dir + "/") {
             // Projects live in Documents too; their build output is still fair
             // game, and so are Codex's chat folders (the user decides those).
             let allowed = rebuildable.contains((p as NSString).lastPathComponent) || codexChat(p) != nil
             if !allowed || dir.hasSuffix(".Trash") {
-                return "In ~/\(dir.dropFirst(home.count + 1)), which AppleTree never cleans"
+                return String(localized: "In ~/\(dir.dropFirst(home.count + 1)), which AppleTree never cleans")
             }
         }
-        if FileManager.default.fileExists(atPath: p + "/.git") { return "A git repository" }
+        if FileManager.default.fileExists(atPath: p + "/.git") { return String(localized: "A git repository") }
         // Apple's own app data refuses to move and is rebuilt by macOS anyway.
         if p.contains("/Library/Containers/com.apple.") || p.contains("/Library/Caches/com.apple.")
-            || p.contains("/Library/Group Containers/group.com.apple.") { return "Managed by macOS" }
+            || p.contains("/Library/Group Containers/group.com.apple.") { return String(localized: "Managed by macOS") }
         return nil
     }
 
@@ -136,10 +138,10 @@ nonisolated enum CleanupGuard {
         guard commands.contains(c) || oneArgumentCommands.contains(where: {
             c.hasPrefix($0 + " ") && !c.dropFirst($0.count + 1).contains(" ")
         }) else {
-            return "AppleTree only runs tools' own cleanup commands"
+            return String(localized: "AppleTree only runs tools' own cleanup commands")
         }
         let banned = [";", "|", "&", ">", "<", "`", "$", "\n", "*", "\\"]
-        if banned.contains(where: { c.contains($0) }) { return "Command not allowed" }
+        if banned.contains(where: { c.contains($0) }) { return String(localized: "Command not allowed") }
         return nil
     }
 
