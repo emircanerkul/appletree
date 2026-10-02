@@ -6,8 +6,8 @@ AGENT_BENCH_TMP=$(mktemp -d /tmp/appletree-agent-bench.XXXXXX)
 trap 'rm -rf "$AGENT_BENCH_TMP"' EXIT
 mkdir "$AGENT_BENCH_TMP/app"
 cp app/*.swift "$AGENT_BENCH_TMP/app/"
-shasum -a 256 "$AGENT_BENCH_TMP/app/Agent.swift" "$AGENT_BENCH_TMP/app/Cleanup.swift" "$AGENT_BENCH_TMP/app/Model.swift"
-python3 - "$AGENT_BENCH_TMP/app/Agent.swift" "$AGENT_BENCH_TMP/app/Cleanup.swift" "$AGENT_BENCH_TMP/app/Model.swift" <<'PY'
+shasum -a 256 "$AGENT_BENCH_TMP/app/AgentRun.swift" "$AGENT_BENCH_TMP/app/Cleanup.swift" "$AGENT_BENCH_TMP/app/Model.swift"
+python3 - "$AGENT_BENCH_TMP/app/AgentRun.swift" "$AGENT_BENCH_TMP/app/Cleanup.swift" "$AGENT_BENCH_TMP/app/Model.swift" <<'PY'
 from pathlib import Path
 import sys
 p=Path(sys.argv[1]); source=p.read_text()
@@ -34,9 +34,17 @@ assert source.count(old)==1, 'Expected one agent start'
 p.write_text(source.replace(old, new))
 PY
 clang -O2 -mmacosx-version-min=14.0 -c benchmarks/ui_fixture.c -o "$AGENT_BENCH_TMP/fixture.o"
-swiftc "$AGENT_BENCH_TMP"/app/Agent.swift "$AGENT_BENCH_TMP"/app/Cleanup.swift \
-  "$AGENT_BENCH_TMP"/app/ContentView.swift "$AGENT_BENCH_TMP"/app/Model.swift \
-  "$AGENT_BENCH_TMP"/app/Treemap.swift "$AGENT_BENCH_TMP"/app/TreemapView.swift "$AGENT_BENCH_TMP"/app/SunburstView.swift \
+# Same subset the app builds minus Main.swift (@main, collides with
+# AgentPerformance) and Settings.swift (its views are used only by Main).
+# ModelProvider/PlanParsing provide LLMProvider and the plan parser.
+swiftc "$AGENT_BENCH_TMP/app/AgentSupport.swift" \
+  "$AGENT_BENCH_TMP/app/AgentLocator.swift" "$AGENT_BENCH_TMP/app/AgentSetup.swift" \
+  "$AGENT_BENCH_TMP/app/AgentStreamReader.swift" "$AGENT_BENCH_TMP/app/AgentPrompt.swift" \
+  "$AGENT_BENCH_TMP/app/AgentRun.swift" "$AGENT_BENCH_TMP/app/CleanupGuard.swift" \
+  "$AGENT_BENCH_TMP/app/Cleanup.swift" "$AGENT_BENCH_TMP/app/ContentView.swift" \
+  "$AGENT_BENCH_TMP/app/Model.swift" "$AGENT_BENCH_TMP/app/ModelProvider.swift" \
+  "$AGENT_BENCH_TMP/app/PlanParsing.swift" "$AGENT_BENCH_TMP/app/Treemap.swift" \
+  "$AGENT_BENCH_TMP/app/TreemapView.swift" "$AGENT_BENCH_TMP/app/SunburstView.swift" \
   benchmarks/AgentReference.swift benchmarks/AgentPerformance.swift "$AGENT_BENCH_TMP/fixture.o" \
   -import-objc-header benchmarks/ui_fixture.h \
   -O -parse-as-library -swift-version 6 -default-isolation MainActor \

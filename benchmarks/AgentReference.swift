@@ -225,6 +225,14 @@ nonisolated final class ReferenceAgentStreamReader: @unchecked Sendable {
 }
 
 
+/// The Rust-owned allowlist as the bench fixture serves it — same contract the
+/// production CleanupGuard reads, so the reference prompt cannot drift.
+nonisolated let fixtureAllowlistCommands: [String] = {
+    let count = Int(bz_cleanup_allowlist_count())
+    guard count > 0, let table = bz_cleanup_allowlist() else { return [] }
+    return (0..<count).compactMap { table[$0].map { String(cString: $0) } }
+}()
+
 nonisolated enum ReferenceAgentPrompt {
     static func build(tree: Tree, scanRoot: String, known: [CleanupItem], running: [String]) -> String {
         let home = NSHomeDirectory()
@@ -247,6 +255,12 @@ nonisolated enum ReferenceAgentPrompt {
         folders.sort { tree.alloc[$0] > tree.alloc[$1] }
         files.sort { tree.alloc[$0] > tree.alloc[$1] }
 
+        // The command list reads straight from the Rust-owned allowlist so
+        // the reference can never drift from what the guard actually accepts.
+        // The one-argument forms stay literal: they have placeholders, not
+        // allowlist entries.
+        let allowlist = fixtureAllowlistCommands.map { "`\($0)`" }.joined(separator: ", ")
+
         var md = """
         You are the cleanup agent inside AppleTree, a macOS disk-space app. The user clicked \
         "Clean up" and is watching a live view of your steps, so be fast. Their home folder is \(home).
@@ -267,13 +281,10 @@ nonisolated enum ReferenceAgentPrompt {
           - paths: the absolute paths it covers.
           - action: "command" when the owning tool has its own cleanup and the item is that tool's \
         cache, otherwise "trash" (AppleTree moves the paths to the Trash itself). AppleTree only runs \
-        commands starting with one of: `uv cache clean`, `bun pm cache rm`, `npm cache clean --force`, \
-        `pnpm store prune`, `yarn cache clean`, `brew cleanup --prune=all`, `docker system prune -f`, \
-        `docker builder prune -f`, `xcrun simctl delete unavailable`, `xcrun simctl runtime delete <id>`, \
-        `xcrun simctl erase <udid>`, `pip cache purge`, `ollama rm <model>`, `go clean -modcache`, \
-        `gem cleanup`, `pod cache clean --all`, `conda clean -a -y`. Nothing else, no pipes, `;`, `$` or \
-        globs; it must not prompt.
-          - command: the exact command for "command", "" for "trash".
+        exactly one of these commands — no extra arguments or flags: \(allowlist) — \
+        or exactly one of: `ollama rm <model>`, `xcrun simctl runtime delete <id>`, \
+        `xcrun simctl erase <udid>`. \
+        Nothing else, no pipes, `;`, `$` or globs; it must not prompt.          - command: the exact command for "command", "" for "trash".
         `npm cache clean` only empties ~/.npm/_cacache; ~/.npm/_npx is a separate "trash" item. Only \
         list caches that appear in the tables above with their real size; skip ones that are not there.
         Name specific folders. Never a whole ~/Library, ~/Library/Caches, ~/Library/Application \
