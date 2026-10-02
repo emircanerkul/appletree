@@ -26,7 +26,7 @@ fi
 # UIPerformance) and Settings.swift (its views are used only by Main).
 # ModelProvider is needed for ProviderStore, which Model references.
 UI_FILES=(AgentSupport AgentLocator AgentSetup AgentStreamReader AgentPrompt \
-  AgentRun CleanupGuard Cleanup ContentView Model ModelProvider PlanParsing \
+  AgentRun CleanupGuard CleanupModel Cleanup ContentView Model ModelProvider PlanParsing \
   Treemap TreemapView SunburstView)
 UI_PATHS=()
 for f in "${UI_FILES[@]}"; do UI_PATHS+=("$UI_BENCH_TMP/app/$f.swift"); done

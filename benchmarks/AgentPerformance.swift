@@ -57,6 +57,30 @@ nonisolated final class AgentBenchmarkTrash: @unchecked Sendable {
         }
     }
     var nodes: [Int] { lock.lock(); defer { lock.unlock() }; return moved }
+
+    /// Offline mirror of the shared `Trash.trash` pathway: records the nodes
+    /// behind "/offline/<node>" fixture paths, "fails" nodes 2 and 7, and
+    /// returns the rest as moved URLs — same shape as production.
+    static func trash(_ paths: [String]) async -> (moved: [URL], error: String?) {
+        precondition(!Thread.isMainThread, "Trash work ran on the UI thread")
+        var moved: [URL] = []
+        var error: String?
+        for path in paths {
+            guard let node = Int(path.split(separator: "/").last ?? "") else { continue }
+            AgentBenchmarkGate.shared.waitIfArmed()
+            record(node)
+            if node == 2 || node == 7 {
+                error = error ?? "injected failure"
+                continue
+            }
+            moved.append(URL(fileURLWithPath: path))
+        }
+        return (moved, error)
+    }
+
+    private static func record(_ node: Int) {
+        shared.lock.lock(); shared.moved.append(node); shared.lock.unlock()
+    }
 }
 
 private struct AgentFixture {

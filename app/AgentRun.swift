@@ -469,29 +469,9 @@ final class AgentRun {
         }
     }
 
-    /// Moves paths to the Trash; returns where they went and the first error.
+    /// Moves paths to the Trash via the shared pathway in CleanupModel.swift.
     nonisolated static func trash(_ paths: [String]) async -> (moved: [URL], error: String?) {
-        await Task.detached(priority: .userInitiated) {
-            var moved: [URL] = []
-            var error: String?
-            for path in paths where FileManager.default.fileExists(atPath: path) {
-                // Re-check at action time: minutes can have passed since the
-                // plan was validated, so anything changed in between is not
-                // acted on (S2).
-                if let reason = CleanupGuard.blockReason(path: path) {
-                    error = error ?? reason
-                    continue
-                }
-                do {
-                    var out: NSURL?
-                    try FileManager.default.trashItem(at: URL(fileURLWithPath: path), resultingItemURL: &out)
-                    if let out { moved.append(out as URL) }
-                } catch let failure {
-                    error = error ?? failure.localizedDescription
-                }
-            }
-            return (moved, error)
-        }.value
+        await Trash.trash(paths)
     }
 
     /// Four deletes at a time across the whole run: measured on APFS, 4

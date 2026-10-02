@@ -6,8 +6,8 @@ AGENT_BENCH_TMP=$(mktemp -d /tmp/appletree-agent-bench.XXXXXX)
 trap 'rm -rf "$AGENT_BENCH_TMP"' EXIT
 mkdir "$AGENT_BENCH_TMP/app"
 cp app/*.swift "$AGENT_BENCH_TMP/app/"
-shasum -a 256 "$AGENT_BENCH_TMP/app/AgentRun.swift" "$AGENT_BENCH_TMP/app/Cleanup.swift" "$AGENT_BENCH_TMP/app/Model.swift"
-python3 - "$AGENT_BENCH_TMP/app/AgentRun.swift" "$AGENT_BENCH_TMP/app/Cleanup.swift" "$AGENT_BENCH_TMP/app/Model.swift" <<'PY'
+shasum -a 256 "$AGENT_BENCH_TMP/app/AgentRun.swift" "$AGENT_BENCH_TMP/app/CleanupModel.swift" "$AGENT_BENCH_TMP/app/Model.swift"
+python3 - "$AGENT_BENCH_TMP/app/AgentRun.swift" "$AGENT_BENCH_TMP/app/CleanupModel.swift" "$AGENT_BENCH_TMP/app/Model.swift" <<'PY'
 from pathlib import Path
 import sys
 p=Path(sys.argv[1]); source=p.read_text()
@@ -21,9 +21,9 @@ for old,new in changes.items():
     source=source.replace(old,new)
 p.write_text(source)
 p=Path(sys.argv[2]); source=p.read_text()
-old='try FileManager.default.trashItem(at: URL(fileURLWithPath: item.path), resultingItemURL: nil)'
-assert source.count(old)==1, 'Expected one manual-trash operation'
-p.write_text(source.replace(old, 'try AgentBenchmarkTrash.move(item)'))
+old='let result = await Trash.trash(items.map(\\.path))'
+assert source.count(old)==1, 'Expected one shared-trash pathway call'
+p.write_text(source.replace(old, 'let result = await AgentBenchmarkTrash.trash(items.map(\\.path))'))
 p=Path(sys.argv[3]); source=p.read_text()
 old='''    func startAgent(_ agent: InstalledAgent) {
 '''
@@ -41,7 +41,7 @@ swiftc "$AGENT_BENCH_TMP/app/AgentSupport.swift" \
   "$AGENT_BENCH_TMP/app/AgentLocator.swift" "$AGENT_BENCH_TMP/app/AgentSetup.swift" \
   "$AGENT_BENCH_TMP/app/AgentStreamReader.swift" "$AGENT_BENCH_TMP/app/AgentPrompt.swift" \
   "$AGENT_BENCH_TMP/app/AgentRun.swift" "$AGENT_BENCH_TMP/app/CleanupGuard.swift" \
-  "$AGENT_BENCH_TMP/app/Cleanup.swift" "$AGENT_BENCH_TMP/app/ContentView.swift" \
+  "$AGENT_BENCH_TMP/app/CleanupModel.swift" "$AGENT_BENCH_TMP/app/Cleanup.swift" "$AGENT_BENCH_TMP/app/ContentView.swift" \
   "$AGENT_BENCH_TMP/app/Model.swift" "$AGENT_BENCH_TMP/app/ModelProvider.swift" \
   "$AGENT_BENCH_TMP/app/PlanParsing.swift" "$AGENT_BENCH_TMP/app/Treemap.swift" \
   "$AGENT_BENCH_TMP/app/TreemapView.swift" "$AGENT_BENCH_TMP/app/SunburstView.swift" \
