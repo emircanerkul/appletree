@@ -2,7 +2,9 @@
 """Alternate two release bench binaries; retain every measurement and total.
 
 uv run benchmarks/engine/scan.py --baseline build/perf-baseline-source/target/release/bench \
-    --candidate target/release/bench --path /Applications --output build/perf-results/apps.json
+    --candidate target/release/bench --path /Applications
+The comparison JSON defaults to docs/benchmarks/results/scan-comparison.json;
+pass --output to write elsewhere.
 """
 
 import argparse
@@ -15,13 +17,16 @@ import statistics
 import subprocess
 from pathlib import Path
 
+ROOT = Path(__file__).resolve().parents[2]
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--baseline", type=Path, required=True)
     parser.add_argument("--candidate", type=Path, required=True)
     parser.add_argument("--path", type=Path, required=True)
-    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--output", type=Path, default=ROOT / "docs/benchmarks/results/scan-comparison.json",
+                        help="comparison JSON (default: %(default)s)")
     parser.add_argument("--mode", choices=("bulk", "ffi"), default="ffi")
     parser.add_argument("--runs", type=int, default=5)
     parser.add_argument("--threads", type=int)

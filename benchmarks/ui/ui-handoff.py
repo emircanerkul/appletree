@@ -4,6 +4,8 @@
 Sources are frozen in a temporary directory; only the harness's ContentView gets
 an injected model and loses launch-time scan/agent callbacks. No preferences in
 the installed AppleTree bundle are changed. Run the binary with a scan path.
+The compiled harness defaults to build/ui-handoff; pass --output to write it
+elsewhere (it is a build artifact, not a measurement).
 """
 import argparse
 import pathlib
@@ -15,7 +17,9 @@ import tempfile
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--ref", help="Git source revision; defaults to working tree")
-parser.add_argument("--output", type=pathlib.Path, required=True)
+parser.add_argument("--output", type=pathlib.Path,
+                    default=ROOT / "build/ui-handoff",
+                    help="compiled harness path (default: %(default)s)")
 parser.add_argument("--wmo", action="store_true")
 parser.add_argument("--ui-current", action="store_true", help="Use current Model/ContentView with --ref renderers")
 args = parser.parse_args()

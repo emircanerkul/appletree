@@ -47,8 +47,9 @@ Measured on 2026-09-27, Swift 6.4, arm64, with no other team benchmarks running:
 
 The FDA probe was denied in the benchmark executable: median 0.070 ms,
 maximum 0.125 ms over 31 warm calls. No permission-cache change was made;
-this does not measure the successful FDA-probe path. Raw samples are saved in
-`build/perf-results/ui.txt` and `build/perf-results/ui-real.txt` by the audit run.
+this does not measure the successful FDA-probe path. Raw samples from the
+audit run are kept in `docs/benchmarks/results/2026-09-27/ui.txt` and
+`docs/benchmarks/results/2026-09-27/ui-real.txt`.
 Real-tree runs had no unreadable directories; exact ordered cleanup item
 signatures matched in every iteration. Real-tree cleanup times are small and
 vary with scheduling/cache state, so the absolute milliseconds are more useful
@@ -63,8 +64,12 @@ read-only harnesses, then alternate their processes:
 uv run python benchmarks/ui/ui-handoff.py --ref 178d256 --output build/ui-before
 uv run python benchmarks/ui/ui-handoff.py --ref 178d256 --ui-current --output build/ui-after
 uv run python benchmarks/ui/compare-ui.py --baseline build/ui-before \
-  --candidate build/ui-after --path /Applications --output build/ui-comparison.json
+  --candidate build/ui-after --path /Applications
 ```
+
+With no `--output`, `compare-ui.py` writes
+`docs/benchmarks/results/ui-comparison.json` and sibling per-pair text logs
+(the harness binaries above are throwaway and stay under `build/`).
 
 `--ui-current` freezes the current Model, ContentView, Cleanup and Agent sources
 with the reference renderers, isolating the UI changes. Both link the same Rust

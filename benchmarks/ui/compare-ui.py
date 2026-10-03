@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Alternate full-window harness processes and retain visible-handoff samples."""
+"""Alternate full-window harness processes and retain visible-handoff samples.
+
+The comparison JSON defaults to docs/benchmarks/results/ui-comparison.json; the
+per-pair text logs are written as siblings of that --output path.
+"""
 import argparse
 import hashlib
 import json
@@ -9,11 +13,14 @@ import re
 import statistics
 import subprocess
 
+ROOT = Path(__file__).resolve().parents[2]
+
 p = argparse.ArgumentParser(description=__doc__)
 p.add_argument("--baseline", type=Path, required=True)
 p.add_argument("--candidate", type=Path, required=True)
 p.add_argument("--path", required=True)
-p.add_argument("--output", type=Path, required=True)
+p.add_argument("--output", type=Path, default=ROOT / "docs/benchmarks/results/ui-comparison.json",
+               help="comparison JSON; per-pair txt logs are its siblings (default: %(default)s)")
 p.add_argument("--pairs", type=int, default=3)
 p.add_argument("--scans", type=int, default=4)
 a = p.parse_args()

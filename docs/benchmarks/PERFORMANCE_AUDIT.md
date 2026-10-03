@@ -310,7 +310,7 @@ harness, and build both with `cargo build --release`. Then run:
 uv run benchmarks/engine/scan.py \
   --baseline build/perf-baseline-source/target/release/bench \
   --candidate target/release/bench --path /Applications \
-  --output build/perf-results/apps-ffi.json
+  --output docs/benchmarks/results/apps-ffi.json
 ```
 
 The scanner runner warms both builds, alternates AB/BA order, records every
