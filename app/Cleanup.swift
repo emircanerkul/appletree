@@ -185,19 +185,28 @@ struct CleanupPanel: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(3)
             }
-            Button {
-                model.setUp(kind)
-            } label: {
-                Text(installed == nil ? "Set up \(kind.name)" : "Sign in to \(kind.name)")
-                    .frame(maxWidth: .infinity)
+            // Both planners offered side by side, as one control: the
+            // recommended one reads as the action, the alternative as its
+            // peer instead of a dim line under it.
+            HStack(spacing: 6) {
+                Button {
+                    model.setUp(kind)
+                } label: {
+                    Text(installed == nil ? "Set up \(kind.name)" : "Sign in to \(kind.name)")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+
+                Button {
+                    model.setUp(other)
+                } label: {
+                    Text("Use \(other.name)")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            Button("Use \(other.name) instead") { model.setUp(other) }
-                .buttonStyle(.plain)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity)
             HStack(spacing: 4) {
                 Text("Or").font(.caption).foregroundStyle(.tertiary)
                 SettingsLink { Text("Add a model provider").font(.caption) }

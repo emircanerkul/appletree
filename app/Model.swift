@@ -2,6 +2,11 @@ import AppKit
 import SwiftUI
 import Foundation
 import Observation
+// Volume classification for the scan targets: DiskArbitration names the
+// device, IOKit storage reports what backs it.
+import DiskArbitration
+import IOKit
+import IOKit.storage
 
 /// Zero-copy view over the Rust engine's flat tree arrays.
 /// Read-only after init, so sharing it across threads is safe.
@@ -165,6 +170,97 @@ enum MapStyle: String {
     case treemap, rings
 }
 
+/// A place a scan can start: what the pickers list, and the path
+/// `startScan(path:)` consumes.
+nonisolated struct ScanTarget: Identifiable, Hashable {
+    let title: String
+    let path: String
+    var id: String { path }
+}
+
+/// The scan targets every picker offers, named in one place so the toolbar
+/// menu and the idle overlay cannot drift apart.
+nonisolated enum ScanTargets {
+    /// The boot volume group's user-data volume, shown to users as the disk.
+    static let macintoshHD = ScanTarget(title: String(localized: "Macintosh HD"),
+                                       path: "/System/Volumes/Data")
+    static let home = ScanTarget(title: String(localized: "Home"),
+                                 path: NSHomeDirectory())
+    /// Installed applications, usually the biggest thing in a "why is my disk
+    /// full" scan. `/Applications` is a firmlink into the Data volume, which
+    /// the engine follows like any directory.
+    static let applications = ScanTarget(title: String(localized: "Applications"),
+                                         path: "/Applications")
+
+    /// The drives worth scanning: real storage devices mounted under /Volumes,
+    /// external or internal (a second internal partition counts).
+    ///
+    /// Read fresh on each call, so a drive plugged in while the app is open
+    /// shows up in both pickers. Excluded, by device properties rather than by
+    /// name or path: the boot volume group (that is `macintoshHD`), network
+    /// volumes (not local disks, and a scan of one crawls), and mounted disk
+    /// images — the installers and `.dmg`s whose volumes used to appear here.
+    /// "SponsorBar Installer" was one; no list of such names would stay right.
+    static func mountedDrives() -> [ScanTarget] {
+        let keys: [URLResourceKey] = [.volumeNameKey, .volumeIsLocalKey,
+                                      .volumeIsBrowsableKey]
+        let urls = FileManager.default.mountedVolumeURLs(
+            includingResourceValuesForKeys: keys, options: [.skipHiddenVolumes]) ?? []
+        return urls.compactMap { url -> ScanTarget? in
+            // The boot volume group is offered as `macintoshHD`; it must not be
+            // listed twice. Matched on the canonical mount path of the boot
+            // volume and of its data volume — the root device is the one case
+            // no property distinguishes, since it is an ordinary internal disk.
+            let path = url.path
+            guard path != "/", path != macintoshHD.path else { return nil }
+            guard let values = try? url.resourceValues(forKeys: Set(keys)),
+                  values.volumeIsLocal == true,
+                  values.volumeIsBrowsable != false else { return nil }
+            // A disk image is a device whose media is backed by a file; IOKit
+            // records that as the physical interconnect location. This is what
+            // separates a mounted installer from a real drive, with no name or
+            // extension matching anywhere.
+            guard !isDiskImage(bsdName: bsdName(ofVolumeAt: path)) else { return nil }
+            let name = values.volumeName ?? url.lastPathComponent
+            guard !name.isEmpty else { return nil }
+            return ScanTarget(title: name, path: path)
+        }
+        .sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+    }
+
+    /// The BSD device name ("disk4s1") of the volume mounted at `path`, which
+    /// IOKit is then queried by.
+    private static func bsdName(ofVolumeAt path: String) -> String? {
+        guard let session = DASessionCreate(kCFAllocatorDefault),
+              let disk = DADiskCreateFromVolumePath(kCFAllocatorDefault, session,
+                                                    URL(fileURLWithPath: path) as CFURL),
+              let description = DADiskCopyDescription(disk) as? [String: Any] else { return nil }
+        return description[kDADiskDescriptionMediaBSDNameKey as String] as? String
+    }
+
+    /// True when the device behind `bsdName` is backed by a file — a mounted
+    /// disk image, not a drive. `Physical Interconnect Location` is "File" for
+    /// those and "Internal"/"External" for storage hardware, as the IOKit
+    /// storage protocol characteristics define it.
+    ///
+    /// Searched upwards through the IOService plane: the property sits on the
+    /// storage device above the volume's media, not on the media itself.
+    /// A missing property reads as "not an image" — the volume keeps its
+    /// place in the list, so an unexpected device is never silently hidden.
+    private static func isDiskImage(bsdName: String?) -> Bool {
+        guard let bsdName, let matching = IOBSDNameMatching(kIOMainPortDefault, 0, bsdName) else { return false }
+        let service = IOServiceGetMatchingService(kIOMainPortDefault, matching)
+        guard service != 0 else { return false }
+        defer { IOObjectRelease(service) }
+        let location = IORegistryEntrySearchCFProperty(
+            service, kIOServicePlane,
+            kIOPropertyPhysicalInterconnectLocationKey as CFString,
+            kCFAllocatorDefault,
+            IOOptionBits(kIORegistryIterateRecursively | kIORegistryIterateParents)) as? String
+        return location == kIOPropertyInterconnectFileKey
+    }
+}
+
 @Observable
 @MainActor
 final class ScanModel {
@@ -221,6 +317,21 @@ final class ScanModel {
     func startCleanup() {
         if let provider = preferredProvider { startProvider(provider) }
         else if let agent = preferredAgent { startAgent(agent) }
+    }
+
+    /// Everything the scan pickers list: the whole disk, the home folder, then
+    /// any mounted external drives.
+    var scanTargets: [ScanTarget] {
+        [ScanTargets.macintoshHD, ScanTargets.home, ScanTargets.applications] + drives
+    }
+
+    /// External drives, re-read on mount/unmount so a disk plugged in after
+    /// launch shows up in both pickers without a relaunch.
+    var drives: [ScanTarget] = ScanTargets.mountedDrives()
+
+    func refreshDrives() {
+        let found = ScanTargets.mountedDrives()
+        if found != drives { drives = found }
     }
 
     func startProvider(_ provider: LLMProvider) {

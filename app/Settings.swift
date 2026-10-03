@@ -208,25 +208,56 @@ let availableLanguages: [(code: String, name: String)] = [
     ("ja", "日本語"),
 ]
 
+/// The language this app itself stored, or nil when it has never been set.
+///
+/// The app's own domain only: `UserDefaults.standard` would also surface the
+/// system-wide AppleLanguages list (typically "en-US" and friends), which is
+/// not a picker tag and made the row render blank.
+func storedAppLanguage() -> String? {
+    let domain = Bundle.main.bundleIdentifier ?? "dev.emircan.appletree"
+    return (UserDefaults.standard.persistentDomain(forName: domain)?["AppleLanguages"] as? [String])?.first
+}
+
+/// The shipped code matching a language tag — "en-US" → "en",
+/// "zh-Hans-CN" → "zh-Hans" — or nil when AppleTree ships no table for it.
+func shippedLanguageCode(for tag: String) -> String? {
+    let lower = tag.lowercased()
+    let shipped = availableLanguages.filter { $0.code != "system" }
+    if let exact = shipped.first(where: { $0.code.lowercased() == lower }) { return exact.code }
+    // Longest prefix wins, so "zh-Hans-CN" matches "zh-Hans", not a bare "zh".
+    return shipped
+        .filter { lower.hasPrefix($0.code.lowercased() + "-") }
+        .max { $0.code.count < $1.code.count }?.code
+}
+
 struct GeneralSettingsView: View {
     /// The saved choice, "system" when following macOS.
     @State private var language: String
     @State private var saved: String
+    /// Scan automatically at launch. Default on: the absence of a stored
+    /// value must read as true, which object(forKey:) + explicit registration
+    /// below handle.
+    @AppStorage("bz.autoScan") private var autoScan = true
 
     init() {
-        let savedCode = UserDefaults.standard.stringArray(forKey: "AppleLanguages")?.first ?? "system"
+        // Default "system" (Follow system). A stored tag is normalized to a
+        // shipped code so the Picker always has a matching row to show.
+        let savedCode = storedAppLanguage().flatMap(shippedLanguageCode(for:)) ?? "system"
         _language = State(initialValue: savedCode)
         _saved = State(initialValue: savedCode)
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
+            // Every row flush left: the pickers are given a leading-aligned
+            // frame, otherwise their label+pull-down pair centres itself and
+            // the rows no longer line up with the toggle and captions below.
             Picker("Language", selection: $language) {
                 ForEach(availableLanguages, id: \.code) { entry in
                     Text(entry.name).tag(entry.code)
                 }
             }
-            .frame(width: 260)
+            .frame(maxWidth: .infinity, alignment: .leading)
             if language != saved {
                 HStack(spacing: 8) {
                     Text("Relaunch AppleTree to apply the language.")
@@ -243,6 +274,13 @@ struct GeneralSettingsView: View {
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
                 }
+            }
+            Divider()
+            VStack(alignment: .leading, spacing: 4) {
+                Toggle("Scan when AppleTree opens", isOn: $autoScan)
+                Text("Scan the whole disk at launch. Turn off to pick a folder yourself first.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
             Divider()
             VStack(alignment: .leading, spacing: 4) {
@@ -267,7 +305,7 @@ struct GeneralSettingsView: View {
                         Text("\(provider.displayName) (custom)").tag("provider:\(provider.id)")
                     }
                 }
-                .frame(width: 260)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 Text("Which AI proposes what can go from the scan. Nothing is removed without your say.")
                     .font(.caption)
                     .foregroundStyle(.secondary)

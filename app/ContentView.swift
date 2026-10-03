@@ -7,6 +7,9 @@ struct ContentView: View {
     @State private var showTable = true
     @AppStorage("bz.showCleanup") private var showCleanup = false
     @AppStorage("bz.listWidth") private var listWidth = 390.0
+    /// Scan the whole disk at launch. Default on; the user can turn it off
+    /// in Settings → General.
+    @AppStorage("bz.autoScan") private var autoScan = true
 
     var body: some View {
         VStack(spacing: 0) {
@@ -67,6 +70,12 @@ struct ContentView: View {
             model.agentEnv = await AgentLocator.find()
             model.openPanelAfterLaunchScan()
         }
+        // A drive plugged in or ejected while the window is open: keep the
+        // scan pickers (toolbar menu and idle overlay) in step with the Mac.
+        .onReceive(NotificationCenter.default.publisher(
+            for: NSWorkspace.didMountNotification)) { _ in model.refreshDrives() }
+        .onReceive(NotificationCenter.default.publisher(
+            for: NSWorkspace.didUnmountNotification)) { _ in model.refreshDrives() }
         // An agent run or the setup offer always shows in the panel.
         .onChange(of: model.agentRun == nil) { if model.agentRun != nil { showCleanup = true } }
         .onChange(of: model.panelRequests) { showCleanup = true }
@@ -74,6 +83,10 @@ struct ContentView: View {
         .onAppear {
             // Never start a whole-disk scan without FDA: every protected
             // app container would fire a permission prompt.
+            // bz.autoScan (default on) lets the user skip the launch scan;
+            // with it off the window shows the idle overlay until a scan
+            // is picked from the toolbar.
+            if !autoScan { return }
             if FDA.isActive() {
                 model.startScan()
             } else {
@@ -142,8 +155,9 @@ struct ContentView: View {
 
         ToolbarItemGroup(placement: .automatic) {
             Menu {
-                Button("Macintosh HD") { model.startScan(path: "/System/Volumes/Data") }
-                Button("Home") { model.startScan(path: FileManager.default.homeDirectoryForCurrentUser.path) }
+                ForEach(model.scanTargets) { target in
+                    Button(target.title) { model.startScan(path: target.path) }
+                }
                 Divider()
                 Button("Choose Folder…") { chooseFolder() }
             } label: {
@@ -227,12 +241,38 @@ struct ContentView: View {
     // MARK: overlays
 
     private var idleOverlay: some View {
-        VStack(spacing: 10) {
+        // The toolbar Scan menu, repeated here: with no tree on screen this
+        // overlay is the app's whole surface, so the scan targets belong at
+        // the point of the empty state, not only the toolbar. Bounded width,
+        // so the flow wraps drives onto further rows instead of running off
+        // the window; `fallbackWidth` must match this frame.
+        VStack(spacing: 14) {
             Image(systemName: "internaldrive")
                 .font(.system(size: 40))
                 .foregroundStyle(.secondary)
             Text("Pick a target and scan")
                 .foregroundStyle(.secondary)
+            FlowLayout(spacing: 10) {
+                ForEach(model.scanTargets) { target in
+                    Button(target.title) { model.startScan(path: target.path) }
+                        .buttonStyle(.bordered)
+                        .controlSize(.large)
+                }
+            }
+            // Bounded by the layout's own default, so the wrap width and the
+            // frame can never disagree: a flow measured with no width limit
+            // cannot wrap and reports one row wider than the window.
+            .frame(width: FlowLayout.defaultWidth)
+            // Its own row, and a quieter style: picking an arbitrary folder is
+            // the uncommon case next to the listed targets. Reads as a
+            // continuation of that row ("or choose a folder"), not as another
+            // target; the toolbar menu keeps the plain "Choose Folder…" label,
+            // where an menu item should read as an action.
+            Button("or Choose a Folder") { chooseFolder() }
+                .buttonStyle(.plain)
+                .controlSize(.large)
+                .foregroundStyle(.secondary)
+                .padding(.top, 2)
         }
     }
 
@@ -358,6 +398,70 @@ private struct ListDivider: View {
                             .onEnded { _ in dragStart = nil }
                     )
             }
+    }
+}
+
+/// Wraps its children onto as many rows as they need, left-aligned. Used for
+/// the idle screen's scan targets: how many drives are mounted is not known
+/// when the layout is written, so a fixed HStack would overflow the window.
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 8
+
+    /// Width the idle overlay gives this layout, used to wrap when the parent
+    /// proposes no width. It lives here so the caller's frame and this
+    /// fallback cannot drift apart — a flow measured with no width limit
+    /// cannot wrap, reports one row wider than the window, and is then centred
+    /// outside it with both ends cut off.
+    static let defaultWidth: CGFloat = 460
+
+    private func wrapWidth(_ proposal: ProposedViewSize) -> CGFloat {
+        guard let width = proposal.width, width.isFinite, width > 0 else { return Self.defaultWidth }
+        return width
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let limit = wrapWidth(proposal)
+        var rowWidth: CGFloat = 0
+        var totalHeight: CGFloat = 0
+        var rowHeight: CGFloat = 0
+        var widest: CGFloat = 0
+        for view in subviews {
+            let size = view.sizeThatFits(.unspecified)
+            if rowWidth > 0, rowWidth + spacing + size.width > limit {
+                widest = max(widest, rowWidth)
+                totalHeight += rowHeight + spacing
+                rowWidth = size.width
+                rowHeight = size.height
+            } else {
+                rowWidth += rowWidth > 0 ? spacing + size.width : size.width
+                rowHeight = max(rowHeight, size.height)
+            }
+        }
+        widest = max(widest, rowWidth)
+        // Never claim more width than the limit, or the row cannot fit.
+        return CGSize(width: min(widest, limit), height: totalHeight + rowHeight)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize,
+                       subviews: Subviews, cache: inout ()) {
+        // Wrap at the space actually given, so a narrowed window wraps rather
+        // than drawing outside its bounds.
+        let limit = min(bounds.width, wrapWidth(proposal))
+        var x = bounds.minX
+        var y = bounds.minY
+        var rowHeight: CGFloat = 0
+        for view in subviews {
+            let size = view.sizeThatFits(.unspecified)
+            if x > bounds.minX, x + size.width > bounds.minX + limit {
+                x = bounds.minX
+                y += rowHeight + spacing
+                rowHeight = 0
+            }
+            view.place(at: CGPoint(x: x, y: y), anchor: .topLeading,
+                       proposal: ProposedViewSize(size))
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
     }
 }
 

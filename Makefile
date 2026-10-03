@@ -45,8 +45,11 @@ SIGN_PASS := $(HOME)/.config/appletree-signing/keychain.pass
 
 # Shared swiftc contract: optimization, Swift 6 language mode, default
 # MainActor isolation (needs Swift 6.1 / Xcode 16.3+), arm64, macOS 14.
+# DiskArbitration + IOKit: Model.swift classifies mounted volumes to tell a
+# real drive from a mounted disk image (ScanTargets.mountedDrives).
 SWIFT_FLAGS := -O -parse-as-library -swift-version 6 -default-isolation MainActor \
-               -target arm64-apple-macos$(MIN_MACOS) -framework AppKit -framework SwiftUI
+               -target arm64-apple-macos$(MIN_MACOS) -framework AppKit -framework SwiftUI \
+               -framework DiskArbitration -framework IOKit
 
 # Benchmark UI/agent file subset: production sources minus Main.swift (@main,
 # collides with the benchmark runners) and Settings.swift (its views are used
