@@ -1,7 +1,8 @@
 # AppleTree — single build entry point.
 #
 # This Makefile replaces the former build.sh, deploy.sh, release.sh,
-# tests/swift/run.sh, benchmarks/run-agent.sh and benchmarks/run-ui.sh.
+# tests/swift/run.sh, and the former benchmarks/run-agent.sh and
+# benchmarks/run-ui.sh wrappers (now the `bench-agent` and `bench-ui` targets below).
 # All recipes run under bash (`SHELL` below) with errexit, nounset and
 # pipefail, matching the old `set -euo pipefail` contracts.
 #
@@ -297,7 +298,7 @@ bench-agent: engine
 	cp app/*.swift "$$TMP/app/"; \
 	shasum -a 256 "$$TMP/app/AgentRun.swift" "$$TMP/app/CleanupModel.swift" "$$TMP/app/Model.swift"; \
 	python3 -c "$$AGENT_PATCH_PY" "$$TMP/app/AgentRun.swift" "$$TMP/app/CleanupModel.swift" "$$TMP/app/Model.swift"; \
-	clang -O2 -mmacosx-version-min=$(MIN_MACOS) -c benchmarks/ui_fixture.c -o "$$TMP/fixture.o"; \
+	clang -O2 -mmacosx-version-min=$(MIN_MACOS) -c benchmarks/fixture/ui_fixture.c -o "$$TMP/fixture.o"; \
 	swiftc "$$TMP/app/AgentSupport.swift" \
 	  "$$TMP/app/AgentLocator.swift" "$$TMP/app/AgentSetup.swift" \
 	  "$$TMP/app/AgentStreamReader.swift" "$$TMP/app/AgentPrompt.swift" \
@@ -306,8 +307,8 @@ bench-agent: engine
 	  "$$TMP/app/Model.swift" "$$TMP/app/ModelProvider.swift" \
 	  "$$TMP/app/PlanParsing.swift" "$$TMP/app/Treemap.swift" \
 	  "$$TMP/app/TreemapView.swift" "$$TMP/app/SunburstView.swift" \
-	  benchmarks/AgentReference.swift benchmarks/AgentPerformance.swift "$$TMP/fixture.o" \
-	  -import-objc-header benchmarks/ui_fixture.h \
+	  benchmarks/agent/AgentReference.swift benchmarks/agent/AgentPerformance.swift "$$TMP/fixture.o" \
+	  -import-objc-header benchmarks/fixture/ui_fixture.h \
 	  $(SWIFT_FLAGS) \
 	  -o "$$TMP/agent-bench"; \
 	"$$TMP/agent-bench" $(ARGS)
@@ -320,22 +321,22 @@ bench-ui:
 	mkdir "$$TMP/app"; \
 	cp app/*.swift "$$TMP/app/"; \
 	shasum -a 256 "$$TMP/app/Cleanup.swift" "$$TMP/app/Model.swift" "$$TMP/app/ContentView.swift"; \
-	INPUTS='benchmarks/UIPerformance.swift'; \
+	INPUTS='benchmarks/ui/UIPerformance.swift'; \
 	LINK=''; \
-	HEADER=benchmarks/ui_fixture.h; \
+	HEADER=benchmarks/fixture/ui_fixture.h; \
 	if [[ -n '$(SCAN_PATHS)' ]]; then \
 	    [[ -f target/release/libappletree.a ]] || { echo 'Build the Rust library first: make engine' >&2; exit 2; }; \
-	    INPUTS='benchmarks/UICleanupScan.swift'; \
+	    INPUTS='benchmarks/ui/UICleanupScan.swift'; \
 	    LINK='-L target/release -lappletree'; \
 	    HEADER=app/bz.h; \
 	else \
-	    clang -O2 -mmacosx-version-min=$(MIN_MACOS) -c benchmarks/ui_fixture.c -o "$$TMP/fixture.o"; \
+	    clang -O2 -mmacosx-version-min=$(MIN_MACOS) -c benchmarks/fixture/ui_fixture.c -o "$$TMP/fixture.o"; \
 	    INPUTS="$$INPUTS $$TMP/fixture.o"; \
 	fi; \
 	BENCH_PATHS=(); \
 	for f in $(BENCH_FILES); do BENCH_PATHS+=("$$TMP/app/$$f.swift"); done; \
 	swiftc "$${BENCH_PATHS[@]}" \
-	  $${INPUTS} benchmarks/UIReferenceCleanup.swift $${LINK} \
+	  $${INPUTS} benchmarks/ui/UIReferenceCleanup.swift $${LINK} \
 	  -import-objc-header "$$HEADER" \
 	  $(SWIFT_FLAGS) \
 	  -o "$$TMP/ui-bench"; \

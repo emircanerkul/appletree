@@ -263,7 +263,7 @@ time with the same operations in the same order, and finally applies only the
 frame darkening that came after that owner. The image takes the pixel buffer
 without a copy, layout is a struct with reused buffers, and hover redraws only
 the outline bands that changed, with label text laid out once per render.
-`benchmarks/rendering.py --real` compares any git ref on real scans:
+`benchmarks/rendering/rendering.py --real` compares any git ref on real scans:
 
 | `/Applications`, median ms | v0.5.1 | Now |
 |---|---:|---:|
@@ -289,7 +289,7 @@ cargo test --release
 cargo test --release --lib flatten_benchmark -- --ignored --nocapture
 make bench-ui
 make bench-ui SCAN_PATHS="/Applications /path/to/projects"
-uv run python benchmarks/rendering.py --baseline 74b8fe4 --allow-ring-rounding
+uv run python benchmarks/rendering/rendering.py --baseline 74b8fe4 --allow-ring-rounding
 make bench-agent ARGS="--check-only"
 make build
 ```
@@ -307,7 +307,7 @@ copy the current `src/bin/bench.rs` into it so both libraries use the same
 harness, and build both with `cargo build --release`. Then run:
 
 ```sh
-uv run benchmarks/scan.py \
+uv run benchmarks/engine/scan.py \
   --baseline build/perf-baseline-source/target/release/bench \
   --candidate target/release/bench --path /Applications \
   --output build/perf-results/apps-ffi.json

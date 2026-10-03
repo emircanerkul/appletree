@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Compile real before/after rendering sources against deterministic tree fixtures.
 
-uv run --no-project python benchmarks/rendering.py --baseline <git-ref> [--check-only]
-uv run --no-project python benchmarks/rendering.py --baseline <git-ref> --real /Applications [--real ~]
+uv run --no-project python benchmarks/rendering/rendering.py --baseline <git-ref> [--check-only]
+uv run --no-project python benchmarks/rendering/rendering.py --baseline <git-ref> --real /Applications [--real ~]
 Private access is widened only in temporary benchmark copies; production code
 needs no test hooks. AppKit/CoreGraphics run offscreen, without opening windows.
 --real scans real folders with the Rust engine instead of synthetic fixtures
@@ -16,7 +16,7 @@ import shutil
 import subprocess
 import tempfile
 
-ROOT = pathlib.Path(__file__).resolve().parents[1]
+ROOT = pathlib.Path(__file__).resolve().parents[2]
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--baseline", required=True)
 parser.add_argument("--check-only", action="store_true")
@@ -75,7 +75,7 @@ for legacy in (True, False):
         path.write_text(source)
         files.append(str(path))
 binary = args.output.resolve() if args.output else work / "rendering"
-runner = (ROOT / "benchmarks" / ("rendering_real.swift" if args.real else "rendering.swift")).read_text()
+runner = (ROOT / "benchmarks" / "rendering" / ("rendering_real.swift" if args.real else "rendering.swift")).read_text()
 # Adapt the runner to the baseline's renderer API.
 if baseline_has_layout:  # squarify returns a Layout with coverage (0648293)
     runner = runner.replace("let legacy = LegacySquarify.layoutItems(items, rect: rect)",

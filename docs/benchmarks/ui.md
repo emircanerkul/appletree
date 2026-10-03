@@ -60,9 +60,9 @@ The second pass profiles and runs the actual SwiftUI/AppKit window. Build two
 read-only harnesses, then alternate their processes:
 
 ```sh
-uv run python benchmarks/ui-handoff.py --ref 178d256 --output build/ui-before
-uv run python benchmarks/ui-handoff.py --ref 178d256 --ui-current --output build/ui-after
-uv run python benchmarks/compare-ui.py --baseline build/ui-before \
+uv run python benchmarks/ui/ui-handoff.py --ref 178d256 --output build/ui-before
+uv run python benchmarks/ui/ui-handoff.py --ref 178d256 --ui-current --output build/ui-after
+uv run python benchmarks/ui/compare-ui.py --baseline build/ui-before \
   --candidate build/ui-after --path /Applications --output build/ui-comparison.json
 ```
 

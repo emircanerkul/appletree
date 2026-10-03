@@ -3,7 +3,7 @@
 Run on an Apple Silicon Mac with the Swift toolchain:
 
 ```sh
-uv run --no-project python benchmarks/rendering.py --baseline 74b8fe4f097a819ece484a73e08f5368e64c3001 --allow-ring-rounding
+uv run --no-project python benchmarks/rendering/rendering.py --baseline 74b8fe4f097a819ece484a73e08f5368e64c3001 --allow-ring-rounding
 ```
 
 To isolate the second rendering pass, compare with `--baseline 178d256` instead.
@@ -56,7 +56,7 @@ samples are retained as `results/2026-09-27/render-rejected-treemap.txt`.
 ## Real scans (`--real`)
 
 ```sh
-uv run --no-project python benchmarks/rendering.py --baseline origin/main --real /Applications --real ~
+uv run --no-project python benchmarks/rendering/rendering.py --baseline origin/main --real /Applications --real ~
 ```
 
 Compiles the baseline's `Treemap.swift`/`TreemapView.swift` (renamed `Legacy*`)

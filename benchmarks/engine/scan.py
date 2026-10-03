@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Alternate two release bench binaries; retain every measurement and total.
 
-uv run benchmarks/scan.py --baseline build/perf-baseline-source/target/release/bench \
+uv run benchmarks/engine/scan.py --baseline build/perf-baseline-source/target/release/bench \
     --candidate target/release/bench --path /Applications --output build/perf-results/apps.json
 """
 

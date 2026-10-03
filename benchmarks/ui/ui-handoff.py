@@ -12,7 +12,7 @@ import shutil
 import subprocess
 import tempfile
 
-ROOT = pathlib.Path(__file__).resolve().parents[1]
+ROOT = pathlib.Path(__file__).resolve().parents[2]
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--ref", help="Git source revision; defaults to working tree")
 parser.add_argument("--output", type=pathlib.Path, required=True)
@@ -47,7 +47,7 @@ try:
         dest.write_text(source)
         files.append(str(dest))
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    subprocess.run(["swiftc", *files, str(ROOT / "benchmarks/UIHandoff.swift"),
+    subprocess.run(["swiftc", *files, str(ROOT / "benchmarks/ui/UIHandoff.swift"),
                     "-import-objc-header", str(ROOT / "app/bz.h"),
                     "-O", "-parse-as-library", "-swift-version", "6", "-default-isolation", "MainActor",
                     *( ["-whole-module-optimization"] if args.wmo else [] ),
