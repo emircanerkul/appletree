@@ -80,6 +80,12 @@ struct ContentView: View {
         .onChange(of: model.agentRun == nil) { if model.agentRun != nil { showCleanup = true } }
         .onChange(of: model.panelRequests) { showCleanup = true }
         .hidingWindowTitle()
+        // Mouse side buttons walk the folder trail, the way they do in a
+        // browser. They arrive as `otherMouseDown` on whatever view is under
+        // the pointer, and the app has several (the map, the rings, the list,
+        // the toolbar), so a per-view handler would only fire over one of them.
+        // A window-scoped monitor catches them wherever the pointer is.
+        .background(HistoryMouseButtons(model: model))
         .onAppear {
             // Never start a whole-disk scan without FDA: every protected
             // app container would fire a permission prompt.
@@ -167,11 +173,16 @@ struct ContentView: View {
         if #available(macOS 26, *) {
             ToolbarItem(placement: .navigation) { titleCrumbs }
                 .sharedBackgroundVisibility(.hidden)
-            ToolbarItemGroup(placement: .navigation) { historyButtons }
             ToolbarSpacer(.flexible)
         } else {
             ToolbarItem(placement: .navigation) { titleCrumbs }
-            ToolbarItemGroup(placement: .navigation) { historyButtons }
+        }
+
+        // Right-aligned, on their own so they do not read as part of the scan
+        // controls: the path stays where the eye starts and the arrows sit at
+        // the right edge of the title area, next to the controls.
+        ToolbarItemGroup(placement: .automatic) {
+            historyButtons
         }
 
         ToolbarItemGroup(placement: .automatic) {
@@ -922,6 +933,73 @@ private extension View {
             toolbar(removing: .title)
         } else {
             navigationTitle("")
+        }
+    }
+}
+
+/// Mouse side buttons drive the folder trail.
+///
+/// Button 3 is the "back" thumb button and button 4 the "forward" one on every
+/// mouse macOS treats this way (the same mapping Safari and Finder use). They
+/// arrive as left-side `otherMouseDown` events, so a local monitor sees them
+/// before any view does — which is the point: the pointer can be over the map,
+/// the rings, the list or the toolbar, and the gesture has to work from all of
+/// them.
+///
+/// A monitor is the right owner rather than an override on each view: the app
+/// builds one map, one rings view and one list, any of which can be under the
+/// pointer, and the toolbar is AppKit's own view that the app never touches.
+/// One window-scoped handler covers all of them and cannot be forgotten when a
+/// surface is added.
+private struct HistoryMouseButtons: NSViewRepresentable {
+    let model: ScanModel
+
+    func makeNSView(context: Context) -> NSView {
+        // Zero-size: this view is never seen or pointed at, it only owns the
+        // monitor's lifetime alongside the window.
+        let view = NSView(frame: .zero)
+        context.coordinator.attach()
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        context.coordinator.model = model
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(model: model) }
+
+    static func dismantleNSView(_ view: NSView, coordinator: Coordinator) {
+        coordinator.detach()
+    }
+
+    @MainActor
+    final class Coordinator {
+        var model: ScanModel
+        private var monitor: Any?
+
+        init(model: ScanModel) { self.model = model }
+
+        func attach() {
+            guard monitor == nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .otherMouseDown) { [weak self] event in
+                guard let self else { return event }
+                let moved: Bool
+                switch event.buttonNumber {
+                case 3: moved = model.goBack()
+                case 4: moved = model.goForward()
+                // Any other extra button (a middle click, a gaming button) is
+                // not a navigation gesture: pass it on untouched.
+                default: return event
+                }
+                // Swallowed only when it did something, so a click that cannot
+                // navigate still reaches whatever is under the pointer.
+                return moved ? nil : event
+            }
+        }
+
+        func detach() {
+            if let monitor { NSEvent.removeMonitor(monitor) }
+            monitor = nil
         }
     }
 }
