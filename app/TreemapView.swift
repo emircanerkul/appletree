@@ -211,11 +211,19 @@ final class TreemapNSView: NSView {
     private var dirMemo: [Int: CGRect?] = [:]
     /// Built on the first hit test after a render, not on every resize.
     private var leafIndex: TMLeafIndex?
+    /// Every directory rect keyed by node, built on the first rect lookup
+    /// after a render. `Scan.dir` walked all rects per lookup, and hover and
+    /// selection redraws ask for rects every frame — one O(dirs) build buys
+    /// O(1) answers afterwards. Directories only: files stay in the spatial
+    /// `leafIndex`, and a per-file map would duplicate `leaves` (megabytes
+    /// on million-file scans) for queries a point hit-test already answers.
+    private var dirRects: [Int: CGRect]?
 
     private func resetLookups() {
         leafMemo = nil
         dirMemo = [:]
         leafIndex = nil
+        dirRects = nil
     }
 
     /// The hovered file's rect and its parent directory's, if on screen.
@@ -223,26 +231,50 @@ final class TreemapNSView: NSView {
         if let m = leafMemo, m.node == node { return m.rects }
         // Only files are in `leaves`.
         guard let tree = model?.tree, !tree.isDir(node) else { return nil }
-        return remember(Scan.leaf(leaves, node), tree: tree, node: node)
+        guard let leaf = leafRect(node) else { return nil }
+        return remember((leaf, dirRect(Int(tree.parents[node]))), node: node)
     }
 
     @discardableResult
-    private func remember(_ leaf: TMRect?, tree: Tree, node: Int) -> (leaf: CGRect, parent: CGRect?)? {
-        let found = leaf.map { ($0.rect, dirRect(Int(tree.parents[node]))) }
-        leafMemo = (node, found)
-        return found
+    private func remember(_ rects: (leaf: CGRect, parent: CGRect?), node: Int) -> (leaf: CGRect, parent: CGRect?)? {
+        leafMemo = (node, rects)
+        return rects
+    }
+
+    /// A file's on-screen rect, or nil when off-screen. Point hit-tests keep
+    /// using the spatial `leafIndex`; this map serves `hoverRects`, which
+    /// needs a rect for a node the cursor may not be over (e.g. keyboard
+    /// focus landing on a file at a screen edge).
+    private func leafRect(_ node: Int) -> CGRect? {
+        for l in leaves where l.node == node { return l.rect }
+        return nil
     }
 
     /// A folder's rect, or for the selection any node's (see `Tree.drawn`).
     private func dirRect(_ node: Int) -> CGRect? {
         if let r = dirMemo[node] { return r }
-        let r = Scan.dir(rects, node) ?? model?.tree.flatMap { tree in
-            tree.isDir(node) ? tree.drawn(node) { Scan.dir(rects, $0) != nil }.flatMap { Scan.dir(rects, $0) }
-                : Scan.leaf(leaves, node)?.rect
+        let map = ensureDirRects()
+        let r = map?[node] ?? model?.tree.flatMap { tree in
+            tree.isDir(node) ? tree.drawn(node) { map?[$0] != nil }.flatMap { map?[$0] }
+                : leafRect(node)
         }
         if dirMemo.count > 64 { dirMemo = [:] }
         dirMemo[node] = r
         return r
+    }
+
+    /// Node → rect for every drawn directory, built once per render. The
+    /// previous `Scan.dir` walk touched all rects per lookup, and one hover
+    /// frame could repeat that for several ancestors.
+    private func ensureDirRects() -> [Int: CGRect]? {
+        guard let map = dirRects else {
+            var map: [Int: CGRect] = [:]
+            map.reserveCapacity(rects.count)
+            for r in rects where r.isDir { map[r.node] = r.rect }
+            dirRects = map
+            return map
+        }
+        return map
     }
 
     // ---- Drawing ----
@@ -340,7 +372,13 @@ final class TreemapNSView: NSView {
             }
         }
         if !highlights.isEmpty {
-            if litRects == nil, let tree = model.tree { litRects = Scan.lit(rects, leaves, highlights, tree: tree) }
+            // The dirs map is cached with `litRects`, so a highlights change
+            // (the didSet above) re-runs only this filter, not an O(n) sweep
+            // over every rect.
+            if litRects == nil, let tree = model.tree,
+               let dirs = ensureDirRects() {
+                litRects = Scan.lit(rects, leaves, highlights, tree: tree, dirs: dirs)
+            }
             let lit = litRects ?? []
             if !lit.isEmpty {
                 let dim = NSBezierPath(rect: bounds)
@@ -375,8 +413,103 @@ final class TreemapNSView: NSView {
             let p = Int(tree.parents[model.viewRoot])
             model.viewRoot = p == Int(UInt32.max) ? 0 : p
             relayout()
+        } else if 123...126 ~= event.keyCode, !event.modifierFlags.contains(.command),
+                  !event.modifierFlags.contains(.option) {
+            // Arrow keys move focus spatially: 123 left, 124 right,
+            // 125 down, 126 up. Pure geometry, no a11y work.
+            keyboardMove(keyCode: event.keyCode)
+        } else if event.keyCode == 36 || event.keyCode == 76 {
+            keyboardZoomIn()
         } else {
             super.keyDown(with: event)
+        }
+    }
+
+    /// On-screen rect for any node: files via `leafRect`, dirs via `dirRect`.
+    private func rect(for node: Int) -> CGRect? {
+        guard let tree = model?.tree else { return nil }
+        return tree.isDir(node) ? dirRect(node) : leafRect(node)
+    }
+
+    /// Step hover/selection to the nearest tile in the pressed direction.
+    /// Anchor is the current focus — hover if set, else selection, else the
+    /// view root — so arrow keys and the mouse never fight: whichever the
+    /// user moved last stays the anchor until they touch the other device.
+    private func keyboardMove(keyCode: UInt16) {
+        guard let model, let tree = model.tree, !rects.isEmpty else { return }
+        let dir: CGPoint
+        switch keyCode {
+        case 123: dir = CGPoint(x: -1, y: 0)
+        case 124: dir = CGPoint(x: 1, y: 0)
+        case 125: dir = CGPoint(x: 0, y: 1)
+        default: dir = CGPoint(x: 0, y: -1) // 126
+        }
+
+        // Anchor point: hover first, then selection, then the root tile.
+        var anchorNode = model.hovered ?? model.selection ?? model.viewRoot
+        // Resolve the anchor to a screen rect (file or dir). Root (node 0)
+        // has no tile of its own; zoomed-out ancestors may be off-screen,
+        // so climb to the first drawn ancestor or fall back to the root tile.
+        var anchor = anchorNode == 0 ? nil : rect(for: anchorNode)
+        while anchor == nil, anchorNode != 0 {
+            anchorNode = Int(tree.parents[anchorNode])
+            anchor = anchorNode == 0 ? rects.first?.rect : rect(for: anchorNode)
+        }
+        guard let from = anchor ?? rects.first?.rect else { return }
+        keyboardFocus(from: CGPoint(x: from.midX, y: from.midY), direction: dir, tree: tree, model: model)
+    }
+
+    /// Pick the tile whose center best combines forward progress along
+    /// `direction` with closeness to the anchor's perpendicular line.
+    private func keyboardFocus(from origin: CGPoint, direction: CGPoint, tree: Tree, model: ScanModel) {
+        // Score every on-screen tile: projection along the direction minus
+        // the perpendicular offset, normalized by view size. Files and dirs
+        // compete together; the best tile wins.
+        let w = max(1, bounds.width), h = max(1, bounds.height)
+        var best: (node: Int, score: CGFloat)?
+        func consider(_ r: TMRect) {
+            let dx = r.rect.midX - origin.x, dy = r.rect.midY - origin.y
+            let along = dx * direction.x + dy * direction.y
+            guard along > 1 else { return } // must actually move somewhere
+            let side = abs(dx * direction.y - dy * direction.x)
+            let score = along / w - side / max(w, h)
+            if best == nil || score > best!.score { best = (r.node, score) }
+        }
+        for r in rects { consider(r) }
+        // Build the dirs map so the on-screen test below never silently
+        // skips every file on its first run.
+        guard let dirs = ensureDirRects() else { return }
+        for l in leaves where dirs[Int(tree.parents[l.node])] != nil { consider(l) }
+        guard let winner = best?.node else { return }
+        model.hovered = winner
+        model.selection = winner
+        syncOverlay()
+        // Keep the newly focused tile on screen if it scrolled out.
+        if let r = rect(for: winner), !bounds.contains(r) {
+            // Walk up to the smallest drawn ancestor that contains it.
+            var p = Int(tree.parents[winner])
+            while p != Int(UInt32.max), dirRect(p) == nil { p = Int(tree.parents[p]) }
+            if p != Int(UInt32.max), p != model.viewRoot, tree.isDir(p) {
+                model.viewRoot = p
+                relayout()
+            }
+        }
+    }
+
+    /// Return zooms into the focused directory. On a file there is nothing
+    /// to zoom into — keyboard move already selected it — so this no-ops.
+    private func keyboardZoomIn() {
+        guard let model, let tree = model.tree else { return }
+        let target = model.hovered ?? model.selection ?? model.viewRoot
+        guard target != 0, tree.isDir(target) else { return }
+        // Zoom to the focused dir itself when drawn, else to the nearest
+        // drawn ancestor (e.g. focus came from a label strip).
+        var p = target
+        while p != 0, dirRect(p) == nil { p = Int(tree.parents[p]) }
+        guard p != 0 || dirRect(0) != nil else { return }
+        if p != model.viewRoot {
+            model.viewRoot = p
+            relayout()
         }
     }
 
@@ -406,8 +539,10 @@ final class TreemapNSView: NSView {
         hoveredLabel = lab
         let leaf = lab == nil ? hit(p) : nil
         let node = lab ?? leaf?.node
-        if let leaf, let tree = model?.tree, leafMemo?.node != leaf.node {
-            remember(leaf, tree: tree, node: leaf.node) // saves the lookup when drawing
+        if let leaf, leafMemo?.node != leaf.node {
+            // Saves the lookup when drawing; the parent dir rect resolves
+            // through the cached dirs map inside `dirRect`.
+            remember((leaf.rect, dirRect(Int(model?.tree?.parents[leaf.node] ?? 0))), node: leaf.node)
         }
         if node != hoveredNode {
             hoveredNode = node
@@ -470,20 +605,10 @@ final class TreemapNSView: NSView {
 /// in the MainActor view checks its executor on every call, which made one
 /// pass over 40k directory rects cost milliseconds per mouse move.
 nonisolated private enum Scan {
-    static func leaf(_ leaves: [TMRect], _ node: Int) -> TMRect? {
-        leaves.first { $0.node == node }
-    }
-
-    static func dir(_ rects: [TMRect], _ node: Int) -> CGRect? {
-        rects.first { $0.node == node && $0.isDir }?.rect
-    }
-
     /// Each node's rect: files from `leaves`, folders from `rects`, and a
     /// folder merged into its parent's "A ▸ B" box lights that box.
-    static func lit(_ rects: [TMRect], _ leaves: [TMRect], _ nodes: [Int], tree: Tree) -> [CGRect] {
+    static func lit(_ rects: [TMRect], _ leaves: [TMRect], _ nodes: [Int], tree: Tree, dirs: [Int: CGRect]) -> [CGRect] {
         let wanted = Set(nodes)
-        var dirs: [Int: CGRect] = [:]
-        for r in rects { dirs[r.node] = r.rect }
         var out = Set<Int>()
         var files: [CGRect] = []
         for node in wanted where tree.isDir(node) {

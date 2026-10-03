@@ -550,6 +550,8 @@ private struct PlanCard: View {
         }
         .padding(10)
         .background(
+            // White at low opacity is the app's convention for raising a
+            // surface on the dark panel — not an unstyled leftover.
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(Color.white.opacity(current ? 0.10 : 0.05))
         )
