@@ -64,23 +64,23 @@ git-pinned dependency (`ZacharyZhang-NY/Ely-GPUI-Components` @ Zed rev
 - Windows/Linux untested.
 - Early stage; 43 chapters but component churn is expected.
 
-# Scale test: 100k and 1M files in one folder
+# Scale test: 100k, 250k, and 1M files in one folder
 
-Real files created on disk (`/tmp/scale/flat-100k`, `flat-1m`), `PROBE_MAX_KIDS=0`
-so nothing is capped, same machine.
+Real files created on disk (`/tmp/scale/flat-100k`, `flat-250k`, `flat-1m`),
+`PROBE_MAX_KIDS=0` so nothing is capped, same machine.
 
 ## Results
 
-| Quantity | 37 tiles (baseline) | 100,000 | 1,000,000 |
-|---|---|---|---|
-| Engine scan | 1.1 s | 0.15 s | 44–54 s* |
-| Flat tree → Ely models | 1.2 ms | 22 ms | 236 ms |
-| Frame p50 (steady) | 16.67 ms | 16.67 ms | **135 ms (~7 fps)** |
-| Element-build p50 per frame | 0.13 ms | 5.6 ms | 60 ms |
-| Frame p99 | 17.7 ms | 20 ms | 242 ms |
-| Peak resident (windowed) | 120 MB | **814 MB** | **3.4 GB** |
-| Peak resident (models only, no window) | — | 34 MB | — |
-| First paint | — | ~1–2 s | **never within a 4-minute run** (combined view; each half alone first-paints after ~10 s of 65–80 ms frames) |
+| Quantity | 37 tiles (baseline) | 100,000 | 250,000 | 1,000,000 |
+|---|---|---|---|---|
+| Engine scan | 1.1 s | 0.15 s | 0.59 s | 44–54 s* |
+| Flat tree → Ely models | 1.2 ms | 22 ms | 55 ms | 236 ms |
+| Frame p50 (steady, both views) | 16.67 ms | 16.67 ms | **42 ms (~24 fps)** | **135 ms (~7 fps)** |
+| Element-build p50 per frame | 0.13 ms | 5.6 ms | 14 ms | 60 ms |
+| Frame p99 | 17.7 ms | 20 ms | 69 ms | 242 ms |
+| Peak resident (windowed) | 120 MB | 814 MB | **1.27 GB** | **3.4 GB** |
+| Peak resident (models only, no window) | — | 34 MB | — | — |
+| First paint | — | ~1–2 s | several seconds | **never within a 4-minute run** (combined view; each half alone first-paints after ~10 s of 65–80 ms frames) |
 
 \* Engine-side: `getattrlistbulk` over 1M files plus sorting a 1M-child
 directory. Framework-independent — the SwiftUI app pays the same scan; but note
@@ -89,17 +89,21 @@ folder exposes.
 
 ## What breaks, precisely
 
-- **The Ely `Tree` list scales fine.** It virtualizes via GPUI's
+- **The Ely `Tree` list scales well but not freely.** It virtualizes via GPUI's
   `uniform_list`: at 100k rows the list alone builds in **1.0 ms/frame** and
-  frames hold 16.67 ms. At 1M rows alone: 10.5 ms build, 65 ms frames —
-  degraded but alive. The engine's `child_off`/`children` arrays map onto a
-  virtualized list cleanly.
+  frames hold 16.67 ms. At 250k rows alone frames drift to ~49 ms p50 despite
+  only 2.6 ms builds — virtualization keeps element count bounded, but
+  something in the per-frame row bookkeeping (keyed-state diff over 250k
+  keys) still grows. At 1M rows alone: 10.5 ms build, 65 ms frames. The
+  engine's `child_off`/`children` arrays still map onto a virtualized list
+  cleanly; the ceiling is Ely's tree-list machinery, not virtualization.
 - **The Ely `Treemap` does not scale.** Its `RenderOnce` sorts all tiles,
   squarifies all tiles, and creates a label `Div` for every tile that passes
   the size filter — every frame, no virtualization, no capping. At 100k tiles
   the treemap alone pushes frames to 33–49 ms p50 (degrading over time as
-  label count grows); at 1M it dominates the failure (47–60 ms build per
-  frame). Paint is a canvas quad per tile, also unbounded.
+  label count grows); at 250k alone it holds ~33 ms p50 (~30 fps); at 1M it
+  dominates the failure (47–60 ms build per frame). Paint is a canvas quad
+  per tile, also unbounded.
 - **Per-frame model clone** (probe's fault, not Ely's): `Tree::new` consumes
   nodes by value, so the probe rebuilds/clones 1M `TreeNode`s per frame. A
   real port would hold them in an `Entity` and render via reference. The
@@ -107,20 +111,28 @@ folder exposes.
 
 ## Context: what the SwiftUI app does at the same scale
 
-The SwiftUI treemap caps visible bands (30 in the audit config) and rolls the
-remainder up, so layout cost is O(30) regardless of folder size; the list
-virtualizes. That is why the whole app first-paints 290k nodes in 96.8 ms
-using 59 MB. The GPUI probe's 100k window uses **814 MB** — 10× more —
-primarily the un-capped treemap's element tree, not the data (models alone:
-34 MB).
+The SwiftUI treemap is not capped by count — `Squarify.items` takes every
+direct child — but `layoutItems` breaks out of the squarify loop once a
+child's area drops below a quarter pixel (`size * scale < 0.25`), so a flat
+250k-entry folder only lays out the tiles big enough to see, and paint goes
+straight into a pixel buffer (`paint_quad`-free, one raster pass) with labels
+only for tiles ≥ 90×30 px. The list virtualizes. That is why the whole app
+first-paints 290k nodes in 96.8 ms using 59 MB. The GPUI probe's 100k window
+uses **814 MB** — 10× more — because Ely's treemap materializes a `Div` label
+per tile and re-sorts/re-squarifies everything every frame.
 
 ## Verdict at scale
 
-- A GPUI+Ely port of the *list* is viable at 100k+ rows thanks to
-  virtualization; no measured win over SwiftUI, but no loss.
-- A GPUI+Ely port of the *treemap* would need exactly the capping/roll-up
-  strategy AppleTree already implements in SwiftUI — at which point GPUI's
-  advantage is zero, since O(30) squarify is trivially fast in either
-  framework.
+- A GPUI+Ely port of the *list* is viable at 100k rows and workable at 250k
+  (virtualization holds; ~49 ms p50 at 250k needs investigation or a lighter
+  row type). No measured win over SwiftUI, and SwiftUI's list held its
+  numbers at the same scales — but no loss either.
+- A GPUI+Ely port of the *treemap* would need Ely's component replaced with
+  the same ¼-pixel-early-exit + pixel-buffer-paint approach the Swift app
+  already uses — at which point the layout algorithm is framework-neutral
+  and GPUI's advantage is zero, since the Swift implementation already runs
+  it in ~5 ms.
 - 1M nodes in one view is a pathology for both frameworks; the engine itself
-  (44 s scan) is the larger problem there, and neither UI can rescue it.
+  (44 s scan of a flat million-child directory — worth its own fix, e.g.
+  deferring or chunking the per-directory sort) is the larger problem there,
+  and neither UI can rescue it.
