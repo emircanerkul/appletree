@@ -40,7 +40,7 @@ Signed with a Developer ID and notarized by Apple, so it opens like any other ap
 - A Rust worker pool keeps many directories in flight, and scan threads run at user-initiated QoS: they stay on performance cores without starving the UI.
 - The treemap is laid out once and painted on every core in parallel, so zooming redraws in a couple of frames.
 
-Method, full results and a comparison with other tools: [BENCHMARKS.md](BENCHMARKS.md).
+Method, full results and a comparison with other tools: [BENCHMARKS.md](docs/benchmarks/BENCHMARKS.md).
 
 ## Accuracy
 

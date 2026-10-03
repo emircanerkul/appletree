@@ -6,8 +6,8 @@ Rust 1.98. Release builds, warm filesystem caches, normal desktop activity.
 Team benchmarks ran sequentially; background system activity was not stopped.
 These are local measurements, not a claim about every disk or Mac.
 
-Raw measurements are checked in under
-[`benchmarks/results/2026-09-27`](benchmarks/results/2026-09-27).
+Note: checked-in raw results were relocated to [`results/2026-09-27`](results/2026-09-27)
+(this audit's links were updated 2026-10-03; older commits referenced the old paths).
 
 ## Changes
 
@@ -191,7 +191,7 @@ presentation. Every available row's tree identity/name/size is checked. For
 injected 1.5-second metadata delay allowed 140 main-actor ticks and continuing
 progress, verifying that the wait is asynchronous. Earlier queued-callback
 logs should not be interpreted as uninterrupted main-thread blocking.
-See [`benchmarks/UI.md`](benchmarks/UI.md) and `ui-comparison-final.json`.
+See [`ui.md`](ui.md) and `ui-comparison-final.json`.
 
 ### Plan preparation and cleanup responsiveness
 
@@ -220,7 +220,7 @@ The captured selection cannot be submitted twice; conflicting scans/agent
 starts wait until the batch completes. Fake-I/O tests cover responsiveness,
 ordered failures, one completion/rescan, and delayed agent discovery. Failures
 are retained on the model even if the inspector closes during the batch.
-See [`benchmarks/AGENT.md`](benchmarks/AGENT.md).
+See [`agent.md`](agent.md).
 
 ## Third pass: flat engine, once-per-pixel treemap, list selection
 
