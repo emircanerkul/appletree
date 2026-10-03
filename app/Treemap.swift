@@ -6,6 +6,21 @@ nonisolated struct TMRect {
     var rect: CGRect
     var node: Int
     var isDir: Bool
+    /// Width in points of this folder's separation frame, when it was drawn.
+    ///
+    /// The frame is painted *over* the children, so it is the one part of an
+    /// unheaded folder that is visibly the folder's own — and when children
+    /// tile the box exactly, the only part. 0 when the folder has no frame,
+    /// or is a file.
+    var band: CGFloat = 0
+
+    /// Whether `p` falls on this tile's frame. The frame is a ring just
+    /// inside the rect's edges, the same pixels `frame(_:_:_:)` darkens.
+    func onFrame(_ p: CGPoint) -> Bool {
+        guard band > 0, rect.contains(p) else { return false }
+        return p.x < rect.minX + band || p.x >= rect.maxX - band
+            || p.y < rect.minY + band || p.y >= rect.maxY - band
+    }
 }
 
 /// A directory title strip: `strip` is the bar (text + hit target), `region`
@@ -13,6 +28,14 @@ nonisolated struct TMRect {
 nonisolated struct TMLabel {
     var strip: CGRect
     var region: CGRect
+    /// The folder this strip names. For a collapsed pass-through chain
+    /// ("Versions ▸ A") it is the deepest folder — the one the text ends with.
+    ///
+    /// It must stay the deepest. The deepest node of a collapsed chain is
+    /// drawn nowhere else, so this strip is its only handle; the folder that
+    /// owns the box keeps its own area and its separation frame. Naming the
+    /// owner here instead made the collapsed folder unreachable, which traded
+    /// one unselectable folder for another.
     var node: Int
     var depth: Int
     var name: String
@@ -447,6 +470,7 @@ nonisolated enum TreemapRenderer {
                 shade(rect, colors.color(tree, node), s)
                 return
             }
+            let rectIndex = rects.count
             rects.append(TMRect(rect: ptRect, node: node, isDir: true))
 
             // WizTree-style framed box: big directories get a title
@@ -513,16 +537,31 @@ nonisolated enum TreemapRenderer {
             }
             // Separation frames for unheaded dirs (headed ones have
             // their own frame already).
+            //
+            // The frame is also this folder's hit area. Children tile the box
+            // exactly, so an unheaded folder keeps no pixels of its own: with
+            // no frame band it had no clickable point anywhere, which left
+            // small folders (a `.xpc`, a `MacOS`, a narrow `Contents`)
+            // unselectable and un-right-clickable. Recorded only when the
+            // frame was really painted, so the band matches what is on screen.
             if !headed {
+                let thickness: Int
                 switch depth {
-                case 0: break // window edge needs no frame
-                case 1: frame(rect, Int(2 * scale), 0) // frameFactors[0] = 0.30
-                case 2: frame(rect, Int(scale), 1)
-                case 3: frame(rect, max(1, Int(scale / 2)), 2)
-                default:
-                    if rect.rawWidth > 28, rect.rawHeight > 28 {
-                        frame(rect, 1, 3)
-                    }
+                case 0: thickness = 0 // window edge needs no frame
+                case 1: thickness = Int(2 * scale)
+                case 2: thickness = Int(scale)
+                case 3: thickness = max(1, Int(scale / 2))
+                default: thickness = rect.rawWidth > 28 && rect.rawHeight > 28 ? 1 : 0
+                }
+                if thickness > 0 { frame(rect, thickness, min(depth - 1, 3)) }
+                // The hit band is the grout this folder just painted, so the
+                // pixels that answer a click are the ones that read as its
+                // border. Too small to paint grout at all, it falls back to a
+                // hairline edge: without any band the folder had no handle
+                // anywhere, which is what left a narrow `Resources`, `MacOS`
+                // or `.xpc` impossible to select or right-click.
+                if depth >= 1 {
+                    rects[rectIndex].band = max(1.5, CGFloat(thickness) / scale)
                 }
             }
         }

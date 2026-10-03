@@ -748,7 +748,8 @@ struct OutlinePanel: NSViewRepresentable {
         @objc func doubleClicked(_ sender: NSOutlineView) {
             guard let it = sender.item(atRow: sender.clickedRow) as? Item else { return }
             if it.tree.isDir(it.id) {
-                model?.viewRoot = it.id
+                // Through `navigate`, so the title path re-anchors here too.
+                model?.navigate(to: it.id)
             } else {
                 NSWorkspace.shared.activateFileViewerSelecting(
                     [URL(fileURLWithPath: it.tree.path(it.id))])
@@ -833,18 +834,17 @@ private struct TitleCrumbs: View {
     }
 
     private func crumbs(tree: Tree) -> some View {
-        // A deep chain is truncated from the front — the tail (what is on
-        // screen and what is picked) is what has to stay readable.
-        let chain = Array(tree.ancestry(model.crumbTarget).suffix(6))
-        let truncated = chain.first != 0
+        // The chain is built by the model, which guarantees the folder on
+        // screen and its ancestors are never the part that gets dropped.
+        let path = model.crumbPath
         return HStack(spacing: 4) {
-            if truncated {
+            if path.elidedAbove {
                 Text("…").foregroundStyle(.tertiary)
                 chevron
             }
-            ForEach(chain.indices, id: \.self) { i in
+            ForEach(path.nodes.indices, id: \.self) { i in
                 if i > 0 { chevron }
-                crumb(tree: tree, node: chain[i], isLast: i == chain.count - 1)
+                crumb(tree: tree, node: path.nodes[i], isLast: i == path.nodes.count - 1)
             }
         }
     }
@@ -857,14 +857,14 @@ private struct TitleCrumbs: View {
 
     private func crumb(tree: Tree, node: Int, isLast: Bool) -> some View {
         Button {
-            // A folder crumb moves the map there. A selected *file* has no map
-            // of its own, so its crumb opens the folder that holds it — the
-            // same thing double-clicking the file's tile does.
+            // Every crumb is the same gesture: show that folder. A file has
+            // no map of its own, so its crumb opens the folder holding it —
+            // matching what double-clicking the file's tile does.
             if tree.isDir(node) {
-                model.viewRoot = node
+                model.navigate(to: node)
             } else {
                 let parent = Int(tree.parents[node])
-                if parent != Int(UInt32.max) { model.viewRoot = parent }
+                if parent != Int(UInt32.max) { model.navigate(to: parent) }
             }
         } label: {
             Text(node == 0 ? model.displayRootName : tree.name(node))

@@ -102,17 +102,68 @@ nonisolated final class Tree: @unchecked Sendable {
     var scanRoot = "fixture"
     var agentRun: AgentRun?
 
-    /// Mirrors the production model's "up" and breadcrumb surface: the views
-    /// compile against this stub, so it has to offer what they call.
+    /// Mirrors the production model's navigation surface: the views compile
+    /// against this stub, so it has to offer what they call, with the same
+    /// semantics. Keep it in step with `ScanModel` — a stub that drifts lets
+    /// a view regression pass the bench unnoticed.
+    func navigate(to folder: Int) {
+        viewRoot = folder
+        selection = nil
+        hovered = nil
+    }
     @discardableResult
     func selectEnclosingFolder(of node: Int? = nil) -> Bool {
         guard let tree, let focus = node ?? selection ?? hovered, focus != 0 else { return false }
         let parent = Int(tree.parents[focus])
-        guard parent != Int(UInt32.max), tree.isDir(parent) else { return false }
-        if focus == viewRoot { viewRoot = parent } else { selection = parent; hovered = parent }
+        guard parent != UInt32.max, tree.isDir(parent) else { return false }
+        if focus == viewRoot || parent == viewRoot {
+            guard viewRoot != 0 else { return false }
+            navigate(to: Int(tree.parents[viewRoot]))
+            return true
+        }
+        selection = parent
+        hovered = parent
         return true
     }
-    var crumbTarget: Int { selection ?? viewRoot }
+    /// Mirrors `CrumbPath`: the breadcrumb window, bounded and anchored on the
+    /// folder on screen so its ancestors are never the part that gets elided.
+    struct CrumbPath {
+        var nodes: [Int]
+        var elidedAbove = false
+        var elidedBelow = false
+    }
+    var crumbPath: CrumbPath {
+        guard let tree else { return CrumbPath(nodes: [viewRoot]) }
+        var toRoot: [Int] = []
+        var cur = viewRoot
+        while true {
+            toRoot.insert(cur, at: 0)
+            let p = tree.parents[cur]
+            if p == UInt32.max { break }
+            cur = Int(p)
+        }
+        var below: [Int] = []
+        if let selection, selection != viewRoot {
+            var chain: [Int] = []
+            var c = selection
+            while true {
+                chain.insert(c, at: 0)
+                let p = tree.parents[c]
+                if p == UInt32.max { break }
+                c = Int(p)
+            }
+            if chain.count > toRoot.count { below = Array(chain.dropFirst(toRoot.count)) }
+        }
+        var path = CrumbPath(nodes: [])
+        if below.count > 3 {
+            below = Array(below.suffix(3))
+            path.elidedBelow = true
+        }
+        let parents = Array(toRoot.suffix(5))
+        path.elidedAbove = parents.count < toRoot.count
+        path.nodes = parents + below
+        return path
+    }
     var displayRootName: String { (scanRoot as NSString).lastPathComponent }
 }
 @MainActor struct AgentRun { func highlights(in tree: Tree?) -> [Int] { [] } }

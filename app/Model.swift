@@ -410,32 +410,52 @@ final class ScanModel {
         selection = node
     }
 
+    /// Move the map to `folder` and make it the focus.
+    ///
+    /// One owner for every zoom — a crumb, a double-click, Return, the rings,
+    /// Escape. Dropping the pick is what keeps the title path honest: leaving
+    /// the old selection in place anchored the crumbs to a node several levels
+    /// *below* the folder now on screen, so the truncation ate exactly the
+    /// ancestors you needed to click to go back up. The map went up; the path
+    /// did not follow, and there was no way further up.
+    ///
+    /// The selection is cleared rather than set to `folder`: the folder on
+    /// screen is drawn as the whole map, and the accent ring strokes the
+    /// selection's rect, so "selecting" it would outline the entire window.
+    /// The title path and `selectEnclosingFolder` already fall back to
+    /// `viewRoot`, so nothing is lost by leaving the pick empty.
+    func navigate(to folder: Int) {
+        viewRoot = folder
+        selection = nil
+        hovered = nil
+    }
+
     /// Move the focus up to the folder that contains `node` — what the map
     /// needs so a small tile still lets you pick the folder holding it. When
     /// the focus is already the folder on screen there is no parent tile to
     /// move to, so this zooms out instead: the command always goes somewhere.
     ///
-    /// Focus is the selection first, then the hover: the selection is the
-    /// pick the user sees ringed, the hover only follows the pointer. Every
-    /// surface (map, rings, list) calls this one owner, so "up" cannot mean
-    /// something different in each of them.
+    /// Focus is the selection first, then the hover, then the folder on
+    /// screen: the selection is the pick the user sees ringed, the hover only
+    /// follows the pointer, and with neither the folder being viewed is still
+    /// the thing "up" means. Every surface (map, rings, list) calls this one
+    /// owner, so "up" cannot mean something different in each of them.
     ///
     /// Returns whether it moved anything, so a caller can fall back to plain
     /// zoom-out (Escape) when the focus is already at the top of the view.
     @discardableResult
     func selectEnclosingFolder(of node: Int? = nil) -> Bool {
-        guard let tree, let focus = node ?? selection ?? hovered, focus != 0 else { return false }
+        guard let tree, let focus = node ?? selection ?? hovered ?? (viewRoot == 0 ? nil : viewRoot)
+        else { return false }
         let parent = Int(tree.parents[focus])
         guard parent != Int(UInt32.max), tree.isDir(parent) else { return false }
         // The enclosing folder is the folder on screen: it has no tile or row
-        // of its own here, so step out one level instead. The pick is kept —
-        // the new root is an ancestor, so it stays on screen and selected
-        // (`viewRoot.didSet` only drops a selection outside the new root).
+        // of its own here, so step out one level instead.
         if focus == viewRoot || parent == viewRoot {
             guard viewRoot != 0 else { return false }
             // Only node 0 has `parents[0] == UInt32.max`, and it is excluded
             // above, so this always lands on a real folder.
-            viewRoot = Int(tree.parents[viewRoot])
+            navigate(to: Int(tree.parents[viewRoot]))
             return true
         }
         selection = parent
@@ -443,11 +463,48 @@ final class ScanModel {
         return true
     }
 
-    /// The node the breadcrumb follows: what is picked, else the folder on
-    /// screen. The selection (never the hover) so the path holds still while
-    /// the pointer sweeps the map, and so a pick deep inside the folder on
-    /// screen still shows the way back up to it.
-    var crumbTarget: Int { selection ?? viewRoot }
+    /// The path to show in the title, and what it had to leave out.
+    ///
+    /// The folder on screen and its ancestors always survive, because those
+    /// are what "go up" clicks: anchoring the path on a deep pick instead
+    /// truncated the ancestors away exactly when they were needed, so the
+    /// only crumbs left pointed *back down* and there was no way up.
+    nonisolated struct CrumbPath {
+        /// Folders to draw, outermost first.
+        var nodes: [Int]
+        /// Something above the first crumb was dropped.
+        var elidedAbove = false
+        /// Something between the folder on screen and the pick was dropped.
+        var elidedBelow = false
+    }
+
+    /// At most this many parents above the folder on screen, and this many
+    /// steps below it to the pick: enough to walk out, bounded so a deep
+    /// chain cannot push the ancestors off the end of the title bar.
+    private static let crumbParents = 5
+    private static let crumbDepth = 3
+
+    var crumbPath: CrumbPath {
+        guard let tree else { return CrumbPath(nodes: [viewRoot]) }
+        // The folder on screen, from the scan root down to it.
+        let toRoot = tree.ancestry(viewRoot)
+        var path = CrumbPath(nodes: [])
+        // A pick *below* the folder on screen extends the path past it, so
+        // the file you picked still shows which folder holds it.
+        var below: [Int] = []
+        if let selection, selection != viewRoot {
+            let toPick = tree.ancestry(selection)
+            if toPick.count > toRoot.count { below = Array(toPick.dropFirst(toRoot.count)) }
+        }
+        if below.count > Self.crumbDepth {
+            below = Array(below.suffix(Self.crumbDepth))
+            path.elidedBelow = true
+        }
+        let parents = Array(toRoot.suffix(Self.crumbParents))
+        path.elidedAbove = parents.count < toRoot.count
+        path.nodes = parents + below
+        return path
+    }
 
     /// How a scan target reads as a name: the whole disk is "Macintosh HD".
     /// One owner, so the title, the breadcrumbs and the rings' centre label

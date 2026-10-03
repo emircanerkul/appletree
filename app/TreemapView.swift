@@ -445,7 +445,7 @@ final class TreemapNSView: NSView {
                 syncOverlay()
             } else if let model, let tree = model.tree, model.viewRoot != 0 {
                 let p = Int(tree.parents[model.viewRoot])
-                model.viewRoot = p == Int(UInt32.max) ? 0 : p
+                model.navigate(to: p == Int(UInt32.max) ? 0 : p)
                 relayout()
             }
         } else if 123...126 ~= event.keyCode, !event.modifierFlags.contains(.command),
@@ -525,7 +525,7 @@ final class TreemapNSView: NSView {
             var p = Int(tree.parents[winner])
             while p != Int(UInt32.max), dirRect(p) == nil { p = Int(tree.parents[p]) }
             if p != Int(UInt32.max), p != model.viewRoot, tree.isDir(p) {
-                model.viewRoot = p
+                model.navigate(to: p)
                 relayout()
             }
         }
@@ -564,7 +564,7 @@ final class TreemapNSView: NSView {
         while p != 0, dirRect(p) == nil { p = Int(tree.parents[p]) }
         guard p != 0 || dirRect(0) != nil else { return }
         if p != model.viewRoot {
-            model.viewRoot = p
+            model.navigate(to: p)
             relayout()
         }
     }
@@ -599,13 +599,35 @@ final class TreemapNSView: NSView {
         return found
     }
 
-    /// What a click at `point` picks: a title strip first (it paints above
-    /// its own folder), then a file tile, then the folder underneath.
+    /// The folder whose separation frame is painted at `point`, if any.
+    ///
+    /// A folder narrower than the title-strip threshold gets no label, and its
+    /// children tile its box exactly, so every pixel of it belongs to a file
+    /// tile instead — a `MacOS`, a `.xpc`, a small `Headers` had no clickable
+    /// point anywhere and could not be selected or right-clicked at all.
+    /// The frame is painted *over* those children, so that pixel is visibly
+    /// the folder's own and is the folder's only handle.
+    ///
+    /// Where frames overlap they are a nested chain, and `draw` paints the
+    /// outer one last, so the first match in draw order is the one on top:
+    /// the folder whose border the user is actually looking at.
+    private func frame(at point: CGPoint) -> Int? {
+        for r in rects where r.onFrame(point) { return r.node }
+        return nil
+    }
+
+    /// What a click at `point` picks, in paint order: a title strip (it paints
+    /// above its own folder), a folder's separation frame (painted over the
+    /// children), a file tile, then the folder underneath any of them.
     ///
     /// Internal, like `hover(at:)`, so the click geometry is exercised
     /// directly instead of through a synthesized event.
     func pick(at point: CGPoint, slop: CGFloat = 0) -> Int? {
         if let lab = Scan.hit(labelHits, point, slop: slop) { return lab }
+        // Before the file tiles: a frame is painted over the children, so
+        // these pixels visibly belong to the folder, even though a child's
+        // rect also contains the point.
+        if let framed = frame(at: point) { return framed }
         if let leaf = hit(point) { return leaf.node }
         return dir(at: point)
     }
@@ -655,7 +677,7 @@ final class TreemapNSView: NSView {
             guard let node = pick(at: p, slop: 2) else { return }
             let target = tree.isDir(node) ? node : Int(tree.parents[node])
             if target != Int(UInt32.max), tree.isDir(target), target != model.viewRoot {
-                model.viewRoot = target
+                model.navigate(to: target)
                 relayout()
             }
         } else {

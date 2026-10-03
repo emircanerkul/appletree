@@ -545,7 +545,7 @@ final class SunburstNSView: NSView {
     private func zoomOut() -> Bool {
         guard let model, let tree = model.tree, model.viewRoot != 0 else { return false }
         let p = Int(tree.parents[model.viewRoot])
-        model.viewRoot = p == Int(UInt32.max) ? 0 : p
+        model.navigate(to: p == Int(UInt32.max) ? 0 : p)
         relayoutIfNeeded()
         return true
     }
@@ -622,7 +622,7 @@ final class SunburstNSView: NSView {
             let node = segments[i].node
             guard node >= 0 else { return }
             if tree.isDir(node) && !tree.children(node).isEmpty {
-                model.viewRoot = node
+                model.navigate(to: node)
                 relayoutIfNeeded()
             } else {
                 model.selection = node
