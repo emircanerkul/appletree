@@ -1,7 +1,7 @@
 # Offline agent data benchmarks
 
-`benchmarks/run-agent.sh` checks the production agent data algorithms and prints
-nine alternating before/after timings. `--check-only` runs the correctness
+`make bench-agent` checks the production agent data algorithms and prints
+nine alternating before/after timings. `make bench-agent ARGS="--check-only"` runs the correctness
 checks without timing workloads. It uses the same `-O`, Swift 6, main actor
 isolation and macOS 14 target as the app build. The runner freezes production
 sources and logs their SHA256s before compiling.

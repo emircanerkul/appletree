@@ -1,12 +1,12 @@
 # UI and cleanup benchmark
 
-Run `benchmarks/run-ui.sh` for correctness checks and timings, or pass
-`--check-only` for the checks. Use
-`benchmarks/run-ui.sh --scan-path /Applications /path/to/projects` to time cleanup
+Run `make bench-ui` for correctness checks and timings, or pass
+`ARGS="--check-only"` for the checks. Use
+`make bench-ui SCAN_PATHS="/Applications /path/to/projects"` to time cleanup
 against real scan snapshots after `cargo build --release`. No agent starts and
 no cleanup is performed in either mode. It compiles the current production Swift files
 with the same `-O`, Swift 6, main actor isolation, and macOS 14 target as
-`build.sh`. Synthetic mode uses a C adapter to provide read-only trees through the real
+`make build`. Synthetic mode uses a C adapter to provide read-only trees through the real
 `Tree`/C bridge; real mode links the Rust library and scans each path once,
 then both algorithms inspect that same snapshot. Scan time is excluded from
 cleanup timings. The permission probe only checks the existing FDA-protected
@@ -114,7 +114,7 @@ gain, so the production build flags remain unchanged.
 
 The shared Clean Up implementation selects candidates in Rust before tree hand-off.
 Synthetic fixtures seed the Swift adapter with the existing reference output;
-use `run-ui.sh --scan-path PATH` to compare actual Rust selection with that
+use `make bench-ui SCAN_PATHS=PATH` to compare actual Rust selection with that
 reference. Cleanup presentation timings exclude Rust selection and must not
 be read as end-to-end selection speedups. Size ties are compared independently
 of order in the real-scan parity check.

@@ -76,9 +76,9 @@ the trust in your own PATH is residual.
 Requires Xcode 26 or later and Rust.
 
 ```sh
-./build.sh              # build/AppleTree.app
-./deploy.sh             # build and install to /Applications
-cargo test --release    # engine tests
+make build             # build/AppleTree.app
+make deploy            # build and install to /Applications
+cargo test --release   # engine tests
 ```
 
 The Rust engine hands the finished tree to the Swift UI as flat arrays over a C interface, with no copying. `AppleTree <path>` scans a specific folder.

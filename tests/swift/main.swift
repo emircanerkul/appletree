@@ -1,5 +1,5 @@
 // Guard unit tests (plan T8): the trust boundary gets a regression net.
-// Build (from repo root, same flags as build.sh):
+// Build (from repo root, same flags as the Makefile):
 //   swiftc tests/swift/main.swift app/CleanupGuard.swift \
 //       -import-objc-header app/bz.h -swift-version 6 \
 //       -default-isolation MainActor -target arm64-apple-macos14.0 \

@@ -287,14 +287,14 @@ rather than through Swift runtime casts: selecting a file inside a
 ```sh
 cargo test --release
 cargo test --release --lib flatten_benchmark -- --ignored --nocapture
-benchmarks/run-ui.sh
-benchmarks/run-ui.sh --scan-path /Applications /path/to/projects
+make bench-ui
+make bench-ui SCAN_PATHS="/Applications /path/to/projects"
 uv run python benchmarks/rendering.py --baseline 74b8fe4 --allow-ring-rounding
-benchmarks/run-agent.sh --check-only
-./build.sh
+make bench-agent ARGS="--check-only"
+make build
 ```
 
-`benchmarks/run-ui.sh --check-only` and the rendering runner's `--check-only`
+`make bench-ui ARGS="--check-only"` and the rendering runner's `--check-only`
 option omit timing loops. Swift harnesses use production `-O`, Swift 6, default
 main-actor isolation, and the macOS 14 deployment target, without whole-module
 optimization. The rendering harness compiles the actual old/new renderer files
