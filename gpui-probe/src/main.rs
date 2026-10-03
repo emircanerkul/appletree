@@ -115,6 +115,15 @@ fn build(tree: &Tree) -> (Vec<(SharedString, f64)>, Vec<TreeNode>, usize) {
     (tiles, nodes, labels)
 }
 
+/// Cap on children listed per directory; overridable for scale tests:
+/// `PROBE_MAX_KIDS=0` (or huge) lists everything, e.g. a 100k-file folder.
+fn max_kids() -> usize {
+    std::env::var("PROBE_MAX_KIDS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(64)
+}
+
 /// Recursively turn one engine node into an Ely TreeNode.
 /// `depth` caps recursion so the probe's list stays tractable; the engine tree is huge.
 fn list_node(tree: &Tree, index: usize, depth: u8, labels: &mut usize) -> TreeNode {
@@ -124,12 +133,19 @@ fn list_node(tree: &Tree, index: usize, depth: u8, labels: &mut usize) -> TreeNo
     *labels += 1;
 
     if tree.is_dir(index) && depth > 0 {
-        let kids: Vec<TreeNode> = tree
-            .kids(index)
-            .iter()
-            .take(64)
-            .map(|&k| list_node(tree, k as usize, depth - 1, labels))
-            .collect();
+        let cap = max_kids();
+        let kids: Vec<TreeNode> = if cap == 0 {
+            tree.kids(index)
+                .iter()
+                .map(|&k| list_node(tree, k as usize, depth - 1, labels))
+                .collect()
+        } else {
+            tree.kids(index)
+                .iter()
+                .take(cap)
+                .map(|&k| list_node(tree, k as usize, depth - 1, labels))
+                .collect()
+        };
         if !kids.is_empty() {
             node = node.children(kids);
         }
@@ -189,13 +205,19 @@ impl Render for ProbeWindow {
         window.request_animation_frame();
 
         let build_t0 = Instant::now();
-        let mut treemap = Treemap::new("treemap");
-        for (name, value) in self.tiles.iter() {
-            treemap = treemap.tile(name.clone(), *value);
+        let parts = std::env::var("PROBE_PARTS").unwrap_or_else(|_| "both".into());
+        let mut treemap_opt = None;
+        let mut list_opt = None;
+        if parts == "both" || parts == "tiles" {
+            let mut treemap = Treemap::new("treemap");
+            for (name, value) in self.tiles.iter() {
+                treemap = treemap.tile(name.clone(), *value);
+            }
+            treemap_opt = Some(treemap.format(|v| human(v as u64)));
         }
-        let treemap = treemap.format(|v| human(v as u64));
-
-        let list = ElyTree::new("tree", self.tree.clone()).open(["n0"]);
+        if parts == "both" || parts == "list" {
+            list_opt = Some(ElyTree::new("tree", self.tree.clone()).open(["n0"]));
+        }
         let build_ms = build_t0.elapsed().as_secs_f64() * 1e3;
         self.builds.push_back(build_ms);
         while self.builds.len() > 600 {
@@ -206,16 +228,8 @@ impl Render for ProbeWindow {
             .flex()
             .flex_col()
             .size_full()
-            .child(
-                div()
-                    .flex_1()
-                    .child(treemap)
-            )
-            .child(
-                div()
-                    .h(px(280.))
-                    .child(list)
-            )
+            .children(treemap_opt.map(|treemap| div().flex_1().child(treemap)))
+            .children(list_opt.map(|list| div().h(px(280.)).child(list)))
             .child(FpsMeter::new("fps"))
     }
 }
