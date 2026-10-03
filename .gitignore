@@ -5,3 +5,4 @@ AppleTree.dmg
 __pycache__/
 /.cache
 /.build
+gpui-probe/target/
