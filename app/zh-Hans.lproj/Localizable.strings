@@ -8,7 +8,9 @@
 "Scan without it" = "不授权直接扫描";
 "Macintosh HD" = "Macintosh HD";
 "Home" = "主目录";
+"Applications" = "应用程序";
 "Choose Folder…" = "选择文件夹…";
+"or Choose a Folder" = "或选择文件夹";
 "Scan" = "扫描";
 "Choose what to scan" = "选择扫描目标";
 "Rescan" = "重新扫描";
@@ -54,7 +56,7 @@
 "Sign in to %@ and it plans what can go from this scan." = "登录 %@，它会规划本次扫描中哪些内容可以删除。";
 "Set up %@" = "安装 %@";
 "Sign in to %@" = "登录 %@";
-"Use %@ instead" = "改用 %@";
+"Use %@" = "使用 %@";
 "Stop" = "停止";
 "Pick what to remove" = "选择要移除的内容";
 "Move %@ to Trash" = "将 %@ 移到废纸篓";
@@ -137,6 +139,8 @@
 "Connect a relay, a self-hosted server, or any other OpenAI- or Anthropic-compatible endpoint by its base URL, protocol, and models." = "通过基础 URL、协议和模型连接中继、自托管服务器或任何其他兼容 OpenAI 或 Anthropic 的端点。";
 "No custom providers. The Clean Up panel uses Claude Code or Codex when one is installed and signed in." = "暂无自定义提供商。清理面板在安装并登录后会使用 Claude Code 或 Codex。";
 "Clean Up planner" = "清理规划器";
+"Scan when AppleTree opens" = "启动时扫描";
+"Scan the whole disk at launch. Turn off to pick a folder yourself first." = "启动时扫描整个磁盘。关闭后可先自行选择文件夹。";
 "the custom provider you set in Model Providers" = "您在模型提供商中设置的自定义提供商";
 "missing provider, back to the installed agent" = "提供商缺失，回到已安装的代理";
 "the installed agent, Claude Code first" = "已安装的代理，优先 Claude Code";

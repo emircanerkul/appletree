@@ -8,7 +8,9 @@
 "Scan without it" = "Escanear sin él";
 "Macintosh HD" = "Macintosh HD";
 "Home" = "Casa";
+"Applications" = "Aplicaciones";
 "Choose Folder…" = "Elegir carpeta…";
+"or Choose a Folder" = "o elegir una carpeta";
 "Scan" = "Escanear";
 "Choose what to scan" = "Elige qué escanear";
 "Rescan" = "Volver a escanear";
@@ -54,7 +56,7 @@
 "Sign in to %@ and it plans what can go from this scan." = "Inicia sesión en %@ y planificará qué puede irse de este escaneo.";
 "Set up %@" = "Configurar %@";
 "Sign in to %@" = "Iniciar sesión en %@";
-"Use %@ instead" = "Usar %@ en su lugar";
+"Use %@" = "Usar %@";
 "Stop" = "Detener";
 "Pick what to remove" = "Elige qué eliminar";
 "Move %@ to Trash" = "Mover %@ a la Papelera";
@@ -137,6 +139,8 @@
 "Connect a relay, a self-hosted server, or any other OpenAI- or Anthropic-compatible endpoint by its base URL, protocol, and models." = "Conecta un relé, un servidor autoalojado o cualquier otro punto de conexión compatible con OpenAI o Anthropic por su URL base, protocolo y modelos.";
 "No custom providers. The Clean Up panel uses Claude Code or Codex when one is installed and signed in." = "No hay proveedores personalizados. El panel de limpieza usa Claude Code o Codex cuando uno está instalado y con sesión iniciada.";
 "Clean Up planner" = "Planificador de limpieza";
+"Scan when AppleTree opens" = "Escanear al abrir AppleTree";
+"Scan the whole disk at launch. Turn off to pick a folder yourself first." = "Escanea todo el disco al iniciar. Desactívelo para elegir primero una carpeta usted mismo.";
 "the custom provider you set in Model Providers" = "el proveedor personalizado definido en Proveedores de modelos";
 "missing provider, back to the installed agent" = "proveedor ausente, vuelve al agente instalado";
 "the installed agent, Claude Code first" = "el agente instalado, Claude Code primero";

@@ -8,7 +8,9 @@
 "Scan without it" = "Ohne sie scannen";
 "Macintosh HD" = "Macintosh HD";
 "Home" = "Benutzerordner";
+"Applications" = "Programme";
 "Choose Folder…" = "Ordner auswählen…";
+"or Choose a Folder" = "oder Ordner auswählen";
 "Scan" = "Scannen";
 "Choose what to scan" = "Wählen, was gescannt wird";
 "Rescan" = "Neu scannen";
@@ -54,7 +56,7 @@
 "Sign in to %@ and it plans what can go from this scan." = "Melden Sie sich bei %@ an, dann plant es, was aus diesem Scan weg kann.";
 "Set up %@" = "%@ einrichten";
 "Sign in to %@" = "Bei %@ anmelden";
-"Use %@ instead" = "Stattdessen %@ verwenden";
+"Use %@" = "Verwenden: %@";
 "Stop" = "Anhalten";
 "Pick what to remove" = "Auswählen, was entfernt wird";
 "Move %@ to Trash" = "%@ in den Papierkorb legen";
@@ -137,6 +139,8 @@
 "Connect a relay, a self-hosted server, or any other OpenAI- or Anthropic-compatible endpoint by its base URL, protocol, and models." = "Verbinden Sie ein Relay, einen selbst gehosteten Server oder einen anderen OpenAI- oder Anthropic-kompatiblen Endpunkt über Basis-URL, Protokoll und Modelle.";
 "No custom providers. The Clean Up panel uses Claude Code or Codex when one is installed and signed in." = "Keine eigenen Anbieter. Das Bereinigungsfenster verwendet Claude Code oder Codex, wenn eines installiert und angemeldet ist.";
 "Clean Up planner" = "Bereinigungsplaner";
+"Scan when AppleTree opens" = "Beim Öffnen scannen";
+"Scan the whole disk at launch. Turn off to pick a folder yourself first." = "Beim Start die ganze Festplatte scannen. Deaktivieren, um zuerst selbst einen Ordner zu wählen.";
 "the custom provider you set in Model Providers" = "der eigene Anbieter aus Modell-Anbieter";
 "missing provider, back to the installed agent" = "Anbieter fehlt, zurück zum installierten Agenten";
 "the installed agent, Claude Code first" = "der installierte Agent, zuerst Claude Code";

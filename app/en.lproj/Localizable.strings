@@ -9,7 +9,9 @@
 "Scan without it" = "Scan without it";
 "Macintosh HD" = "Macintosh HD";
 "Home" = "Home";
+"Applications" = "Applications";
 "Choose Folder…" = "Choose Folder…";
+"or Choose a Folder" = "or Choose a Folder";
 "Scan" = "Scan";
 "Choose what to scan" = "Choose what to scan";
 "Rescan" = "Rescan";
@@ -53,7 +55,7 @@
 "Sign in to %@ and it plans what can go from this scan." = "Sign in to %@ and it plans what can go from this scan.";
 "Set up %@" = "Set up %@";
 "Sign in to %@" = "Sign in to %@";
-"Use %@ instead" = "Use %@ instead";
+"Use %@" = "Use %@";
 "Stop" = "Stop";
 "Pick what to remove" = "Pick what to remove";
 "Move %@ to Trash" = "Move %@ to Trash";
@@ -130,6 +132,8 @@
 "Connect a relay, a self-hosted server, or any other OpenAI- or Anthropic-compatible endpoint by its base URL, protocol, and models." = "Connect a relay, a self-hosted server, or any other OpenAI- or Anthropic-compatible endpoint by its base URL, protocol, and models.";
 "No custom providers. The Clean Up panel uses Claude Code or Codex when one is installed and signed in." = "No custom providers. The Clean Up panel uses Claude Code or Codex when one is installed and signed in.";
 "Clean Up planner" = "Clean Up planner";
+"Scan when AppleTree opens" = "Scan when AppleTree opens";
+"Scan the whole disk at launch. Turn off to pick a folder yourself first." = "Scan the whole disk at launch. Turn off to pick a folder yourself first.";
 "the custom provider you set in Model Providers" = "the custom provider you set in Model Providers";
 "missing provider, back to the installed agent" = "missing provider, back to the installed agent";
 "the installed agent, Claude Code first" = "the installed agent, Claude Code first";

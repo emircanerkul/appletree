@@ -8,7 +8,9 @@
 "Scan without it" = "許可せずにスキャン";
 "Macintosh HD" = "Macintosh HD";
 "Home" = "ホーム";
+"Applications" = "アプリケーション";
 "Choose Folder…" = "フォルダを選択…";
+"or Choose a Folder" = "またはフォルダを選択";
 "Scan" = "スキャン";
 "Choose what to scan" = "スキャン対象を選択";
 "Rescan" = "再スキャン";
@@ -54,7 +56,7 @@
 "Sign in to %@ and it plans what can go from this scan." = "%@にサインインすると、このスキャンから削除できるものを計画します。";
 "Set up %@" = "%@をセットアップ";
 "Sign in to %@" = "%@にサインイン";
-"Use %@ instead" = "代わりに%@を使用";
+"Use %@" = "使用：%@";
 "Stop" = "停止";
 "Pick what to remove" = "削除するものを選択";
 "Move %@ to Trash" = "%@をゴミ箱へ移動";
@@ -137,6 +139,8 @@
 "Connect a relay, a self-hosted server, or any other OpenAI- or Anthropic-compatible endpoint by its base URL, protocol, and models." = "リレー、セルフホストのサーバー、その他の OpenAI または Anthropic 互換エンドポイントに、ベース URL、プロトコル、モデルで接続します。";
 "No custom providers. The Clean Up panel uses Claude Code or Codex when one is installed and signed in." = "カスタムプロバイダはありません。クリーンアップパネルは、インストール済みでサインイン済みの Claude Code または Codex を使用します。";
 "Clean Up planner" = "クリーンアップのプランナー";
+"Scan when AppleTree opens" = "起動時にスキャン";
+"Scan the whole disk at launch. Turn off to pick a folder yourself first." = "起動時にディスク全体をスキャンします。オフにすると、まず自分でフォルダを選択できます。";
 "the custom provider you set in Model Providers" = "モデルプロバイダで設定したカスタムプロバイダ";
 "missing provider, back to the installed agent" = "プロバイダが見つからないため、インストール済みのエージェントに戻ります";
 "the installed agent, Claude Code first" = "インストール済みのエージェント（Claude Code を優先）";
