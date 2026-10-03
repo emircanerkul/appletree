@@ -244,7 +244,9 @@ final class TreemapNSView: NSView {
     /// A file's on-screen rect, or nil when off-screen. Point hit-tests keep
     /// using the spatial `leafIndex`; this map serves `hoverRects`, which
     /// needs a rect for a node the cursor may not be over (e.g. keyboard
-    /// focus landing on a file at a screen edge).
+    /// focus landing on a file at a screen edge). Linear is fine: `leaves`
+    /// holds only tiles drawn on screen, bounded by window size — not by
+    /// scan size — so it stays small even on million-file scans.
     private func leafRect(_ node: Int) -> CGRect? {
         for l in leaves where l.node == node { return l.rect }
         return nil
@@ -254,11 +256,14 @@ final class TreemapNSView: NSView {
     private func dirRect(_ node: Int) -> CGRect? {
         if let r = dirMemo[node] { return r }
         let map = ensureDirRects()
-        let r = map?[node] ?? model?.tree.flatMap { tree in
-            tree.isDir(node) ? tree.drawn(node) { map?[$0] != nil }.flatMap { map?[$0] }
+        let r = map[node] ?? model?.tree.flatMap { tree in
+            tree.isDir(node) ? tree.drawn(node) { map[$0] != nil }.flatMap { map[$0] }
                 : leafRect(node)
         }
-        if dirMemo.count > 64 { dirMemo = [:] }
+        // Evict one entry, not the whole map: a hover frame redraws two
+        // nodes (file + parent) repeatedly, and a full clear would thrash
+        // the same handful of keys every frame.
+        if dirMemo.count > 64 { dirMemo.removeValue(forKey: dirMemo.first!.key) }
         dirMemo[node] = r
         return r
     }
@@ -266,14 +271,12 @@ final class TreemapNSView: NSView {
     /// Node → rect for every drawn directory, built once per render. The
     /// previous `Scan.dir` walk touched all rects per lookup, and one hover
     /// frame could repeat that for several ancestors.
-    private func ensureDirRects() -> [Int: CGRect]? {
-        guard let map = dirRects else {
-            var map: [Int: CGRect] = [:]
-            map.reserveCapacity(rects.count)
-            for r in rects where r.isDir { map[r.node] = r.rect }
-            dirRects = map
-            return map
-        }
+    private func ensureDirRects() -> [Int: CGRect] {
+        if let map = dirRects { return map }
+        var map: [Int: CGRect] = [:]
+        map.reserveCapacity(rects.count)
+        for r in rects where r.isDir { map[r.node] = r.rect }
+        dirRects = map
         return map
     }
 
@@ -375,9 +378,9 @@ final class TreemapNSView: NSView {
             // The dirs map is cached with `litRects`, so a highlights change
             // (the didSet above) re-runs only this filter, not an O(n) sweep
             // over every rect.
-            if litRects == nil, let tree = model.tree,
-               let dirs = ensureDirRects() {
-                litRects = Scan.lit(rects, leaves, highlights, tree: tree, dirs: dirs)
+            if litRects == nil, let tree = model.tree {
+                litRects = Scan.lit(rects, leaves, highlights, tree: tree,
+                                    dirs: ensureDirRects())
             }
             let lit = litRects ?? []
             if !lit.isEmpty {
@@ -405,6 +408,16 @@ final class TreemapNSView: NSView {
     // ---- Interaction ----
 
     override var acceptsFirstResponder: Bool { true }
+
+    /// Arrows should work the moment the window keys, without a prior
+    /// click — otherwise the first keypress after opening or after focusing
+    /// another control does nothing.
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window != nil, window?.firstResponder != self {
+            window?.makeFirstResponder(self)
+        }
+    }
 
     override func keyDown(with event: NSEvent) {
         let esc = event.keyCode == 53
@@ -476,9 +489,8 @@ final class TreemapNSView: NSView {
             if best == nil || score > best!.score { best = (r.node, score) }
         }
         for r in rects { consider(r) }
-        // Build the dirs map so the on-screen test below never silently
-        // skips every file on its first run.
-        guard let dirs = ensureDirRects() else { return }
+        // Files need their parent dir drawn to be on screen.
+        let dirs = ensureDirRects()
         for l in leaves where dirs[Int(tree.parents[l.node])] != nil { consider(l) }
         guard let winner = best?.node else { return }
         model.hovered = winner
