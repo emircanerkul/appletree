@@ -105,6 +105,7 @@
 "%@ files" = "%@ fichiers";
 "Free space  ·  %@" = "Espace libre  ·  %@";
 "Copy Path" = "Copier le chemin";
+"Select Enclosing Folder" = "Sélectionner le dossier englobant";
 "Move to Trash" = "Déplacer à la Corbeille";
 "Move “%@” to Trash?" = "Déplacer « %@ » à la Corbeille ?";
 

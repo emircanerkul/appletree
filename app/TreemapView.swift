@@ -227,9 +227,13 @@ final class TreemapNSView: NSView {
     }
 
     /// The hovered file's rect and its parent directory's, if on screen.
+    ///
+    /// Files only: a directory's focus is already shown by the accent
+    /// selection ring (`shown.selection` → `dirRect`), and a hovered label by
+    /// its own halo, so outlining the whole folder here would just add a
+    /// second, noisier box around the one that is already lit.
     private func hoverRects(_ node: Int) -> (leaf: CGRect, parent: CGRect?)? {
         if let m = leafMemo, m.node == node { return m.rects }
-        // Only files are in `leaves`.
         guard let tree = model?.tree, !tree.isDir(node) else { return nil }
         guard let leaf = leafRect(node) else { return nil }
         return remember((leaf, dirRect(Int(tree.parents[node]))), node: node)
@@ -422,10 +426,28 @@ final class TreemapNSView: NSView {
     override func keyDown(with event: NSEvent) {
         let esc = event.keyCode == 53
         let cmdUp = event.modifierFlags.contains(.command) && event.keyCode == 126
-        if esc || cmdUp, let model, let tree = model.tree, model.viewRoot != 0 {
-            let p = Int(tree.parents[model.viewRoot])
-            model.viewRoot = p == Int(UInt32.max) ? 0 : p
-            relayout()
+        if esc || cmdUp {
+            // Cmd-Up steps out of what is focused — the enclosing folder of a
+            // small tile, which no click can reach — and zooms out once the
+            // focus is already the folder on screen. Escape stays plain
+            // zoom-out, so the older gesture keeps its old meaning.
+            let climbed = !esc && model?.selectEnclosingFolder() == true
+            if climbed {
+                // Order matters: `relayout` (run when the view re-rooted)
+                // resets `hoveredNode` from the model, so the local focus is
+                // taken *after* it, then the overlay redraws just what moved.
+                relayoutIfNeeded()
+                hoveredNode = model?.hovered
+                hoveredLabel = nil
+                if let node = hoveredNode, let tree = model?.tree {
+                    toolTip = "\(tree.displayPath(node))\n\(Fmt.size(tree.alloc[node]))"
+                }
+                syncOverlay()
+            } else if let model, let tree = model.tree, model.viewRoot != 0 {
+                let p = Int(tree.parents[model.viewRoot])
+                model.viewRoot = p == Int(UInt32.max) ? 0 : p
+                relayout()
+            }
         } else if 123...126 ~= event.keyCode, !event.modifierFlags.contains(.command),
                   !event.modifierFlags.contains(.option) {
             // Arrow keys move focus spatially: 123 left, 124 right,
@@ -493,14 +515,10 @@ final class TreemapNSView: NSView {
         let dirs = ensureDirRects()
         for l in leaves where dirs[Int(tree.parents[l.node])] != nil { consider(l) }
         guard let winner = best?.node else { return }
-        model.hovered = winner
-        model.selection = winner
-        // `syncOverlay` reads this view's own hover state, so update it too —
-        // otherwise the keyboard focus never gets its outline drawn.
-        hoveredNode = winner
+        // Keyboard focus has no pointer on a strip, so drop any label halo
+        // the mouse left behind before this focus takes over.
         hoveredLabel = nil
-        toolTip = "\(tree.displayPath(winner))\n\(Fmt.size(tree.alloc[winner]))"
-        syncOverlay()
+        focus(winner, tree: tree, model: model)
         // Keep the newly focused tile on screen if it scrolled out.
         if let r = rect(for: winner), !bounds.contains(r) {
             // Walk up to the smallest drawn ancestor that contains it.
@@ -511,6 +529,27 @@ final class TreemapNSView: NSView {
                 relayout()
             }
         }
+    }
+
+    /// Make `node` the focus: the model's hover and selection, this view's own
+    /// hover state, the tooltip and the overlay.
+    ///
+    /// One owner for all of it, because the overlay reads this view's
+    /// `hoveredNode` rather than the model's — a site that set only
+    /// `model.hovered` drew no outline (the keyboard bug fixed in 0c4ae1d).
+    /// Click, right-click and the keyboard all come through here now, so a
+    /// new one cannot reintroduce that split.
+    ///
+    /// The label halo is only dropped when it belongs to a different node:
+    /// clicking a title strip keeps it (the pointer really is on that strip),
+    /// while keyboard focus clears it, since there is no pointer there.
+    private func focus(_ node: Int, tree: Tree, model: ScanModel) {
+        model.hovered = node
+        model.selection = node
+        hoveredNode = node
+        if hoveredLabel != node { hoveredLabel = nil }
+        toolTip = "\(tree.displayPath(node))\n\(Fmt.size(tree.alloc[node]))"
+        syncOverlay()
     }
 
     /// Return zooms into the focused directory. On a file there is nothing
@@ -544,6 +583,31 @@ final class TreemapNSView: NSView {
         // Files are disjoint; smallest matching leaf wins.
         if leafIndex == nil { leafIndex = TMLeafIndex(leaves: leaves, size: lastSize) }
         return leafIndex!.hit(point, leaves: leaves)
+    }
+
+    /// The deepest drawn folder containing `point`, or nil outside every one.
+    ///
+    /// Folders need this because a click target was missing: hit-testing only
+    /// ever looked at file tiles (`hit`), so a folder drawn as a solid region
+    /// — and every gap a folder leaves between its children — was dead to the
+    /// mouse. `rects` holds dirs in draw order and each child's rect sits
+    /// inside its parent's, so the last containing rect is a smallest match.
+    /// One pass per click, never per frame: hover keeps its leaf-only lookup.
+    private func dir(at point: CGPoint) -> Int? {
+        var found: Int?
+        for r in rects where r.rect.contains(point) { found = r.node }
+        return found
+    }
+
+    /// What a click at `point` picks: a title strip first (it paints above
+    /// its own folder), then a file tile, then the folder underneath.
+    ///
+    /// Internal, like `hover(at:)`, so the click geometry is exercised
+    /// directly instead of through a synthesized event.
+    func pick(at point: CGPoint, slop: CGFloat = 0) -> Int? {
+        if let lab = Scan.hit(labelHits, point, slop: slop) { return lab }
+        if let leaf = hit(point) { return leaf.node }
+        return dir(at: point)
     }
 
     override func mouseMoved(with event: NSEvent) {
@@ -585,36 +649,33 @@ final class TreemapNSView: NSView {
         let p = convert(event.locationInWindow, from: nil)
         guard let model, let tree = model.tree else { return }
         if event.clickCount == 2 {
-            // Directory labels are zoom targets first.
-            if let lab = Scan.hit(labelHits, p, slop: 2) {
-                model.viewRoot = lab
+            // A folder label or tile zooms into it; a file into its parent.
+            // The 2 pt slop only for the double-click: a strip's text can sit
+            // a hair outside its bar, and zoom is where that last came from.
+            guard let node = pick(at: p, slop: 2) else { return }
+            let target = tree.isDir(node) ? node : Int(tree.parents[node])
+            if target != Int(UInt32.max), tree.isDir(target), target != model.viewRoot {
+                model.viewRoot = target
                 relayout()
-                return
-            }
-            if let leaf = hit(p) {
-                // zoom into the file's parent directory
-                let parent = Int(tree.parents[leaf.node])
-                if parent != Int(UInt32.max) && tree.isDir(parent) && parent != model.viewRoot {
-                    model.viewRoot = parent
-                    relayout()
-                }
             }
         } else {
-            if let lab = Scan.hit(labelHits, p) {
-                model.selection = lab
+            // Any tile is selectable, folders included: without this a folder
+            // drawn as a solid block picked nothing, which also left "move to
+            // the folder holding this" with no focus to climb from.
+            if let node = pick(at: p) {
+                focus(node, tree: tree, model: model)
             } else {
-                model.selection = hit(p)?.node
+                model.selection = nil
+                syncOverlay()
             }
-            syncOverlay()
         }
     }
 
     override func rightMouseDown(with event: NSEvent) {
         let p = convert(event.locationInWindow, from: nil)
-        guard let model, let tree = model.tree, let leaf = hit(p) else { return }
-        model.selection = leaf.node
-        syncOverlay()
-        NodeMenu.popUp(path: tree.path(leaf.node), with: event, for: self)
+        guard let model, let tree = model.tree, let node = pick(at: p) else { return }
+        focus(node, tree: tree, model: model)
+        NodeMenu.popUp(node: node, tree: tree, model: model, with: event, for: self)
     }
 }
 
@@ -660,37 +721,79 @@ nonisolated private enum Scan {
     }
 }
 
-/// Right-click menu for a file or folder, shared by the treemap and rings.
+/// Right-click menu for a file or folder, shared by the treemap, the rings
+/// and the directory list.
+///
+/// Actions go through the node, not a copied path: "select the enclosing
+/// folder" and the Trash confirmation both need the scan model, and every
+/// surface that shows a node must offer the same menu (a right-click that
+/// works in the map but not in the list reads as a bug).
 final class NodeMenu: NSObject {
     private static let shared = NodeMenu()
 
-    static func popUp(path: String, with event: NSEvent, for view: NSView) {
+    /// The menu for one node. Built by the one owner so the map, the rings
+    /// and the list cannot offer different actions for the same item, and so
+    /// an action list change lands everywhere at once.
+    static func menu(node: Int, tree: Tree, model: ScanModel) -> NSMenu {
         let menu = NSMenu()
-        for (title, action) in [(String(localized: "Reveal in Finder"), #selector(revealInFinder(_:))),
-                                (String(localized: "Copy Path"), #selector(copyPath(_:))),
-                                (String(localized: "Move to Trash"), #selector(moveToTrash(_:)))] {
-            if action == #selector(moveToTrash(_:)) { menu.addItem(.separator()) }
+        let parent = Int(tree.parents[node])
+        let canClimb = parent != Int(UInt32.max) && tree.isDir(parent)
+
+        func add(_ title: String, _ action: Selector, enabled: Bool = true) {
             let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
             item.target = shared
-            item.representedObject = path
+            item.representedObject = Context(node: node, tree: tree, model: model)
+            item.isEnabled = enabled
             menu.addItem(item)
         }
-        NSMenu.popUpContextMenu(menu, with: event, for: view)
+
+        add(String(localized: "Reveal in Finder"), #selector(revealInFinder(_:)))
+        add(String(localized: "Copy Path"), #selector(copyPath(_:)))
+        menu.addItem(.separator())
+        // The escape hatch for a tile too small to click: it moves the focus
+        // to the folder that holds this node, which is then one click away.
+        add(String(localized: "Select Enclosing Folder"), #selector(selectEnclosingFolder(_:)),
+            enabled: canClimb)
+        menu.addItem(.separator())
+        add(String(localized: "Move to Trash"), #selector(moveToTrash(_:)))
+        return menu
+    }
+
+    static func popUp(node: Int, tree: Tree, model: ScanModel, with event: NSEvent, for view: NSView) {
+        NSMenu.popUpContextMenu(menu(node: node, tree: tree, model: model), with: event, for: view)
+    }
+
+    /// Everything an action needs; carried per menu item so one shared
+    /// `NodeMenu` instance serves every view and node.
+    private struct Context {
+        let node: Int
+        let tree: Tree
+        let model: ScanModel
+    }
+
+    private static func context(_ sender: NSMenuItem) -> Context? {
+        sender.representedObject as? Context
     }
 
     @objc private func revealInFinder(_ sender: NSMenuItem) {
-        guard let path = sender.representedObject as? String else { return }
-        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+        guard let c = Self.context(sender) else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: c.tree.path(c.node))])
     }
 
     @objc private func copyPath(_ sender: NSMenuItem) {
-        guard let path = sender.representedObject as? String else { return }
+        guard let c = Self.context(sender) else { return }
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(path, forType: .string)
+        NSPasteboard.general.setString(c.tree.path(c.node), forType: .string)
+    }
+
+    @objc private func selectEnclosingFolder(_ sender: NSMenuItem) {
+        guard let c = Self.context(sender) else { return }
+        c.model.selectEnclosingFolder(of: c.node)
     }
 
     @objc private func moveToTrash(_ sender: NSMenuItem) {
-        guard let path = sender.representedObject as? String else { return }
+        guard let c = Self.context(sender) else { return }
+        let path = c.tree.path(c.node)
         let url = URL(fileURLWithPath: path)
         let alert = NSAlert()
         alert.messageText = String(localized: "Move \u{201C}\(url.lastPathComponent)\u{201D} to Trash?")

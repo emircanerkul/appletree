@@ -105,6 +105,7 @@
 "%@ files" = "%@ Dateien";
 "Free space  ·  %@" = "Freier Speicher  ·  %@";
 "Copy Path" = "Pfad kopieren";
+"Select Enclosing Folder" = "Umschließenden Ordner auswählen";
 "Move to Trash" = "In den Papierkorb legen";
 "Move “%@” to Trash?" = "„%@“ in den Papierkorb legen?";
 

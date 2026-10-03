@@ -130,14 +130,9 @@ struct ContentView: View {
 
     @ViewBuilder
     private var titleCrumbs: some View {
-        if let tree = model.tree {
-            breadcrumbs(tree: tree)
-        } else {
-            Text(displayRootName())
-                .font(.system(.body, design: .rounded).weight(.semibold))
-                .lineLimit(1)
-                .padding(.horizontal, 8)
-        }
+        // Its own view so the selection read below invalidates only the
+        // crumbs, not the whole window body on every arrow keypress.
+        TitleCrumbs(model: model)
     }
 
     @ToolbarContentBuilder
@@ -208,34 +203,6 @@ struct ContentView: View {
             }
             .help("Show folders that are safe to clean up")
         }
-    }
-
-    private func breadcrumbs(tree: Tree) -> some View {
-        HStack(spacing: 4) {
-            let chain = tree.ancestry(model.viewRoot)
-            ForEach(Array(chain.enumerated()), id: \.offset) { i, node in
-                if i > 0 {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(.tertiary)
-                }
-                Button {
-                    model.viewRoot = node
-                } label: {
-                    Text(node == 0 ? displayRootName() : tree.name(node))
-                        .font(.system(.body, design: .rounded).weight(i == chain.count - 1 ? .semibold : .regular))
-                        .lineLimit(1)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(i == chain.count - 1 ? .primary : .secondary)
-            }
-        }
-    }
-
-    private func displayRootName() -> String {
-        let p = model.scanRoot
-        if p == "/System/Volumes/Data" { return String(localized: "Macintosh HD") }
-        return (p as NSString).lastPathComponent.isEmpty ? p : (p as NSString).lastPathComponent
     }
 
     // MARK: overlays
@@ -462,6 +429,42 @@ struct FlowLayout: Layout {
             x += size.width + spacing
             rowHeight = max(rowHeight, size.height)
         }
+    }
+}
+
+/// An outline view that can build the shared node menu for a row.
+///
+/// `menu(for:)` is the AppKit hook for a right-click (and for the context-menu
+/// key): returning nil leaves the row with no menu, which is why the list had
+/// none — the map and the rings built their own in `rightMouseDown`, and the
+/// list never did. The coordinator holds the model the menu needs.
+final class NodeOutlineView: NSOutlineView {
+    weak var menuCoordinator: OutlinePanel.Coordinator?
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        guard let coordinator = menuCoordinator, let model = coordinator.model,
+              let tree = model.tree else { return nil }
+        let row = self.row(at: convert(event.locationInWindow, from: nil))
+        guard row >= 0, let item = self.item(atRow: row) as? OutlinePanel.Item else { return nil }
+        // Right-clicking a row also focuses it, so the menu's actions and the
+        // list's highlight cannot disagree about which item was meant.
+        if self.selectedRow != row {
+            self.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+        }
+        return NodeMenu.menu(node: item.id, tree: tree, model: model)
+    }
+
+    /// Cmd-Up climbs out of the selection, matching the map and the rings.
+    /// A selected file's enclosing folder is then revealed as a row here, so
+    /// every surface offers the same way up. Everything else stays AppKit's.
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 126, event.modifierFlags.contains(.command),
+           let model = menuCoordinator?.model,
+           model.selectEnclosingFolder() == true {
+            menuCoordinator?.syncSelection()
+            return
+        }
+        super.keyDown(with: event)
     }
 }
 
@@ -707,6 +710,10 @@ struct OutlinePanel: NSViewRepresentable {
 
         /// Treemap click → expand ancestors, select and reveal the row here.
         func syncSelection() {
+            // The roots must match the folder on screen before any row is
+            // looked up: a zoom (keyboard "up", a crumb) changes `viewRoot`
+            // and the reload only lands later in `updateNSView`.
+            rebuildIfNeeded()
             guard let outline, let tree, let sel = model?.selection else { return }
             if let cur = outline.item(atRow: outline.selectedRow) as? Item, cur.id == sel { return }
 
@@ -752,7 +759,7 @@ struct OutlinePanel: NSViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeNSView(context: Context) -> NSScrollView {
-        let outline = NSOutlineView()
+        let outline = NodeOutlineView()
         outline.style = .plain
         outline.rowSizeStyle = .default
         outline.usesAlternatingRowBackgroundColors = true
@@ -779,6 +786,7 @@ struct OutlinePanel: NSViewRepresentable {
         let coord = context.coordinator
         coord.model = model
         coord.outline = outline
+        outline.menuCoordinator = coord
         outline.dataSource = coord
         outline.delegate = coord
         outline.target = coord
@@ -797,6 +805,75 @@ struct OutlinePanel: NSViewRepresentable {
         context.coordinator.model = model
         context.coordinator.rebuildIfNeeded()
         context.coordinator.syncSelection()
+    }
+}
+
+/// The window title: the enclosing path down to what is picked, or to the
+/// folder on screen when nothing is.
+///
+/// The path follows the *selection*, so picking a small tile — or a folder
+/// header — still leaves every folder above it one click away in the crumbs.
+/// Without that, going back up meant re-zooming the map or hunting for the
+/// tile by hand.
+///
+/// Its own view on purpose: a selection change invalidates this alone, not
+/// the whole window body (which owns the AppKit list and map).
+private struct TitleCrumbs: View {
+    let model: ScanModel
+
+    var body: some View {
+        if let tree = model.tree {
+            crumbs(tree: tree)
+        } else {
+            Text(model.displayRootName)
+                .font(.system(.body, design: .rounded).weight(.semibold))
+                .lineLimit(1)
+                .padding(.horizontal, 8)
+        }
+    }
+
+    private func crumbs(tree: Tree) -> some View {
+        // A deep chain is truncated from the front — the tail (what is on
+        // screen and what is picked) is what has to stay readable.
+        let chain = Array(tree.ancestry(model.crumbTarget).suffix(6))
+        let truncated = chain.first != 0
+        return HStack(spacing: 4) {
+            if truncated {
+                Text("…").foregroundStyle(.tertiary)
+                chevron
+            }
+            ForEach(chain.indices, id: \.self) { i in
+                if i > 0 { chevron }
+                crumb(tree: tree, node: chain[i], isLast: i == chain.count - 1)
+            }
+        }
+    }
+
+    private var chevron: some View {
+        Image(systemName: "chevron.right")
+            .font(.system(size: 9, weight: .semibold))
+            .foregroundStyle(.tertiary)
+    }
+
+    private func crumb(tree: Tree, node: Int, isLast: Bool) -> some View {
+        Button {
+            // A folder crumb moves the map there. A selected *file* has no map
+            // of its own, so its crumb opens the folder that holds it — the
+            // same thing double-clicking the file's tile does.
+            if tree.isDir(node) {
+                model.viewRoot = node
+            } else {
+                let parent = Int(tree.parents[node])
+                if parent != Int(UInt32.max) { model.viewRoot = parent }
+            }
+        } label: {
+            Text(node == 0 ? model.displayRootName : tree.name(node))
+                .font(.system(.body, design: .rounded).weight(isLast ? .semibold : .regular))
+                .lineLimit(1)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(isLast ? .primary : .secondary)
+        .help(tree.displayPath(node))
     }
 }
 

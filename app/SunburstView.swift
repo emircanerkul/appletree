@@ -496,12 +496,7 @@ final class SunburstNSView: NSView {
         }
     }
 
-    private func rootName(_ model: ScanModel) -> String {
-        let p = model.scanRoot
-        if p == "/System/Volumes/Data" { return String(localized: "Macintosh HD") }
-        let last = (p as NSString).lastPathComponent
-        return last.isEmpty ? p : last
-    }
+    private func rootName(_ model: ScanModel) -> String { model.displayRootName }
 
     // ---- Interaction ----
 
@@ -530,6 +525,18 @@ final class SunburstNSView: NSView {
     override func keyDown(with event: NSEvent) {
         let esc = event.keyCode == 53
         let cmdUp = event.modifierFlags.contains(.command) && event.keyCode == 126
+        // Cmd-Up climbs out of the selection first (the same "up" the treemap
+        // offers); Escape keeps its plain zoom-out meaning.
+        if !esc && cmdUp, model?.selectEnclosingFolder() == true {
+            // A climb that only moves the selection changes no layout, so
+            // `relayoutIfNeeded` would draw nothing: the ring is outlined
+            // from `model.selection` in `draw`, so redraw directly. The local
+            // hover is dropped with it — its arc is not what is focused now.
+            hoveredSegment = nil
+            relayoutIfNeeded()
+            needsDisplay = true
+            return
+        }
         if esc || cmdUp, zoomOut() { return }
         super.keyDown(with: event)
     }
@@ -634,7 +641,7 @@ final class SunburstNSView: NSView {
         else { return }
         model.selection = segments[i].node
         needsDisplay = true
-        NodeMenu.popUp(path: tree.path(segments[i].node), with: event, for: self)
+        NodeMenu.popUp(node: segments[i].node, tree: tree, model: model, with: event, for: self)
     }
 }
 

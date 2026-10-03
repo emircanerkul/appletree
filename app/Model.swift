@@ -409,6 +409,55 @@ final class ScanModel {
         if let tree, !tree.ancestry(node).contains(viewRoot) { viewRoot = 0 }
         selection = node
     }
+
+    /// Move the focus up to the folder that contains `node` — what the map
+    /// needs so a small tile still lets you pick the folder holding it. When
+    /// the focus is already the folder on screen there is no parent tile to
+    /// move to, so this zooms out instead: the command always goes somewhere.
+    ///
+    /// Focus is the selection first, then the hover: the selection is the
+    /// pick the user sees ringed, the hover only follows the pointer. Every
+    /// surface (map, rings, list) calls this one owner, so "up" cannot mean
+    /// something different in each of them.
+    ///
+    /// Returns whether it moved anything, so a caller can fall back to plain
+    /// zoom-out (Escape) when the focus is already at the top of the view.
+    @discardableResult
+    func selectEnclosingFolder(of node: Int? = nil) -> Bool {
+        guard let tree, let focus = node ?? selection ?? hovered, focus != 0 else { return false }
+        let parent = Int(tree.parents[focus])
+        guard parent != Int(UInt32.max), tree.isDir(parent) else { return false }
+        // The enclosing folder is the folder on screen: it has no tile or row
+        // of its own here, so step out one level instead. The pick is kept —
+        // the new root is an ancestor, so it stays on screen and selected
+        // (`viewRoot.didSet` only drops a selection outside the new root).
+        if focus == viewRoot || parent == viewRoot {
+            guard viewRoot != 0 else { return false }
+            // Only node 0 has `parents[0] == UInt32.max`, and it is excluded
+            // above, so this always lands on a real folder.
+            viewRoot = Int(tree.parents[viewRoot])
+            return true
+        }
+        selection = parent
+        hovered = parent
+        return true
+    }
+
+    /// The node the breadcrumb follows: what is picked, else the folder on
+    /// screen. The selection (never the hover) so the path holds still while
+    /// the pointer sweeps the map, and so a pick deep inside the folder on
+    /// screen still shows the way back up to it.
+    var crumbTarget: Int { selection ?? viewRoot }
+
+    /// How a scan target reads as a name: the whole disk is "Macintosh HD".
+    /// One owner, so the title, the breadcrumbs and the rings' centre label
+    /// cannot name the same root differently.
+    var displayRootName: String {
+        let p = scanRoot
+        if p == "/System/Volumes/Data" { return String(localized: "Macintosh HD") }
+        let last = (p as NSString).lastPathComponent
+        return last.isEmpty ? p : last
+    }
     var hovered: Int? = nil
     var freeBytes: UInt64 = 0
     /// Rebuildable folders worth deleting, largest first.

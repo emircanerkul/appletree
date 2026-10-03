@@ -105,6 +105,7 @@
 "%@ files" = "%@ archivos";
 "Free space  ·  %@" = "Espacio libre  ·  %@";
 "Copy Path" = "Copiar ruta";
+"Select Enclosing Folder" = "Seleccionar carpeta contenedora";
 "Move to Trash" = "Mover a la Papelera";
 "Move “%@” to Trash?" = "¿Mover «%@» a la Papelera?";
 

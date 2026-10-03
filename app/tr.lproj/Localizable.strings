@@ -105,6 +105,7 @@
 "%@ files" = "%@ dosya";
 "Free space  ·  %@" = "Boş alan  ·  %@";
 "Copy Path" = "Yolu Kopyala";
+"Select Enclosing Folder" = "Kapsayan Klasörü Seç";
 "Move to Trash" = "Çöp Kutusu'na Taşı";
 "Move “%@” to Trash?" = "“%@” Çöp Kutusu'na taşınsın mı?";
 

@@ -102,6 +102,7 @@
 "%@ files" = "%@ files";
 "Free space  ·  %@" = "Free space  ·  %@";
 "Copy Path" = "Copy Path";
+"Select Enclosing Folder" = "Select Enclosing Folder";
 "Move to Trash" = "Move to Trash";
 "Move “%@” to Trash?" = "Move “%@” to Trash?";
 "Custom model providers" = "Custom model providers";

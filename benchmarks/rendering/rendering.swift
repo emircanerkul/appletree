@@ -74,6 +74,19 @@ nonisolated final class Tree: @unchecked Sendable {
     }
     func children(_ node: Int) -> [UInt32] { childLists[node] }
     func isDir(_ node: Int) -> Bool { dirs[node] }
+    /// Mirrors `Tree.drawn` in Model.swift: the node's own drawn shape, else
+    /// the nearest drawn folder that is mostly it (never one more than twice
+    /// its size). The renderers and hit tests read it, so the shared bench
+    /// stub had to grow it when the production signature landed.
+    func drawn(_ node: Int, isDrawn: (Int) -> Bool) -> Int? {
+        var cur = node
+        while !isDrawn(cur) {
+            let parent = parents[cur]
+            guard parent != UInt32.max, alloc[Int(parent)] <= 2 * alloc[node] else { return nil }
+            cur = Int(parent)
+        }
+        return cur
+    }
     func name(_ node: Int) -> String { names[node] }
     func path(_ node: Int) -> String { names[node] }
     func displayPath(_ node: Int) -> String { names[node] }
@@ -88,6 +101,19 @@ nonisolated final class Tree: @unchecked Sendable {
     var selection: Int?
     var scanRoot = "fixture"
     var agentRun: AgentRun?
+
+    /// Mirrors the production model's "up" and breadcrumb surface: the views
+    /// compile against this stub, so it has to offer what they call.
+    @discardableResult
+    func selectEnclosingFolder(of node: Int? = nil) -> Bool {
+        guard let tree, let focus = node ?? selection ?? hovered, focus != 0 else { return false }
+        let parent = Int(tree.parents[focus])
+        guard parent != Int(UInt32.max), tree.isDir(parent) else { return false }
+        if focus == viewRoot { viewRoot = parent } else { selection = parent; hovered = parent }
+        return true
+    }
+    var crumbTarget: Int { selection ?? viewRoot }
+    var displayRootName: String { (scanRoot as NSString).lastPathComponent }
 }
 @MainActor struct AgentRun { func highlights(in tree: Tree?) -> [Int] { [] } }
 enum Fmt {
