@@ -426,6 +426,22 @@ final class TreemapNSView: NSView {
     override func keyDown(with event: NSEvent) {
         let esc = event.keyCode == 53
         let cmdUp = event.modifierFlags.contains(.command) && event.keyCode == 126
+        // Cmd-[ / Cmd-] walk the trail of folders visited. Handled here as well
+        // as in the toolbar so the keys work whichever surface has the focus;
+        // every surface calls the same two model methods.
+        if event.modifierFlags.contains(.command), event.keyCode == 33 || event.keyCode == 30 {
+            let moved = event.keyCode == 33 ? model?.goBack() == true : model?.goForward() == true
+            if moved {
+                // A trail step re-roots the map, so the layout is stale: the
+                // same refresh a zoom does, with the local hover dropped since
+                // it belonged to the folder being left.
+                relayout()
+                hoveredNode = model?.hovered
+                hoveredLabel = nil
+                syncOverlay()
+                return
+            }
+        }
         if esc || cmdUp {
             // Cmd-Up steps out of what is focused — the enclosing folder of a
             // small tile, which no click can reach — and zooms out once the
@@ -525,7 +541,10 @@ final class TreemapNSView: NSView {
             var p = Int(tree.parents[winner])
             while p != Int(UInt32.max), dirRect(p) == nil { p = Int(tree.parents[p]) }
             if p != Int(UInt32.max), p != model.viewRoot, tree.isDir(p) {
-                model.navigate(to: p)
+                // Focus mechanics, not a visit: the arrow key asked to move the
+                // focus, and re-rooting is only how the map keeps it visible.
+                // Recording it would make "back" retrace the focus.
+                model.rootForFocus(on: p)
                 relayout()
             }
         }

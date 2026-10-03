@@ -525,6 +525,18 @@ final class SunburstNSView: NSView {
     override func keyDown(with event: NSEvent) {
         let esc = event.keyCode == 53
         let cmdUp = event.modifierFlags.contains(.command) && event.keyCode == 126
+        // Cmd-[ / Cmd-] walk the trail of folders visited, as in the treemap.
+        // Every surface calls the same two model methods, so the pair cannot
+        // mean something different depending on which view has the focus.
+        if event.modifierFlags.contains(.command), event.keyCode == 33 || event.keyCode == 30 {
+            let moved = event.keyCode == 33 ? model?.goBack() == true : model?.goForward() == true
+            if moved {
+                hoveredSegment = nil
+                relayoutIfNeeded()
+                needsDisplay = true
+                return
+            }
+        }
         // Cmd-Up climbs out of the selection first (the same "up" the treemap
         // offers); Escape keeps its plain zoom-out meaning.
         if !esc && cmdUp, model?.selectEnclosingFolder() == true {

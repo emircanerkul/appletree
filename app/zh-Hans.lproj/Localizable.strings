@@ -106,6 +106,8 @@
 "Free space  ·  %@" = "可用空间  ·  %@";
 "Copy Path" = "拷贝路径";
 "Select Enclosing Folder" = "选择所在文件夹";
+"Back" = "返回";
+"Forward" = "前进";
 "Move to Trash" = "移到废纸篓";
 "Move “%@” to Trash?" = "将“%@”移到废纸篓？";
 

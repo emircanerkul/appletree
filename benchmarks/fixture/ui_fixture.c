@@ -104,14 +104,20 @@ const char *const *bz_cleanup_allowlist(void) { return fixture_allowlist; }
 // Path resolution over the fixture arrays, mirroring the engine's
 // bz_node_at_path contract: byte matching against the name blob, UINT64_MAX
 // when any component is missing (null handle / null path too).
+//
+// Names are stored NUL-free, `name_off[i]..name_off[i + 1]`, exactly as the
+// engine's Tree::name_bytes and every Swift fixture builder store them. An
+// earlier version of this function subtracted one byte per name for a NUL
+// terminator the ABI never writes, so it resolved nothing at all — not even
+// the root — and no benchmark called it, which is why it went unnoticed.
 uint64_t bz_node_at_path(BzScan *h, const char *path) {
     const uint64_t NOT_FOUND = UINT64_MAX;
     if (!h || !path) return NOT_FOUND;
     size_t path_len = strlen(path);
-    // Fixture blobs store each name NUL-terminated; node 0's name is the
-    // scanned root, and the engine strips one trailing '/' like Swift path(0).
+    // Node 0's name is the scanned root, and the engine strips one trailing
+    // '/' like Swift path(0), so a "/" scan reads as an empty root.
     const char *root = (const char *)h->name_blob;
-    size_t root_len = h->name_off[1] - 1; /* minus NUL */
+    size_t root_len = h->name_off[1] - h->name_off[0];
     if (root_len > 0 && root[root_len - 1] == '/') root_len -= 1;
     if (path_len == root_len && memcmp(path, root, root_len) == 0) return 0;
     if (path_len <= root_len || memcmp(path, root, root_len) != 0 ||
@@ -128,7 +134,7 @@ uint64_t bz_node_at_path(BzScan *h, const char *path) {
             for (uint32_t k = h->child_off[cur]; k < h->child_off[cur + 1]; ++k) {
                 uint32_t child = h->children[k];
                 const char *cname = (const char *)h->name_blob + h->name_off[child];
-                size_t clen = h->name_off[child + 1] - h->name_off[child] - 1; /* minus NUL */
+                size_t clen = h->name_off[child + 1] - h->name_off[child];
                 if (clen == len && memcmp(cname, path + start, len) == 0) {
                     cur = child; matched = 1; break;
                 }

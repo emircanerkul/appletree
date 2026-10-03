@@ -135,6 +135,30 @@ struct ContentView: View {
         TitleCrumbs(model: model)
     }
 
+    /// Back and forward through the folders visited.
+    ///
+    /// Beside the title path, because that is the state they move through. They
+    /// are the visible twin of ⌘[ and ⌘]: the buttons and the keyboard both
+    /// call the same two model methods, so the pair cannot drift apart.
+    @ViewBuilder
+    private var historyButtons: some View {
+        Button {
+            model.goBack()
+        } label: {
+            Label("Back", systemImage: "chevron.backward")
+        }
+        .disabled(!model.canGoBack)
+        .help("Back")
+
+        Button {
+            model.goForward()
+        } label: {
+            Label("Forward", systemImage: "chevron.forward")
+        }
+        .disabled(!model.canGoForward)
+        .help("Forward")
+    }
+
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
         // macOS 26+: crumbs sit bare in the Liquid Glass toolbar, pushed apart
@@ -143,9 +167,11 @@ struct ContentView: View {
         if #available(macOS 26, *) {
             ToolbarItem(placement: .navigation) { titleCrumbs }
                 .sharedBackgroundVisibility(.hidden)
+            ToolbarItemGroup(placement: .navigation) { historyButtons }
             ToolbarSpacer(.flexible)
         } else {
             ToolbarItem(placement: .navigation) { titleCrumbs }
+            ToolbarItemGroup(placement: .navigation) { historyButtons }
         }
 
         ToolbarItemGroup(placement: .automatic) {
@@ -458,6 +484,17 @@ final class NodeOutlineView: NSOutlineView {
     /// A selected file's enclosing folder is then revealed as a row here, so
     /// every surface offers the same way up. Everything else stays AppKit's.
     override func keyDown(with event: NSEvent) {
+        // Cmd-[ / Cmd-] walk the trail of folders visited, as on the map. The
+        // list follows the new root through its own reload, so this only has
+        // to re-select the row for the folder now on screen.
+        if event.modifierFlags.contains(.command), event.keyCode == 33 || event.keyCode == 30,
+           let model = menuCoordinator?.model {
+            let moved = event.keyCode == 33 ? model.goBack() : model.goForward()
+            if moved {
+                menuCoordinator?.syncSelection()
+                return
+            }
+        }
         if event.keyCode == 126, event.modifierFlags.contains(.command),
            let model = menuCoordinator?.model,
            model.selectEnclosingFolder() == true {

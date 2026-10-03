@@ -21,6 +21,7 @@ Signed with a Developer ID and notarized by Apple, so it opens like any other ap
 - Prefer DaisyDisk? Switch to rings in the toolbar: click a folder to zoom in, the middle to go back
 - Zoom into folders, reveal in Finder, or move to Trash (with confirmation), from the map, the rings or the list
 - Keyboard navigation: arrows move the focus, Return zooms in, Escape zooms out, and ⌘↑ selects the folder holding the focused item — handy when a tile is too small to click. The title path follows the selection, so every folder above it is one click away
+- Back and forward through the folders you visited: the toolbar arrows or ⌘[ and ⌘]. Only deliberate folder changes count, so moving the focus with the arrows never fills the history; the folders visited and the one you were browsing are saved, so the next launch opens where you left off
 - Clean Up panel: finds folders that are safe to delete (caches, `node_modules`, Rust `target`, Xcode DerivedData and more) so you can trash them in one go
 - AI cleanup: click "Clean up with Claude Code" (or Codex) and your own agent plans what can go, live in the panel, while the treemap lights up those folders. AppleTree does the cleanup itself, in two steps you approve: move to Trash, then delete for good. No agent installed? One click sets up Codex (free with a ChatGPT account) or Claude Code
 - Or clean up with any model: Settings → Model Providers connects any OpenAI- or Anthropic-compatible endpoint — a relay, a self-hosted server (Ollama, LM Studio) or a gateway — by its base URL, protocol and key

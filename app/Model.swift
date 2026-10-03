@@ -272,11 +272,22 @@ final class ScanModel {
     var tree: Tree?
     var scanRoot: String = {
         // `AppleTree /some/path` scans that path on launch (also handy for QA).
+        // An explicit argument is a deliberate choice for this launch, so it
+        // wins over the saved target.
         if CommandLine.arguments.count > 1 {
             var isDir: ObjCBool = false
             let p = (CommandLine.arguments[1] as NSString).expandingTildeInPath
             if FileManager.default.fileExists(atPath: p, isDirectory: &isDir), isDir.boolValue {
                 return p
+            }
+        }
+        // The target scanned last time, so the session opens where it left off.
+        // Only if it is still there: an unmounted drive must not become the
+        // launch scan, which would fail before the user sees a window.
+        if let saved = UserDefaults.standard.string(forKey: Saved.scanRoot), !saved.isEmpty {
+            var isDir: ObjCBool = false
+            if FileManager.default.fileExists(atPath: saved, isDirectory: &isDir), isDir.boolValue {
+                return saved
             }
         }
         // Whole disk by default: the user-data volume of the boot volume group.
@@ -405,19 +416,23 @@ final class ScanModel {
 
     /// Select a node from a list, zooming out first if it is outside the
     /// folder on screen (it would have nothing to outline).
+    ///
+    /// The zoom-out serves the selection rather than a change of folder the
+    /// user asked for, so it re-roots without adding a trail visit.
     func reveal(_ node: Int) {
-        if let tree, !tree.ancestry(node).contains(viewRoot) { viewRoot = 0 }
+        if let tree, !tree.ancestry(node).contains(viewRoot) { rootForFocus(on: 0) }
         selection = node
     }
 
-    /// Move the map to `folder` and make it the focus.
+    /// Move the map to `folder` as a *visit*: a deliberate change of the folder
+    /// being browsed, which is what the back/forward trail records.
     ///
-    /// One owner for every zoom — a crumb, a double-click, Return, the rings,
-    /// Escape. Dropping the pick is what keeps the title path honest: leaving
-    /// the old selection in place anchored the crumbs to a node several levels
-    /// *below* the folder now on screen, so the truncation ate exactly the
-    /// ancestors you needed to click to go back up. The map went up; the path
-    /// did not follow, and there was no way further up.
+    /// One owner for every zoom — a crumb, a double-click, the list, Return,
+    /// ⌘↑, the rings, Escape. Dropping the pick is what keeps the title path
+    /// honest: leaving the old selection in place anchored the crumbs to a
+    /// node several levels *below* the folder now on screen, so the truncation
+    /// ate exactly the ancestors you needed to click to go back up. The map
+    /// went up; the path did not follow, and there was no way further up.
     ///
     /// The selection is cleared rather than set to `folder`: the folder on
     /// screen is drawn as the whole map, and the accent ring strokes the
@@ -428,6 +443,172 @@ final class ScanModel {
         viewRoot = folder
         selection = nil
         hovered = nil
+        record(folder)
+    }
+
+    /// Re-root the map so `folder` is on screen, without touching the trail.
+    ///
+    /// This is focus mechanics, not browsing: arrow keys sliding the focus to
+    /// a tile that scrolled off screen, or revealing a list selection, move the
+    /// map to keep their target visible. Those are not folders the user chose
+    /// to open, so they must not become steps on the trail — otherwise back
+    /// would retrace wherever the focus wandered instead of the folders
+    /// actually browsed.
+    ///
+    /// The trail is left exactly as it was. Rewriting the current entry to
+    /// match the new root looked tidier, but it *erased* the folder being
+    /// browsed: browse A, then B, then reveal a file outside B (the map zooms
+    /// to the root) and open C, and back would land on the bare root — a folder
+    /// the user never chose — with B gone from the history entirely.
+    func rootForFocus(on folder: Int) {
+        viewRoot = folder
+        selection = nil
+        hovered = nil
+    }
+
+    // MARK: back / forward trail
+
+    /// Where the trail is kept between launches.
+    ///
+    /// Paths, not node IDs: a node ID names a slot in one scan's arrays, so it
+    /// means nothing after a rescan (the tree is replaced) or a relaunch (there
+    /// is no tree at all). One owner for every key, so a rename cannot
+    /// half-apply and leave state that restores from the wrong key.
+    private enum Saved {
+        static let scanRoot = "bz.scanRoot"
+        static let trail = "bz.trail"
+        static let trailIndex = "bz.trailIndex"
+    }
+
+    /// Folders visited, oldest first, as absolute paths.
+    private(set) var trail: [String] = []
+    /// Which entry of `trail` is on screen, or -1 before the first visit.
+    private(set) var trailIndex: Int = -1
+
+    /// Deep enough to retrace a session, bounded so the stored entry and the
+    /// re-resolution pass after a rescan stay small.
+    private static let trailLimit = 200
+
+    /// Offer back/forward only when there is a tree to move in: mid-scan the
+    /// tree is gone, so a click would land on a dead control.
+    var canGoBack: Bool { tree != nil && !scanning && trailIndex > 0 }
+    var canGoForward: Bool {
+        tree != nil && !scanning && trail.indices.contains(trailIndex + 1)
+    }
+
+    /// Step back to the folder visited before the current one.
+    @discardableResult
+    func goBack() -> Bool {
+        guard canGoBack else { return false }
+        trailIndex -= 1
+        return applyTrail()
+    }
+
+    /// Step forward again into a folder the trail already holds.
+    @discardableResult
+    func goForward() -> Bool {
+        guard canGoForward else { return false }
+        trailIndex += 1
+        return applyTrail()
+    }
+
+    /// Show the folder the trail points at.
+    ///
+    /// Entries that no longer resolve are dropped and the neighbouring one is
+    /// tried, so a folder deleted since it was recorded cannot strand the whole
+    /// trail behind a dead step.
+    @discardableResult
+    private func applyTrail() -> Bool {
+        guard let tree else { return false }
+        while trail.indices.contains(trailIndex) {
+            if let node = resolve(trail[trailIndex], in: tree) {
+                viewRoot = node
+                selection = nil
+                hovered = nil
+                persistTrail()
+                return true
+            }
+            trail.remove(at: trailIndex)
+            trailIndex = min(trailIndex, trail.count - 1)
+        }
+        persistTrail()
+        return false
+    }
+
+    /// The node for a recorded folder path, or nil when this scan has no such
+    /// folder. The scan root is node 0 by definition, which also saves the
+    /// lookup for the entry every trail starts with.
+    private func resolve(_ path: String, in tree: Tree) -> Int? {
+        if path == tree.path(0) { return 0 }
+        guard let node = tree.node(at: path), tree.isDir(node) else { return nil }
+        return node
+    }
+
+    /// Note a deliberate change of folder on the trail.
+    private func record(_ folder: Int) {
+        guard let tree else { return }
+        let path = tree.path(folder)
+        if trail.indices.contains(trailIndex), trail[trailIndex] == path { return }
+        // A fresh visit abandons what was ahead of it: you cannot go forward
+        // into a branch you just chose to leave.
+        if trail.indices.contains(trailIndex + 1) { trail.removeSubrange((trailIndex + 1)...) }
+        trail.append(path)
+        if trail.count > Self.trailLimit { trail.removeFirst(trail.count - Self.trailLimit) }
+        trailIndex = trail.count - 1
+        persistTrail()
+    }
+
+    /// Save what a relaunch needs: the target, the trail, and where in it we
+    /// are. Called from the few places that change any of them, so the stored
+    /// state cannot drift from the live one.
+    private func persistTrail() {
+        let defaults = UserDefaults.standard
+        defaults.set(scanRoot, forKey: Saved.scanRoot)
+        defaults.set(trail, forKey: Saved.trail)
+        defaults.set(trailIndex, forKey: Saved.trailIndex)
+    }
+
+    /// Re-apply the saved folder and trail once a scan lands.
+    ///
+    /// Only when the finished scan is of the target that state was saved for: a
+    /// trail of folders on one volume names nothing on another. The folders are
+    /// looked up again in the new tree by path, because the scan that recorded
+    /// them is gone.
+    private func restoreTrail() {
+        guard let tree else { return }
+        let defaults = UserDefaults.standard
+        let savedRoot = defaults.string(forKey: Saved.scanRoot)
+        guard savedRoot == nil || savedRoot == scanRoot else {
+            trail = []
+            trailIndex = -1
+            record(viewRoot)
+            return
+        }
+        let savedIndex = defaults.integer(forKey: Saved.trailIndex)
+        var restored: [String] = []
+        var restoredIndex = -1
+        for (i, path) in (defaults.stringArray(forKey: Saved.trail) ?? []).enumerated()
+        where resolve(path, in: tree) != nil {
+            // Track where the saved position landed after the missing entries
+            // were skipped, so we come back to the same folder, not the same
+            // offset in a shorter list.
+            if i <= savedIndex { restoredIndex = restored.count }
+            restored.append(path)
+        }
+        trail = restored
+        trailIndex = restoredIndex
+        if let node = trail.indices.contains(trailIndex) ? resolve(trail[trailIndex], in: tree) : nil {
+            viewRoot = node
+            selection = nil
+            hovered = nil
+        } else {
+            viewRoot = 0
+            trail = []
+            trailIndex = -1
+        }
+        // Seed the trail, so the folder the session opens in is already
+        // something the user can step back from once they move on.
+        record(viewRoot)
     }
 
     /// Move the focus up to the folder that contains `node` — what the map
@@ -606,6 +787,10 @@ final class ScanModel {
         timer = nil
         tree = result
         if tree != nil { hasShownTree = true }
+        // Put the session back where it was: the folder being browsed, and the
+        // trail behind it. Only meaningful once a tree exists, because the
+        // recorded folders have to be looked up in it.
+        if result != nil { restoreTrail() }
         if ProcessInfo.processInfo.environment["BZ_TIMING"] != nil {
             // Queue latency includes awaiting metadata and UI updates; it is
             // not a measurement of uninterrupted main-thread blocking.

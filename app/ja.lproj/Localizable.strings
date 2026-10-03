@@ -106,6 +106,8 @@
 "Free space  ·  %@" = "空き領域  ·  %@";
 "Copy Path" = "パスをコピー";
 "Select Enclosing Folder" = "親フォルダを選択";
+"Back" = "戻る";
+"Forward" = "進む";
 "Move to Trash" = "ゴミ箱に移動";
 "Move “%@” to Trash?" = "「%@」をゴミ箱に移動しますか？";
 

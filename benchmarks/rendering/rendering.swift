@@ -110,6 +110,48 @@ nonisolated final class Tree: @unchecked Sendable {
         viewRoot = folder
         selection = nil
         hovered = nil
+        record(folder)
+    }
+    func rootForFocus(on folder: Int) {
+        viewRoot = folder
+        selection = nil
+        hovered = nil
+    }
+    private(set) var trail: [String] = []
+    private(set) var trailIndex: Int = -1
+    var canGoBack: Bool { tree != nil && trailIndex > 0 }
+    var canGoForward: Bool { tree != nil && trail.indices.contains(trailIndex + 1) }
+    @discardableResult
+    func goBack() -> Bool {
+        guard canGoBack else { return false }
+        trailIndex -= 1
+        return applyTrail()
+    }
+    @discardableResult
+    func goForward() -> Bool {
+        guard canGoForward else { return false }
+        trailIndex += 1
+        return applyTrail()
+    }
+    @discardableResult
+    private func applyTrail() -> Bool {
+        guard let tree, trail.indices.contains(trailIndex) else { return false }
+        viewRoot = resolve(trail[trailIndex], in: tree) ?? 0
+        selection = nil
+        hovered = nil
+        return true
+    }
+    private func resolve(_ path: String, in tree: Tree) -> Int? {
+        if path == tree.path(0) { return 0 }
+        return nil
+    }
+    private func record(_ folder: Int) {
+        guard let tree else { return }
+        let path = tree.path(folder)
+        if trail.indices.contains(trailIndex), trail[trailIndex] == path { return }
+        if trail.indices.contains(trailIndex + 1) { trail.removeSubrange((trailIndex + 1)...) }
+        trail.append(path)
+        trailIndex = trail.count - 1
     }
     @discardableResult
     func selectEnclosingFolder(of node: Int? = nil) -> Bool {

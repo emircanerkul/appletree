@@ -106,6 +106,8 @@
 "Free space  ·  %@" = "Espace libre  ·  %@";
 "Copy Path" = "Copier le chemin";
 "Select Enclosing Folder" = "Sélectionner le dossier englobant";
+"Back" = "Retour";
+"Forward" = "Avancer";
 "Move to Trash" = "Déplacer à la Corbeille";
 "Move “%@” to Trash?" = "Déplacer « %@ » à la Corbeille ?";
 
