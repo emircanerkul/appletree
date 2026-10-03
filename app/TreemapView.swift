@@ -483,6 +483,11 @@ final class TreemapNSView: NSView {
         guard let winner = best?.node else { return }
         model.hovered = winner
         model.selection = winner
+        // `syncOverlay` reads this view's own hover state, so update it too —
+        // otherwise the keyboard focus never gets its outline drawn.
+        hoveredNode = winner
+        hoveredLabel = nil
+        toolTip = "\(tree.displayPath(winner))\n\(Fmt.size(tree.alloc[winner]))"
         syncOverlay()
         // Keep the newly focused tile on screen if it scrolled out.
         if let r = rect(for: winner), !bounds.contains(r) {
