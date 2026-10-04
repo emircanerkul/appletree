@@ -805,10 +805,11 @@ final class ScanModel {
             let files = UInt64(tree.nFiles[0])
             let bytes = tree.alloc[0]
             let errors = tree.errors
-            let rss = currentRSSBytes()
+            let rss = rssBytes()
             let line = "BZ_BENCH {\"tool\":\"\(tool)\",\"path\":\"\(scanRoot)\","
                 + "\"seconds\":\(secs),\"files\":\(files),\"bytes\":\(bytes),"
-                + "\"errors\":\(errors),\"peak_rss_bytes\":\(rss)}"
+                + "\"errors\":\(errors),\"peak_rss_bytes\":\(rss.peak),"
+                + "\"rss_bytes\":\(rss.current)}"
             if let path = UserDefaults.standard.string(forKey: "bz.benchResult"), !path.isEmpty {
                 try? line.write(toFile: path, atomically: true, encoding: .utf8)
             } else {
@@ -889,9 +890,13 @@ nonisolated func volumeUsedBytes(_ path: String) -> UInt64? {
     return withUnsafeBytes(of: &reply) { $0.loadUnaligned(fromByteOffset: 4, as: UInt64.self) }
 }
 
-/// Resident set size of this process right now, in bytes. Used only by the
-/// benchmark hook; the engine's own peak RSS is measured separately by bench/.
-nonisolated func currentRSSBytes() -> UInt64 {
+/// Peak resident set size of this process, in bytes, and the current value.
+///
+/// Used only by the benchmark hook. `resident_size_max` is the kernel's own
+/// high-water mark, so it is a real peak rather than whatever the process
+/// happened to hold at the moment the scan finished. bench/ measures the
+/// engine's own peak separately, in a process that never loads the UI.
+nonisolated func rssBytes() -> (peak: UInt64, current: UInt64) {
     var info = mach_task_basic_info()
     var count = mach_msg_type_number_t(
         MemoryLayout<mach_task_basic_info>.size / MemoryLayout<natural_t>.size)
@@ -900,7 +905,8 @@ nonisolated func currentRSSBytes() -> UInt64 {
             task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count)
         }
     }
-    return result == KERN_SUCCESS ? UInt64(info.resident_size) : 0
+    guard result == KERN_SUCCESS else { return (0, 0) }
+    return (UInt64(info.resident_size_max), UInt64(info.resident_size))
 }
 
 nonisolated enum Fmt {

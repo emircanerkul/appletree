@@ -34,41 +34,61 @@ from that run would be meaningless.
 ## Results — 2026-10-04
 
 **Host:** Apple M1 · 16 GB RAM · macOS 27.0 (8 cores)
-**Method:** 7 measured rounds per engine, 1 warmup, ABBA alternation, engine call only.
+**Method:** 7 measured rounds per engine, 1 warmup, ABBA alternation, engine
+call only, warm cache. The machine was in normal use, so these are local
+measurements under background load, not a quiet-lab figure.
 
-Engine timings (headless, same process discipline for both engines):
+### Memory is the stable, reproducible result
 
-| target | files | AppleTree | disktree 0.10.1 | speed | peak RSS (AT / dt) |
-|---|---:|---:|---:|---:|---:|
-| `/Applications` | 247,465 | **0.563 s** | 0.995 s | **1.77×** | 20.6 / 69.4 MB |
-| `~/Library/Developer` | 51,235 | **0.367 s** | 0.420 s | **1.14×** | 13.6 / 29.5 MB |
-| `~/Documents` | 8,628 | **0.014 s** | 0.023 s | **1.59×** | 4.0 / 9.6 MB |
-| `~/Downloads` | 122 | **0.001 s** | 0.001 s | **1.25×** | 2.4 / 6.5 MB |
+Peak RSS barely moved across five separate sessions on the same target
+(`/Applications`, 247,465 files):
 
-Allocated bytes were **identical** between the engines on every target.
+| | AppleTree | disktree 0.10.1 | ratio |
+|---|---:|---:|---:|
+| peak RSS across 5 sessions | **20.6–22.2 MB** | **69.4–69.8 MB** | **~3.2× less** |
 
-The margin is workload-dependent: it is widest on file-heavy trees
-(`/Applications`, 1.77×) and narrowest on directory-heavy ones
-(`~/Library/Developer` is 1.8 files per directory; only 1.14×). The suite reports
-each target rather than a single flattering number.
+That spread is small enough to state as a single claim, and both engines report
+**identical allocated bytes** on every target.
+
+### Scan time varies with machine load
+
+On the same target, median scan time across those sessions ranged:
+
+| target | AppleTree | disktree 0.10.1 | speed |
+|---|---:|---:|---:|
+| `/Applications` (5 sessions) | 0.56–0.80 s | 1.00–1.84 s | **1.8–2.3×** |
+| `~/Library/Developer`, 51,235 files | 0.367 s | 0.420 s | **1.14×** |
+| `~/Documents`, 8,628 files | 0.014 s | 0.023 s | 1.59× |
+| `~/Downloads`, 122 files | 0.001 s | 0.001 s | 1.25× |
+
+Report a **range**, not a headline number: both engines slow down together under
+load, so the ratio is steadier than either absolute time. The margin is also
+workload-dependent — widest on file-heavy trees, narrowest on directory-heavy
+ones (`~/Library/Developer` is 1.8 files per directory and only 1.14×).
 
 ### GUI-mode comparison (opt-in, `--compare-apps`)
 
-Same host, `/Applications`, 5 rounds each, all apps given the same target:
+Same host and target, 5 rounds each, every app given the same target:
 
-| app | scan finished after | how measured |
-|---|---:|---|
-| **AppleTree** | **0.618 s** | app-reported (its own hook) |
-| disktree 0.10.1 | ~3.5 s | external wall-clock (upper bound) |
-| GrandPerspective 3.7.2 | 4.85 s | app-reported |
-| QDirStat 2.0.01 | 5.40 s | app-reported |
+| app | scan finished after | peak memory | how measured |
+|---|---:|---:|---|
+| **AppleTree** | **0.752 s** | **137.6 MB** | app-reported; peak is the kernel high-water mark |
+| disktree 0.10.1 | ~3.3 s | 156.5 MB | external wall-clock (upper bound); memory sampled |
+| GrandPerspective 3.7.2 | 7.02 s | 151.6 MB | app-reported; memory sampled |
+| QDirStat 2.0.01 | 8.09 s | 212.9 MB | app-reported; memory sampled |
+
+**Memory is not measured identically across these rows.** AppleTree reports its
+own `resident_size_max`, the kernel's true high-water mark. The other three are
+sampled from outside every 50 ms, so their figures are floors that can miss a
+spike between samples. Process memory also includes the whole UI, which is why
+these numbers are much larger than the engine-tier figures above — those come
+from a process that never loads the UI.
 
 Do not read the disktree row as equivalent: its GUI prints no timing anywhere,
 so it is timed from outside until the process stops using CPU — a method with
 roughly a second of resolution that also counts window and render work. The
-other three rows are each app's own "scan finished" statement. Only
-GrandPerspective and QDirStat are directly comparable to each other here, and
-AppleTree's own hook is the cleanest of the four.
+other three rows are each app's own "scan finished" statement, and only
+GrandPerspective and QDirStat are directly comparable to each other.
 
 ### Expected count differences
 

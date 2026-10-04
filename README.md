@@ -33,22 +33,45 @@ Signed with a Developer ID and notarized by Apple, so it opens like any other ap
 ## Performance
 
 Measured on an Apple M1 (16 GB, macOS 27.0) against
-[disktree](https://github.com/tobi/disktree) 0.10.1, alternating both engines in
-one run, 5 rounds each, warm cache. Scanning `/Applications`
-(247,465 files / 12.6 GB):
+[disktree](https://github.com/tobi/disktree) 0.10.1, both engines alternated in
+one run, 7 rounds, warm cache, scanning `/Applications` (247,465 files /
+12.6 GB). Both engines report the **same allocated bytes** (12,618,919,936).
 
-| `/Applications` | Scan time | Peak memory |
+| scan engine, `/Applications` | Scan time | Peak memory |
 |---|---|---|
-| **AppleTree** | **0.51 s** | **21.2 MB** |
-| disktree 0.10.1 | 1.12 s | 70.0 MB |
+| **AppleTree** | **0.56–0.80 s** | **20.6–22.2 MB** |
+| disktree 0.10.1 | 1.00–1.84 s | 69.4–69.8 MB |
+
+Peak memory is the reliable figure — it barely moves between runs. Scan time
+depends on machine load, so both columns are given as a range; the ratio
+(roughly 3.2× less memory, 1.8–2.3× faster here) is steadier than either
+absolute number. On a directory-heavy tree the engine lead narrows to about
+1.1×, and smaller trees show smaller absolute differences.
+
+Scanning from a whole running app rather than the engine alone, same machine
+and target:
+
+| whole app, `/Applications` | Scan finished after | Peak memory |
+|---|---|---:|
+| **AppleTree** | **0.62–0.88 s** | **137.6 MB** |
+| disktree 0.10.1 | ~2.9–3.3 s* | 156.5 MB |
+| GrandPerspective 3.7.2 | 5.6–8.0 s | 151.6 MB |
+| QDirStat 2.0.01 | 7.4–8.7 s | 212.9 MB |
+
+\* disktree's GUI reports no timing anywhere, so it is measured from outside
+until the process stops using CPU — an upper bound, not an equal measurement.
+Peak memory for the three non-AppleTree apps is sampled every 50 ms, so those
+figures are floors on the true peak; AppleTree's is the kernel's own high-water
+mark. Process memory includes the whole UI, which is why it is far larger than
+the engine figures above.
 
 - `getattrlistbulk(2)` reads a whole directory's metadata in one syscall instead of one `stat` per file.
 - A Rust worker pool keeps many directories in flight, and scan threads run at user-initiated QoS: they stay on performance cores without starving the UI.
 - The treemap is laid out once and painted on every core in parallel, so zooming redraws in a couple of frames.
 
-Run it yourself: `cd bench && ./run.sh`. Method, raw samples ("what this does
-not measure", including why the two tools report different file counts for
-identical bytes): [BENCHMARKS.md](docs/benchmarks/BENCHMARKS.md).
+Run it yourself: `cd bench && ./run.sh`, or `cargo run --release -- scan
+--compare-apps` to include the GUI apps. Method, every raw sample, and what is
+deliberately not measured: [BENCHMARKS.md](docs/benchmarks/BENCHMARKS.md).
 
 ## Accuracy
 

@@ -201,6 +201,7 @@ fn apps_report(target: &Path, runs: usize, timeout_secs: usize) -> Result<String
     }
     let timeout = std::time::Duration::from_secs(timeout_secs.max(10) as u64);
     let mut samples: Vec<Vec<f64>> = vec![Vec::new(); specs.len()];
+    let mut memories: Vec<Vec<u64>> = vec![Vec::new(); specs.len()];
 
     for round in 1..=runs {
         // Alternate direction each round, as the engine comparison does.
@@ -215,12 +216,19 @@ fn apps_report(target: &Path, runs: usize, timeout_secs: usize) -> Result<String
             let result = apps::measure(spec, target, timeout);
             match result.seconds {
                 Some(seconds) => {
+                    let rss = result
+                        .peak_rss_bytes
+                        .map(|b| format!("{b}"))
+                        .unwrap_or_else(|| "null".into());
                     println!(
-                        "  {{\"tool\":\"{}\",\"round\":{round},\"seconds\":{seconds:.6},\"source\":\"{}\"}}",
+                        "  {{\"tool\":\"{}\",\"round\":{round},\"seconds\":{seconds:.6},\"peak_rss_bytes\":{rss},\"source\":\"{}\"}}",
                         result.tool,
                         result.source.label()
                     );
                     samples[index].push(seconds);
+                    if let Some(bytes) = result.peak_rss_bytes {
+                        memories[index].push(bytes);
+                    }
                 }
                 None => println!(
                     "  {{\"tool\":\"{}\",\"round\":{round},\"seconds\":null,\"note\":\"{}\"}}",
@@ -237,21 +245,30 @@ fn apps_report(target: &Path, runs: usize, timeout_secs: usize) -> Result<String
         "**Target** `{}` · **rounds** {runs} per app, interleaved\n\n",
         target.display()
     ));
-    out.push_str(
+    out.push_str(&format!(
         "Every app was given the same target and the same number of rounds. Launching the bundle \
          through `open` makes launchd — not the terminal — the TCC-responsible process, so each \
          app's own Full Disk Access grant applies.\n\n\
          **These rows are not all the same interval.** The source column says where each duration \
          comes from; compare `app-reported` rows with each other, and treat the external row as an \
-         upper bound rather than an equal measurement.\n\n",
-    );
-    out.push_str("| app | measure | source | rounds | note |\n|---|---:|---|---:|---|\n");
+         upper bound rather than an equal measurement.\n\n\
+         **Memory** is the peak resident set size. For AppleTree it is the kernel's own high-water \
+         mark reported by the app itself. For the other apps it is sampled from outside every \
+         {} ms while the scan runs, so it is a floor on the true peak and can miss a spike between \
+         samples. It covers each app's whole process, UI included — which is why it is far larger \
+         than the engine-tier figures, where RSS is measured in a process that never loads the UI.\n\n",
+        apps::RSS_SAMPLE_MS,
+    ));
+    out.push_str("| app | measure | peak memory | source | rounds | note |\n|---|---:|---:|---|---:|---|\n");
     for (index, spec) in specs.iter().enumerate() {
         let values = &samples[index];
         if values.is_empty() {
+            let memory = median_u64(&memories[index])
+                .map(|b| format!("{:.1} MB", b as f64 / 1048576.0))
+                .unwrap_or_else(|| "not measured".into());
             out.push_str(&format!(
-                "| {} | not measured | | 0 | see the run output above |\n",
-                spec.name
+                "| {} | not measured | {} | | 0 | see the run output above |\n",
+                spec.name, memory
             ));
             continue;
         }
@@ -268,10 +285,14 @@ fn apps_report(target: &Path, runs: usize, timeout_secs: usize) -> Result<String
         } else {
             "app-written finish time"
         };
+        let memory = median_u64(&memories[index])
+            .map(|b| format!("**{:.1} MB**", b as f64 / 1048576.0))
+            .unwrap_or_else(|| "not measured".into());
         out.push_str(&format!(
-            "| {} | **{:.3} s** | {} | {} | min {:.3} s, max {:.3} s — {} |\n",
+            "| {} | **{:.3} s** | {} | {} | {} | min {:.3} s, max {:.3} s — {} |\n",
             spec.name,
             median,
+            memory,
             source,
             values.len(),
             sorted.first().unwrap(),
@@ -280,6 +301,20 @@ fn apps_report(target: &Path, runs: usize, timeout_secs: usize) -> Result<String
         ));
     }
     Ok(out)
+}
+
+/// Median of a byte-count sample, or None when nothing was measured.
+fn median_u64(values: &[u64]) -> Option<u64> {
+    if values.is_empty() {
+        return None;
+    }
+    let mut sorted = values.to_vec();
+    sorted.sort_unstable();
+    Some(if sorted.len() % 2 == 1 {
+        sorted[sorted.len() / 2]
+    } else {
+        (sorted[sorted.len() / 2 - 1] + sorted[sorted.len() / 2]) / 2
+    })
 }
 
 fn cmd_fixture(args: &[String]) -> Result<(), String> {

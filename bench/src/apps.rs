@@ -43,13 +43,22 @@ impl TimingSource {
 pub struct AppResult {
     pub tool: String,
     pub seconds: Option<f64>,
+    /// Peak resident set size seen while the app scanned. Sampled, so it is a
+    /// floor on the true peak; the sample interval is stated in `note`.
+    pub peak_rss_bytes: Option<u64>,
     pub source: TimingSource,
     pub note: String,
 }
 
 impl AppResult {
     fn missing(tool: &str, source: TimingSource, note: impl Into<String>) -> Self {
-        AppResult { tool: tool.to_string(), seconds: None, source, note: note.into() }
+        AppResult {
+            tool: tool.to_string(),
+            seconds: None,
+            peak_rss_bytes: None,
+            source,
+            note: note.into(),
+        }
     }
 }
 
@@ -120,6 +129,40 @@ fn cpu_seconds(pid: i32) -> Option<f64> {
     }
     parse_hms(text, 0.0)
 }
+
+/// Resident set size of `pid` in bytes, or None once it has exited.
+fn rss_bytes(pid: i32) -> Option<u64> {
+    let out = Command::new("ps").args(["-o", "rss=", "-p", &pid.to_string()]).output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    // ps reports RSS in KiB.
+    String::from_utf8_lossy(&out.stdout).trim().parse::<u64>().ok().map(|kb| kb * 1024)
+}
+
+/// Samples `pid`'s RSS in a background thread until `stop` flips, returning the
+/// largest value seen. Sampling (rather than reading the kernel's high-water
+/// mark) is what `ps` can offer for a foreign process; it can miss a spike
+/// between samples, so the result is a floor and the interval is reported.
+fn watch_rss(pid: i32, stop: std::sync::Arc<std::sync::atomic::AtomicBool>, interval: Duration) -> std::thread::JoinHandle<u64> {
+    std::thread::spawn(move || {
+        use std::sync::atomic::Ordering;
+        let mut peak = 0u64;
+        while !stop.load(Ordering::Relaxed) {
+            if let Some(bytes) = rss_bytes(pid) {
+                peak = peak.max(bytes);
+            } else {
+                break;
+            }
+            std::thread::sleep(interval);
+        }
+        peak.max(rss_bytes(pid).unwrap_or(0))
+    })
+}
+
+/// How often a foreign app's RSS is sampled while it scans. Sets the resolution
+/// of the memory figure, which is reported as a floor for that reason.
+pub const RSS_SAMPLE_MS: u64 = 50;
 
 fn parse_hms(text: &str, base: f64) -> Option<f64> {
     let parts: Vec<&str> = text.split(':').collect();
@@ -302,11 +345,19 @@ fn measure_appletree(app: &AppSpec, target: &Path, timeout: Duration) -> Result<
     if let Some(seconds) = poll_log_for(&result_path, "BZ_BENCH", false, timeout) {
         pkill("AppleTree");
         let fda = if fda_visible() { "FDA visible" } else { "no FDA for this shell" };
+        let reported = std::fs::read_to_string(&result_path)
+            .ok()
+            .and_then(|t| t.lines().find(|l| l.contains("BZ_BENCH")).map(str::to_string))
+            .and_then(|l| crate::jsonw::parse_flat_object(l.trim_start_matches("BZ_BENCH").trim()));
+        // The app reports the kernel's own high-water mark, a real peak;
+        // sampling from outside could only be a worse estimate.
+        let peak_rss = reported.as_ref().and_then(|p| crate::jsonw::get_u64(p, "peak_rss_bytes"));
         return Ok(AppResult {
             tool: app.name.to_string(),
             seconds: Some(seconds),
+            peak_rss_bytes: peak_rss,
             source: TimingSource::AppReported,
-            note: format!("app-written finish time ({fda})"),
+            note: format!("app-written finish time ({fda}); peak RSS from the app"),
         });
     }
     pkill("AppleTree");
@@ -325,15 +376,21 @@ fn measure_grandperspective(
     let log = std::env::temp_dir().join("btbench-grandperspective.log");
     pkill("GrandPerspective");
     let pid = spawn_capturing(&binary, &[&target.to_string_lossy()], &log)?;
+    let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let watcher = watch_rss(pid, std::sync::Arc::clone(&stop), Duration::from_millis(RSS_SAMPLE_MS));
 
     let seconds = poll_log_for(&log, "Done scanning:", true, timeout);
     // The GUI stays open after scanning, so stop it once the line is in hand.
     let _ = wait_until_idle(pid, Duration::from_secs(10));
     kill(pid);
+    stop.store(true, std::sync::atomic::Ordering::Relaxed);
+    let peak_rss = watcher.join().unwrap_or(0);
+    let peak_rss = (peak_rss > 0).then_some(peak_rss);
 
     Ok(AppResult {
         tool: app.name.to_string(),
         seconds,
+        peak_rss_bytes: peak_rss,
         source: TimingSource::AppReported,
         note: if seconds.is_some() {
             "app-written finish time (stderr)".into()
@@ -353,12 +410,19 @@ fn measure_qdirstat(app: &AppSpec, target: &Path, timeout: Duration) -> Result<A
 
     pkill("QDirStat");
     let pid = spawn_capturing(&binary, &["--dont-ask", &target.to_string_lossy()], &log)?;
+    let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let watcher = watch_rss(pid, std::sync::Arc::clone(&stop), Duration::from_millis(RSS_SAMPLE_MS));
+
     let seconds = poll_log_for(&log, "Reading finished after", false, timeout);
     kill(pid);
+    stop.store(true, std::sync::atomic::Ordering::Relaxed);
+    let peak_rss = watcher.join().unwrap_or(0);
+    let peak_rss = (peak_rss > 0).then_some(peak_rss);
 
     Ok(AppResult {
         tool: app.name.to_string(),
         seconds,
+        peak_rss_bytes: peak_rss,
         source: TimingSource::AppReported,
         note: if seconds.is_some() {
             "app-written finish time (log)".into()
@@ -376,10 +440,17 @@ fn measure_disktree(app: &AppSpec, target: &Path, timeout: Duration) -> Result<A
     let log = std::env::temp_dir().join("btbench-disktree.log");
     pkill("disktree");
     let pid = spawn_capturing(&binary, &[&target.to_string_lossy()], &log)?;
+    let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let watcher = watch_rss(pid, std::sync::Arc::clone(&stop), Duration::from_millis(RSS_SAMPLE_MS));
+
     // Grace period: the process is starting up and using no CPU yet.
     std::thread::sleep(Duration::from_millis(250));
     let measured = wait_until_idle(pid, timeout);
     kill(pid);
+    stop.store(true, std::sync::atomic::Ordering::Relaxed);
+    let peak_rss = watcher.join().unwrap_or(0);
+    let peak_rss = (peak_rss > 0).then_some(peak_rss);
+
     let resolution = external_resolution_secs();
     let (seconds, note) = match measured {
         Some((_, true)) => (
@@ -396,7 +467,13 @@ fn measure_disktree(app: &AppSpec, target: &Path, timeout: Duration) -> Result<A
         ),
         None => (None, format!("did not go idle within {}s", timeout.as_secs())),
     };
-    Ok(AppResult { tool: app.name.to_string(), seconds, source: TimingSource::ExternalWallClock, note })
+    Ok(AppResult {
+        tool: app.name.to_string(),
+        seconds,
+        peak_rss_bytes: peak_rss,
+        source: TimingSource::ExternalWallClock,
+        note,
+    })
 }
 
 #[cfg(test)]
