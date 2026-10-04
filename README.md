@@ -24,11 +24,11 @@ one run. Both report the **same allocated bytes** (12,618,919,936):
 | **AppleTree** | **0.53–0.69 s** | **20.5–22.3 MB** |
 | disktree 0.10.1 | 0.94–1.42 s | 69.0–69.3 MB |
 
-Peak memory is the stable figure; scan time moves with machine load, so both
-columns are a range over five separate sessions. The ratio is steadier than
-either absolute number: **3.1× less memory** and **1.8–2.1× faster** on this
-target. The margin is workload-dependent — on a directory-heavy tree the engine
-lead narrows to about 1.1×.
+Both columns are ranges over five separate sessions. Peak memory barely moves
+between them; scan time tracks machine load, which is why it is a range.
+AppleTree uses **3.1× less memory** and is **1.8–2.1× faster** on this target.
+The margin is workload-dependent — on a directory-heavy tree the engine lead
+narrows to about 1.1×.
 
 Measured from the whole running app instead of the engine alone, on the same
 machine and target, AppleTree finishes its scan in **0.62–0.88 s** — ahead of

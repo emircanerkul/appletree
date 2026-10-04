@@ -61,10 +61,10 @@ On the same target, median scan time across those sessions ranged:
 | `~/Documents`, 8,628 files | 0.014 s | 0.023 s | 1.59× |
 | `~/Downloads`, 122 files | 0.001 s | 0.001 s | 1.25× |
 
-Report a **range**, not a headline number: both engines slow down together under
-load, so the ratio is steadier than either absolute time. The margin is also
-workload-dependent — widest on file-heavy trees, narrowest on directory-heavy
-ones (`~/Library/Developer` is 1.8 files per directory and only 1.14×).
+Both engines slow down together under load, so the table gives the span across
+five sessions rather than one run's number. The margin is also workload-dependent
+— widest on file-heavy trees, narrowest on directory-heavy ones
+(`~/Library/Developer` is 1.8 files per directory and only 1.14×).
 
 ### GUI-mode comparison (opt-in, `--compare-apps`)
 
