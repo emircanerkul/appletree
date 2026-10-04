@@ -15,34 +15,61 @@ Requires Apple Silicon and macOS 14 or later.
 
 ## Performance
 
-Scanning `/Applications` (247,465 files, 12.6 GB) on an Apple M1, against
-[disktree](https://github.com/tobi/disktree) 0.10.1, both engines alternated in
-one run. Both report the **same allocated bytes** (12,618,919,936):
+Every number below was measured on **Apple M1, 16 GB, macOS 27.0**, scanning
+`/Applications` (247,465 files, 12.6 GB). AppleTree and every tool it is
+compared against report the **same allocated bytes** (12,618,919,936).
+
+**[Full method, every raw sample, and what these figures deliberately do not
+measure →](docs/benchmarks/BENCHMARKS.md)**
+
+### Scan engine
+
+Timing the scan engine alone, in its own process, with AppleTree and disktree
+alternated round by round (7 rounds × 5 sessions):
 
 | scan engine | Scan time | Peak memory |
 |---|---|---|
 | **AppleTree** | **0.53–0.69 s** | **20.5–22.3 MB** |
 | disktree 0.10.1 | 0.94–1.42 s | 69.0–69.3 MB |
 
-Both columns are ranges over five separate sessions. Peak memory barely moves
-between them; scan time tracks machine load, which is why it is a range.
-AppleTree uses **3.1× less memory** and is **1.8–2.1× faster** on this target.
-The margin is workload-dependent — on a directory-heavy tree the engine lead
-narrows to about 1.1×.
+AppleTree uses **3.1× less memory** and is **1.8–2.1× faster** here. Memory is
+the stable figure; scan time varies with machine load, which is why both are
+given as a range.
 
-Measured from the whole running app instead of the engine alone, on the same
-machine and target, AppleTree finishes its scan in **0.62–0.88 s** — ahead of
-disktree (~2.9–3.3 s), GrandPerspective 3.7.2 (5.6–8.0 s) and QDirStat 2.0.01
-(7.4–8.7 s).
+### Whole app
 
-Everything behind those numbers, including every raw sample and what is
-deliberately **not** measured, is in
-[BENCHMARKS.md](docs/benchmarks/BENCHMARKS.md). Run it yourself:
+Timing the complete running application — launch, scan, and hand-off to the UI —
+with every app given the same target and 5 rounds × 3 sessions:
+
+| app | Scan finished after | Peak memory |
+|---|---:|---:|
+| **AppleTree** | **0.79–0.85 s** | **137.1–138.5 MB** |
+| disktree 0.10.1 | 2.43–4.40 s † | 152.4–156.6 MB |
+| GrandPerspective 3.7.2 | 5.21–5.82 s | 154.7–160.2 MB |
+| QDirStat 2.0.01 | 5.95–6.42 s | 199.4–214.2 MB |
+
+AppleTree is the fastest of the four, and the lightest of the four.
+
+† disktree's GUI reports no timing anywhere, so it is measured from outside
+until the process stops using CPU. That method has roughly a second of
+resolution and also counts window and render work, so it is an **upper bound**,
+not an equal measurement; the other three rows are each app's own "scan
+finished" statement. Peak memory for the three non-AppleTree apps is sampled
+every 50 ms, so those are floors on the true peak; AppleTree's is the kernel's
+own high-water mark.
+
+Whole-app memory is much larger than engine memory because it includes the
+entire UI, which the engine-only figures above never load.
+
+### Reproduce it
 
 ```sh
-cd bench && ./run.sh                            # engine comparison
-cd bench && cargo run --release -- scan --compare-apps   # include the GUI apps
+cd bench && ./run.sh                                     # engine comparison
+cd bench && cargo run --release -- scan --compare-apps   # add the GUI apps
 ```
+
+The first run fetches the pinned `disktree-core` (needs network once); add
+`--no-disktree` to benchmark AppleTree alone, offline.
 
 Three things do the work:
 
@@ -72,9 +99,11 @@ stays on one volume, and cloud-only iCloud folders are never downloaded.
 Root-only system data that no app can read is reported in the status bar instead
 of hidden.
 
-AppleTree counts every name of a hard-linked file while some other tools count
-the file once, so it can list more files than they do for identical totals. The
-bytes are the same either way.
+AppleTree counts every name of a hard-linked file while disktree counts the file
+once, so AppleTree lists more files for identical byte totals — 247,465 against
+235,540 on `/Applications`. AppleTree also counts the directories inside the
+scan root, where disktree includes the root itself, so the directory counts
+differ by one. Neither affects the bytes, which match exactly.
 
 ## AI cleanup
 
@@ -117,10 +146,10 @@ cargo test --release   # engine tests
 The Rust engine hands the finished tree to the Swift UI as flat arrays over a C
 interface, with no copying. `AppleTree <path>` scans a specific folder.
 
-Sign the bundle with a real `Apple Development` or `Developer ID` identity if
-you intend to grant it Full Disk Access: an ad-hoc signature pins its identity
-to a hash that changes on every rebuild, so macOS drops the grant each time. The
-build warns when it has to fall back to ad-hoc for this reason.
+Sign the bundle with a real `Apple Development` or `Developer ID` identity if you
+intend to grant it Full Disk Access. An ad-hoc signature pins its identity to a
+hash that changes on every rebuild, so macOS drops the grant each time you
+rebuild; the build warns when it has to fall back to ad-hoc for this reason.
 
 ## JSON CLI for agents and scripts
 
@@ -142,4 +171,19 @@ scanned files.
 
 The CLI is built from source separately from the app; its JSON dependency is
 only compiled with the `cli` feature. Its behaviour is covered by
-[tests/test_cli.py](tests/test_cli.py).
+[`tests/test_cli.py`](tests/test_cli.py).
+
+## Benchmarks
+
+The full benchmark suite, method and raw results live in
+**[`docs/benchmarks/BENCHMARKS.md`](docs/benchmarks/BENCHMARKS.md)**. It covers
+the scan engine, the whole-app comparison, why the tools report different file
+counts for identical bytes, and — just as importantly — what is **not** measured:
+
+- GUI interactions: hover, outline scrolling and zoom are not timed.
+- Whole-disk accuracy: without Full Disk Access, root-only system data is
+  invisible to every tool, which undercounts them all rather than comparing them.
+- Memory over time: the figures are peaks, not the resident size of a loaded tree.
+
+Results are regenerated with `cd bench && ./run.sh` and land in
+[`docs/benchmarks/results/`](docs/benchmarks/results/).

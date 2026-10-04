@@ -1,0 +1,19 @@
+{
+  "host": {"chip":"Apple M1","ram_gb":16,"macos":"27.0"},
+  "target": "/Applications",
+  "tools": ["appletree", "disktree"],
+  "runs": 3,
+  "totals_agree": true,
+  "appletree": {"runs":3,"min_seconds":0.626286,"median_seconds":0.661765,"max_seconds":0.683793,"median_peak_rss_bytes":22085632,"files":247465,"dirs":42409,"bytes":12618940416,"errors":0},
+  "disktree": {"runs":3,"min_seconds":1.158326,"median_seconds":1.348840,"max_seconds":1.477590,"median_peak_rss_bytes":72138752,"files":235540,"dirs":42410,"bytes":12618940416,"errors":0},
+  "speedup": 2.0382,
+  "rss_ratio": 3.2663,
+  "measurements": [
+    {"tool":"appletree","seconds":0.683793,"files":247465,"dirs":42409,"bytes":12618940416,"errors":0,"peak_rss_bytes":22085632},
+    {"tool":"disktree","seconds":1.158326,"files":235540,"dirs":42410,"bytes":12618940416,"errors":0,"peak_rss_bytes":72548352},
+    {"tool":"disktree","seconds":1.348840,"files":235540,"dirs":42410,"bytes":12618940416,"errors":0,"peak_rss_bytes":72138752},
+    {"tool":"appletree","seconds":0.626286,"files":247465,"dirs":42409,"bytes":12618940416,"errors":0,"peak_rss_bytes":22855680},
+    {"tool":"appletree","seconds":0.661765,"files":247465,"dirs":42409,"bytes":12618940416,"errors":0,"peak_rss_bytes":21905408},
+    {"tool":"disktree","seconds":1.477590,"files":235540,"dirs":42410,"bytes":12618940416,"errors":0,"peak_rss_bytes":71073792}
+  ]
+}

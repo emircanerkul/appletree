@@ -68,14 +68,18 @@ five sessions rather than one run's number. The margin is also workload-dependen
 
 ### GUI-mode comparison (opt-in, `--compare-apps`)
 
-Same host and target, 5 rounds each, every app given the same target:
+Same host and target, 5 rounds × 3 sessions, every app given the same target.
+The figures are the span of the per-session medians:
 
 | app | scan finished after | peak memory | how measured |
 |---|---:|---:|---|
-| **AppleTree** | **0.752 s** | **137.6 MB** | app-reported; peak is the kernel high-water mark |
-| disktree 0.10.1 | ~3.3 s | 156.5 MB | external wall-clock (upper bound); memory sampled |
-| GrandPerspective 3.7.2 | 7.02 s | 151.6 MB | app-reported; memory sampled |
-| QDirStat 2.0.01 | 8.09 s | 212.9 MB | app-reported; memory sampled |
+| **AppleTree** | **0.79–0.85 s** | **137.1–138.5 MB** | app-reported; peak is the kernel high-water mark |
+| disktree 0.10.1 | 2.43–4.40 s | 152.4–156.6 MB | external wall-clock (upper bound); memory sampled |
+| GrandPerspective 3.7.2 | 5.21–5.82 s | 154.7–160.2 MB | app-reported; memory sampled |
+| QDirStat 2.0.01 | 5.95–6.42 s | 199.4–214.2 MB | app-reported; memory sampled |
+
+Per-session artifacts: `gui-session-1/` … `gui-session-3/` under
+[`results/2026-10-04-apple-m1-macos27.0/`](results/2026-10-04-apple-m1-macos27.0/).
 
 **Memory is not measured identically across these rows.** AppleTree reports its
 own `resident_size_max`, the kernel's true high-water mark. The other three are
