@@ -17,7 +17,9 @@
 //!   - an app that cannot be measured says so. It is never dropped silently and
 //!     never given an invented number.
 
+use std::cell::Cell;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::process::Command;
 use std::time::{Duration, Instant};
 
@@ -219,9 +221,27 @@ fn wait_until_idle(pid: i32, timeout: Duration) -> Option<(f64, bool)> {
     }
 }
 
+/// SIGTERM `name`, then wait for it to actually exit.
+///
+/// `pkill` returns the moment the signal is sent, not when the process is
+/// gone. The preference-domain restore in `measure_appletree` depends on the
+/// app being dead: a still-running app can write preferences of its own
+/// (window frames at quit, say) after the restore deleted them, silently
+/// re-polluting the user's domain. The wait is bounded so an app that ignores
+/// SIGTERM cannot hang the bench.
 fn pkill(name: &str) {
     let _ = Command::new("pkill").args(["-x", name]).output();
-    std::thread::sleep(Duration::from_millis(400));
+    for _ in 0..50 {
+        let alive = Command::new("pgrep")
+            .args(["-x", name])
+            .output()
+            .map(|out| out.status.success())
+            .unwrap_or(false);
+        if !alive {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
 }
 
 fn kill(pid: i32) {
@@ -289,6 +309,12 @@ fn plist_is_empty(plist: &Path) -> bool {
     }
 }
 
+/// Serial number for the snapshot directories below. The pid alone identifies
+/// the *process*, not the snapshot: two DomainSnapshots in one process would
+/// otherwise share one plist path, and the first one to drop would delete the
+/// directory out from under the second.
+static SNAPSHOT_SEQ: AtomicU32 = AtomicU32::new(0);
+
 /// The whole preference domain, captured before a run so it can be put back.
 ///
 /// The GUI tier has to change preferences the *user* also owns: a
@@ -311,24 +337,42 @@ struct DomainSnapshot {
     domain: String,
     plist: PathBuf,
     dir: PathBuf,
+    /// Set once the domain is back where it started, so a drop after an
+    /// explicit restore does not put it back a second time.
+    restored: Cell<bool>,
 }
 
 impl DomainSnapshot {
     /// Capture the domain exactly as it stands, including keys that are absent.
     fn take(domain: &str) -> Result<Self, String> {
-        let dir = std::env::temp_dir().join(format!("btbench-prefs-{}", std::process::id()));
+        let seq = SNAPSHOT_SEQ.fetch_add(1, Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!("btbench-prefs-{}-{seq}", std::process::id()));
         std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
         let plist = dir.join("snapshot.plist");
         export_domain(domain, &plist)?;
-        Ok(Self { domain: domain.to_string(), plist, dir })
+        Ok(Self { domain: domain.to_string(), plist, dir, restored: Cell::new(false) })
     }
 
     fn restore(&self) -> Result<(), String> {
+        // Only ever restore once per snapshot: an explicit restore followed by
+        // the drop would otherwise delete and re-import the same domain twice.
+        if self.restored.get() {
+            return Ok(());
+        }
+        let result = self.restore_now();
+        self.restored.set(result.is_ok());
+        result
+    }
+
+    fn restore_now(&self) -> Result<(), String> {
         // `defaults import` merges, so it would leave every key the run added
         // behind. Delete first: the domain then ends exactly as it started,
         // empty domain included. Safe because the app is killed before the
         // caller drops this, so nothing can write a live value back.
-        let _ = Command::new("defaults").args(["delete", &self.domain]).status();
+        // `.output()`, not `.status()`: a domain that is already gone is the
+        // expected case on the way out, and `defaults` would otherwise print
+        // "Domain not found" for it on every run.
+        let _ = Command::new("defaults").args(["delete", &self.domain]).output();
         // A domain that started empty has nothing to import.
         if plist_is_empty(&self.plist) {
             return Ok(());
@@ -641,7 +685,9 @@ mod tests {
         // error: the case a first-ever bench run hits. The domain is left
         // deleted, which `defaults read` can report either as an error or as an
         // empty dictionary, so assert the semantic result instead of the status.
-        let _ = Command::new("defaults").args(["delete", domain]).status();
+        // `.output()` throughout: `defaults` reports the expected "domain not
+        // found" on stderr, and a passing test should print nothing.
+        let _ = Command::new("defaults").args(["delete", domain]).output();
         let missing = DomainSnapshot::take(domain).expect("snapshot of missing domain");
         defaults_write_bool(domain, "bz.benchExit", true).ok();
         missing.restore().expect("restore of missing domain");
@@ -653,6 +699,6 @@ mod tests {
             "an empty snapshot must restore an empty domain"
         );
 
-        let _ = Command::new("defaults").args(["delete", domain]).status();
+        let _ = Command::new("defaults").args(["delete", domain]).output();
     }
 }
