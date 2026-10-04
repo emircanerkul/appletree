@@ -787,6 +787,38 @@ final class ScanModel {
         timer = nil
         tree = result
         if tree != nil { hasShownTree = true }
+        // Benchmark hook. Off unless asked for, so normal use pays only a
+        // dictionary read. Environment variables do not reach an app started
+        // by LaunchServices (Finder, `open`), and `launchctl setenv` does not
+        // reach a process launchd did not spawn, so the switch is a preference:
+        //   defaults write dev.emircan.appletree bz.benchTiming -bool true
+        //   defaults write dev.emircan.appletree bz.benchResult -string /tmp/at.json
+        // An app has no controlling terminal under LaunchServices, so `print`
+        // would go nowhere: the line is written to the path the harness names.
+        // bz.benchExit then quits, so a harness can time the app end to end.
+        if UserDefaults.standard.bool(forKey: "bz.benchTiming"), let tree {
+            // Positive: `timeIntervalSince` already computes later-minus-earlier,
+            // unlike the `-timeIntervalSinceNow` form the live timer uses.
+            let seconds = doneAt.timeIntervalSince(startedAt ?? doneAt)
+            let tool = "appletree-gui"
+            let secs = String(format: "%.6f", seconds)
+            let files = UInt64(tree.nFiles[0])
+            let bytes = tree.alloc[0]
+            let errors = tree.errors
+            let rss = currentRSSBytes()
+            let line = "BZ_BENCH {\"tool\":\"\(tool)\",\"path\":\"\(scanRoot)\","
+                + "\"seconds\":\(secs),\"files\":\(files),\"bytes\":\(bytes),"
+                + "\"errors\":\(errors),\"peak_rss_bytes\":\(rss)}"
+            if let path = UserDefaults.standard.string(forKey: "bz.benchResult"), !path.isEmpty {
+                try? line.write(toFile: path, atomically: true, encoding: .utf8)
+            } else {
+                print(line)
+                fflush(stdout)
+            }
+            if UserDefaults.standard.bool(forKey: "bz.benchExit") {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { NSApp.terminate(nil) }
+            }
+        }
         // Put the session back where it was: the folder being browsed, and the
         // trail behind it. Only meaningful once a tree exists, because the
         // recorded folders have to be looked up in it.
@@ -855,6 +887,20 @@ nonisolated func volumeUsedBytes(_ path: String) -> UInt64? {
     guard status == 0 else { return nil }
     // Packed buffer: u_int32_t length, then off_t at offset 4 (unaligned).
     return withUnsafeBytes(of: &reply) { $0.loadUnaligned(fromByteOffset: 4, as: UInt64.self) }
+}
+
+/// Resident set size of this process right now, in bytes. Used only by the
+/// benchmark hook; the engine's own peak RSS is measured separately by bench/.
+nonisolated func currentRSSBytes() -> UInt64 {
+    var info = mach_task_basic_info()
+    var count = mach_msg_type_number_t(
+        MemoryLayout<mach_task_basic_info>.size / MemoryLayout<natural_t>.size)
+    let result = withUnsafeMutablePointer(to: &info) {
+        $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+            task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count)
+        }
+    }
+    return result == KERN_SUCCESS ? UInt64(info.resident_size) : 0
 }
 
 nonisolated enum Fmt {

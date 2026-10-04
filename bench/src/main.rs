@@ -6,6 +6,7 @@
 //!
 //! Typical use is `bench/run.sh`, which wraps this in one command.
 
+mod apps;
 mod fixture;
 mod host;
 mod jsonw;
@@ -22,6 +23,7 @@ btbench - AppleTree scan-engine benchmark
 USAGE:
     btbench host
     btbench scan   [--path DIR] [--runs N] [--warmup N] [--out DIR] [--no-disktree]
+                   [--compare-apps [--app-runs N] [--app-timeout SECS]]
     btbench fixture --size small|medium|large [--out DIR] [--seed N] [--force]
     btbench verify  --path DIR
 
@@ -42,8 +44,19 @@ OPTIONS:
     --force         Allow fixture to write into a non-empty directory
     --no-disktree   Skip the disktree comparison (AppleTree only)
 
+    --compare-apps  Also drive the installed GUI apps (AppleTree, disktree,
+                    GrandPerspective, QDirStat) and report their scan times.
+                    Slower: each round launches real apps. Rows record where
+                    each duration came from, because they are not the same
+                    interval: AppleTree's GUI hook and the two closed-source
+                    apps report their own finish time, while disktree's GUI
+                    reports nothing and is timed externally.
+    --app-runs N    Rounds per GUI app (default 3)
+    --app-timeout S Per-app timeout in seconds (default 120)
+
 EXAMPLES:
     btbench scan --path /Applications --runs 5
+    btbench scan --path /Applications --compare-apps --app-runs 3
     btbench fixture --size small --out /tmp/btbench-small
     btbench verify --path /tmp/btbench-small
 ";
@@ -140,6 +153,18 @@ fn cmd_scan(args: &[String]) -> Result<(), String> {
     let comparison = runner::compare(&engines, &target, runs, warmup)?;
     let (json_path, report_path) = report::write(&out, &comparison)?;
 
+    // GUI tier: opt-in, because it launches real apps and is far slower.
+    if has(args, "--compare-apps") {
+        let app_runs = number(args, "--app-runs", 3)?;
+        let timeout_secs = number(args, "--app-timeout", 120)?;
+        let gui = apps_report(&target, app_runs, timeout_secs)?;
+        let gui_path = out.join("gui-comparison.md");
+        std::fs::write(&gui_path, &gui).map_err(|e| format!("{}: {e}", gui_path.display()))?;
+        println!();
+        print!("{gui}");
+        println!("gui report {}", gui_path.display());
+    }
+
     let a = &comparison.appletree;
     println!();
     println!("AppleTree  median {:.3} s  ({:.3}–{:.3})  peak {:.1} MB", a.median_seconds, a.min_seconds, a.max_seconds, a.median_peak_rss_bytes as f64 / 1048576.0);
@@ -161,6 +186,100 @@ fn cmd_scan(args: &[String]) -> Result<(), String> {
         std::process::exit(1);
     }
     Ok(())
+}
+
+/// Drive every installed GUI app for `runs` rounds, round-robin, and build the
+/// comparison table. Rounds are interleaved rather than grouped so a change in
+/// background load cannot land on one app alone.
+fn apps_report(target: &Path, runs: usize, timeout_secs: usize) -> Result<String, String> {
+    if runs < 1 {
+        return Err("--app-runs must be at least 1".into());
+    }
+    let specs = apps::discover();
+    if specs.is_empty() {
+        return Err("none of the known GUI apps are installed in /Applications".into());
+    }
+    let timeout = std::time::Duration::from_secs(timeout_secs.max(10) as u64);
+    let mut samples: Vec<Vec<f64>> = vec![Vec::new(); specs.len()];
+
+    for round in 1..=runs {
+        // Alternate direction each round, as the engine comparison does.
+        let order: Vec<usize> = if round % 2 == 1 {
+            (0..specs.len()).collect()
+        } else {
+            (0..specs.len()).rev().collect()
+        };
+        for index in order {
+            let spec = &specs[index];
+            eprintln!("btbench: gui round {round}/{runs} — {}", spec.name);
+            let result = apps::measure(spec, target, timeout);
+            match result.seconds {
+                Some(seconds) => {
+                    println!(
+                        "  {{\"tool\":\"{}\",\"round\":{round},\"seconds\":{seconds:.6},\"source\":\"{}\"}}",
+                        result.tool,
+                        result.source.label()
+                    );
+                    samples[index].push(seconds);
+                }
+                None => println!(
+                    "  {{\"tool\":\"{}\",\"round\":{round},\"seconds\":null,\"note\":\"{}\"}}",
+                    result.tool,
+                    crate::jsonw::escape(&result.note)
+                ),
+            }
+        }
+    }
+
+    let mut out = String::new();
+    out.push_str("# GUI-mode comparison\n\n");
+    out.push_str(&format!(
+        "**Target** `{}` · **rounds** {runs} per app, interleaved\n\n",
+        target.display()
+    ));
+    out.push_str(
+        "Every app was given the same target and the same number of rounds. Launching the bundle \
+         through `open` makes launchd — not the terminal — the TCC-responsible process, so each \
+         app's own Full Disk Access grant applies.\n\n\
+         **These rows are not all the same interval.** The source column says where each duration \
+         comes from; compare `app-reported` rows with each other, and treat the external row as an \
+         upper bound rather than an equal measurement.\n\n",
+    );
+    out.push_str("| app | measure | source | rounds | note |\n|---|---:|---|---:|---|\n");
+    for (index, spec) in specs.iter().enumerate() {
+        let values = &samples[index];
+        if values.is_empty() {
+            out.push_str(&format!(
+                "| {} | not measured | | 0 | see the run output above |\n",
+                spec.name
+            ));
+            continue;
+        }
+        let mut sorted = values.clone();
+        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let median = if sorted.len() % 2 == 1 {
+            sorted[sorted.len() / 2]
+        } else {
+            (sorted[sorted.len() / 2 - 1] + sorted[sorted.len() / 2]) / 2.0
+        };
+        let source = if spec.name == "disktree" { "external wall-clock" } else { "app-reported" };
+        let note = if spec.name == "disktree" {
+            "app prints no timing; timed until CPU idle, so not comparable to app-reported rows"
+        } else {
+            "app-written finish time"
+        };
+        out.push_str(&format!(
+            "| {} | **{:.3} s** | {} | {} | min {:.3} s, max {:.3} s — {} |\n",
+            spec.name,
+            median,
+            source,
+            values.len(),
+            sorted.first().unwrap(),
+            sorted.last().unwrap(),
+            note
+        ));
+    }
+    Ok(out)
 }
 
 fn cmd_fixture(args: &[String]) -> Result<(), String> {

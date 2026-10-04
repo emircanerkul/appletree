@@ -137,8 +137,15 @@ bundle: engine
 	DEV=$$(awk -F'"' '/Apple Development/{print $$2; exit}' <<<"$$IDS"); \
 	if [[ -n "$$DEVID" ]]; then \
 	    codesign --force --options runtime --timestamp --sign "$$DEVID" '$(APP)'; \
+	elif [[ -n "$$DEV" ]]; then \
+	    codesign --force --sign "$$DEV" '$(APP)'; \
 	else \
-	    codesign --force --sign "$${DEV:--}" '$(APP)'; \
+	    echo 'WARNING: no codesigning identity found; signing AD-HOC.' >&2; \
+	    echo '         An ad-hoc signature pins the designated requirement to a' >&2; \
+	    echo '         cdhash, which changes on every rebuild, so macOS TCC will' >&2; \
+	    echo '         drop the app Full Disk Access grant each time you rebuild.' >&2; \
+	    echo '         Fix: Xcode > Settings > Accounts > Manage Certificates > +' >&2; \
+	    codesign --force --sign - '$(APP)'; \
 	fi
 	@echo "==> Built $(APP)"
 
