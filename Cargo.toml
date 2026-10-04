@@ -12,16 +12,8 @@ name = "appletree"
 path = "src/bin/appletree/main.rs"
 required-features = ["cli"]
 
-# Bench-only experiment harness. Not built in the default (shipped) surface.
-[[bin]]
-name = "bench"
-path = "src/bin/bench.rs"
-required-features = ["bench-tools"]
-
 [features]
 cli = ["dep:serde_json"]
-# Opt-in benchmark tooling (searchfs(2) catalog scan). No dependencies.
-bench-tools = []
 
 [dependencies]
 libc = "0.2"

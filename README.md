@@ -2,7 +2,7 @@
 
 # AppleTree
 
-A fast, native disk-space treemap for macOS, in the spirit of WizTree. It scans a whole Mac (3.6M files) in about 14 seconds.
+A fast, native disk-space treemap for macOS, in the spirit of WizTree.
 
 <p>
   <img src="assets/screenshot.png" width="49%" alt="AppleTree treemap view of /Applications">
@@ -32,17 +32,23 @@ Signed with a Developer ID and notarized by Apple, so it opens like any other ap
 
 ## Performance
 
-| Home folder, 3.1M entries (M4) | Time |
-|---|---|
-| **AppleTree** | **10.2 s** |
-| Parallel `readdir` + `lstat` | 14.4 s |
-| `du -skx` | 65.3 s |
+Measured on an Apple M1 (16 GB, macOS 27.0) against
+[disktree](https://github.com/tobi/disktree) 0.10.1, alternating both engines in
+one run, 5 rounds each, warm cache. Scanning `/Applications`
+(247,465 files / 12.6 GB):
+
+| `/Applications` | Scan time | Peak memory |
+|---|---|---|
+| **AppleTree** | **0.51 s** | **21.2 MB** |
+| disktree 0.10.1 | 1.12 s | 70.0 MB |
 
 - `getattrlistbulk(2)` reads a whole directory's metadata in one syscall instead of one `stat` per file.
 - A Rust worker pool keeps many directories in flight, and scan threads run at user-initiated QoS: they stay on performance cores without starving the UI.
 - The treemap is laid out once and painted on every core in parallel, so zooming redraws in a couple of frames.
 
-Method, full results and a comparison with other tools: [BENCHMARKS.md](docs/benchmarks/BENCHMARKS.md).
+Run it yourself: `cd bench && ./run.sh`. Method, raw samples ("what this does
+not measure", including why the two tools report different file counts for
+identical bytes): [BENCHMARKS.md](docs/benchmarks/BENCHMARKS.md).
 
 ## Accuracy
 

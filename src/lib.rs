@@ -6,10 +6,6 @@
 
 pub mod cleanup;
 pub mod ffi;
-// Bench-only searchfs(2) experiment: compiled only under `bench-tools`
-// so the shipped library never carries this unsafe FFI surface.
-#[cfg(feature = "bench-tools")]
-pub mod searchfs;
 
 mod attrs;
 mod scan;

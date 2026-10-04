@@ -1,0 +1,23 @@
+{
+  "host": {"chip":"Apple M1","ram_gb":16,"macos":"27.0"},
+  "target": "/var/folders/km/l2g6y3zn1q16n0hw63_fb9b80000gn/T//btbench-fixture-small",
+  "tools": ["appletree", "disktree"],
+  "runs": 5,
+  "totals_agree": true,
+  "appletree": {"runs":5,"min_seconds":0.002323,"median_seconds":0.002894,"max_seconds":0.003404,"median_peak_rss_bytes":2834432,"files":1503,"dirs":177,"bytes":13811712,"errors":0},
+  "disktree": {"runs":5,"min_seconds":0.003686,"median_seconds":0.003989,"max_seconds":0.005487,"median_peak_rss_bytes":7274496,"files":1502,"dirs":178,"bytes":13811712,"errors":0},
+  "speedup": 1.3784,
+  "rss_ratio": 2.5665,
+  "measurements": [
+    {"tool":"appletree","seconds":0.003404,"files":1503,"dirs":177,"bytes":13811712,"errors":0,"peak_rss_bytes":2850816},
+    {"tool":"disktree","seconds":0.005487,"files":1502,"dirs":178,"bytes":13811712,"errors":0,"peak_rss_bytes":7274496},
+    {"tool":"disktree","seconds":0.004500,"files":1502,"dirs":178,"bytes":13811712,"errors":0,"peak_rss_bytes":7307264},
+    {"tool":"appletree","seconds":0.002894,"files":1503,"dirs":177,"bytes":13811712,"errors":0,"peak_rss_bytes":2834432},
+    {"tool":"appletree","seconds":0.002403,"files":1503,"dirs":177,"bytes":13811712,"errors":0,"peak_rss_bytes":2785280},
+    {"tool":"disktree","seconds":0.003989,"files":1502,"dirs":178,"bytes":13811712,"errors":0,"peak_rss_bytes":7258112},
+    {"tool":"disktree","seconds":0.003686,"files":1502,"dirs":178,"bytes":13811712,"errors":0,"peak_rss_bytes":7323648},
+    {"tool":"appletree","seconds":0.003017,"files":1503,"dirs":177,"bytes":13811712,"errors":0,"peak_rss_bytes":2801664},
+    {"tool":"appletree","seconds":0.002323,"files":1503,"dirs":177,"bytes":13811712,"errors":0,"peak_rss_bytes":2850816},
+    {"tool":"disktree","seconds":0.003875,"files":1502,"dirs":178,"bytes":13811712,"errors":0,"peak_rss_bytes":7274496}
+  ]
+}

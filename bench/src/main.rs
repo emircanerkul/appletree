@@ -1,0 +1,187 @@
+//! btbench — AppleTree scan-engine benchmark.
+//!
+//! Compares the AppleTree scan engine against disktree (pinned headless
+//! `disktree-core`), on synthetic fixtures or any readable folder, and writes
+//! a report naming the machine it ran on.
+//!
+//! Typical use is `bench/run.sh`, which wraps this in one command.
+
+mod fixture;
+mod host;
+mod jsonw;
+mod report;
+mod runner;
+
+use std::path::{Path, PathBuf};
+
+use runner::Engines;
+
+const USAGE: &str = "\
+btbench - AppleTree scan-engine benchmark
+
+USAGE:
+    btbench host
+    btbench scan   [--path DIR] [--runs N] [--warmup N] [--out DIR] [--no-disktree]
+    btbench fixture --size small|medium|large [--out DIR] [--seed N] [--force]
+    btbench verify  --path DIR
+
+COMMANDS:
+    host      Print the host block (chip, RAM in GB, macOS version)
+              --slug for the filesystem-safe form, --human for one line
+    scan      Compare engines over one target and write run.json + report.md
+    fixture   Create a deterministic synthetic tree with a manifest
+    verify    Re-walk a fixture and confirm it still matches its manifest
+
+OPTIONS:
+    --path DIR      Target directory for scan/verify
+    --runs N        Measured rounds per engine (default 5)
+    --warmup N      Unmeasured warmup rounds per engine (default 1)
+    --out DIR       Result directory (default docs/benchmarks/results/<date>-<host>)
+    --size NAME     Fixture size: small, medium, large
+    --seed N        Fixture seed (default 1)
+    --force         Allow fixture to write into a non-empty directory
+    --no-disktree   Skip the disktree comparison (AppleTree only)
+
+EXAMPLES:
+    btbench scan --path /Applications --runs 5
+    btbench fixture --size small --out /tmp/btbench-small
+    btbench verify --path /tmp/btbench-small
+";
+
+/// Result root: the repository's docs/benchmarks/results, resolved from this
+/// source file so the binary works no matter where it is invoked from.
+fn repo_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("bench/ has a parent")
+        .to_path_buf()
+}
+
+fn default_out(host: &host::Host) -> PathBuf {
+    let date = std::process::Command::new("date")
+        .arg("+%Y-%m-%d")
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_else(|| "undated".into());
+    repo_root().join("docs/benchmarks/results").join(format!("{date}-{}", host.slug()))
+}
+
+fn main() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.is_empty() || args[0] == "--help" || args[0] == "-h" {
+        print!("{USAGE}");
+        return;
+    }
+    let result = match args[0].as_str() {
+        "host" => cmd_host(&args[1..]),
+        "scan" => cmd_scan(&args[1..]),
+        "fixture" => cmd_fixture(&args[1..]),
+        "verify" => cmd_verify(&args[1..]),
+        other => Err(format!("unknown command {other:?}; run `btbench --help`")),
+    };
+    if let Err(message) = result {
+        eprintln!("btbench: {message}");
+        std::process::exit(1);
+    }
+}
+
+fn cmd_host(args: &[String]) -> Result<(), String> {
+    let host = host::Host::detect();
+    // `--slug` is the filesystem-safe form run.sh uses for result directories;
+    // `--human` is the one-line form for terminal output.
+    if has(args, "--slug") {
+        println!("{}", host.slug());
+    } else if has(args, "--human") {
+        println!("{}", host.human());
+    } else {
+        println!("{}", host.json());
+    }
+    Ok(())
+}
+
+fn flag<'a>(args: &'a [String], name: &str) -> Option<&'a str> {
+    args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).map(String::as_str)
+}
+
+fn has(args: &[String], name: &str) -> bool {
+    args.iter().any(|a| a == name)
+}
+
+fn number(args: &[String], name: &str, default: usize) -> Result<usize, String> {
+    match flag(args, name) {
+        None => Ok(default),
+        Some(raw) => raw.parse().map_err(|_| format!("{name} must be a whole number, got {raw:?}")),
+    }
+}
+
+fn cmd_scan(args: &[String]) -> Result<(), String> {
+    let target = PathBuf::from(flag(args, "--path").unwrap_or("/Applications"));
+    if !target.is_dir() {
+        return Err(format!("--path is not a directory: {}", target.display()));
+    }
+    let runs = number(args, "--runs", 5)?;
+    let warmup = number(args, "--warmup", 1)?;
+    let host = host::Host::detect();
+    let out = flag(args, "--out").map(PathBuf::from).unwrap_or_else(|| default_out(&host));
+
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(Path::to_path_buf))
+        .ok_or("cannot locate the bench binaries")?;
+    let disktree = if has(args, "--no-disktree") { None } else { Some(exe_dir.join("disktree-runner")) };
+    let engines = Engines { appletree: exe_dir.join("appletree-runner"), disktree };
+
+    eprintln!("btbench: target {}", target.display());
+    eprintln!("btbench: host   {}", host.human());
+    eprintln!("btbench: {} measured round(s) per engine, {warmup} warmup", runs);
+
+    let comparison = runner::compare(&engines, &target, runs, warmup)?;
+    let (json_path, report_path) = report::write(&out, &comparison)?;
+
+    let a = &comparison.appletree;
+    println!();
+    println!("AppleTree  median {:.3} s  ({:.3}–{:.3})  peak {:.1} MB", a.median_seconds, a.min_seconds, a.max_seconds, a.median_peak_rss_bytes as f64 / 1048576.0);
+    if let Some(d) = &comparison.disktree {
+        println!("disktree   median {:.3} s  ({:.3}–{:.3})  peak {:.1} MB", d.median_seconds, d.min_seconds, d.max_seconds, d.median_peak_rss_bytes as f64 / 1048576.0);
+        if let Some(s) = comparison.speedup {
+            println!("speedup    {s:.2}x");
+        }
+    }
+    println!("report     {report_path}");
+    println!("json       {json_path}");
+
+    if !comparison.totals_agree {
+        eprintln!();
+        eprintln!(
+            "btbench: totals diverged between engines. The filesystem likely changed during \
+             the run, or an engine regressed. Re-run before comparing speed."
+        );
+        std::process::exit(1);
+    }
+    Ok(())
+}
+
+fn cmd_fixture(args: &[String]) -> Result<(), String> {
+    let size = flag(args, "--size").unwrap_or("small");
+    let out = PathBuf::from(flag(args, "--out").unwrap_or("/tmp/btbench-fixture"));
+    let seed = flag(args, "--seed").and_then(|s| s.parse().ok()).unwrap_or(1u64);
+    let manifest = fixture::create(&out, size, seed, has(args, "--force"))?;
+    println!(
+        "fixture {} at {}: {} dirs, {} files, {} logical bytes, {} hardlink name(s), {} symlink(s)",
+        manifest.size, out.display(), manifest.dirs, manifest.files, manifest.logical_bytes,
+        manifest.hardlink_names, manifest.symlinks
+    );
+    Ok(())
+}
+
+fn cmd_verify(args: &[String]) -> Result<(), String> {
+    let path = PathBuf::from(flag(args, "--path").ok_or("verify needs --path DIR")?);
+    let seen = fixture::verify(&path)?;
+    println!(
+        "ok: {} matches its manifest ({} dirs, {} files, {} logical bytes)",
+        path.display(), seen.dirs, seen.files, seen.logical_bytes
+    );
+    Ok(())
+}

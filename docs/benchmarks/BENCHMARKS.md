@@ -1,75 +1,89 @@
 # Benchmarks
 
-The [September 27 performance audit](PERFORMANCE_AUDIT.md) records the latest
-before/after scanner, rendering, pointer lookup, cleanup, and outline results,
-with reproducible harnesses and raw samples. The comparisons below are the
-earlier v0.5.0 measurements against other tools.
+AppleTree's scan engine, measured against [disktree](https://github.com/tobi/disktree)
+on the same machine, in the same run, by one command.
 
-M4 MacBook (10 cores), macOS 27.0, APFS, warm cache, Full Disk Access for
-every tool. The machine was in normal use (load average 5–9), so runs
-alternate between tools and the table shows the median of five, with the
-range in brackets.
+**Run it:**
 
-Engines are timed with `cargo run --release --features bench-tools --bin bench -- bulk <path>` (the bench binary is behind the opt-in `bench-tools` feature) and
-disktree's own `disktree_core::scan::scan` with default options. Peak memory
-is `/usr/bin/time -l`'s "peak memory footprint".
+```sh
+cd bench && ./run.sh
+```
 
-## Scan engines
+The first build fetches the pinned `disktree-core` (needs network once). To
+benchmark AppleTree alone, offline: `./run.sh --no-disktree`.
 
-| target | AppleTree | [disktree](https://github.com/tobi/disktree) 0.10.1 | |
-|---|---|---|---|
-| home folder (3.1M entries, 227.9 GB) | **10.2 s** (9.9–10.4) | 14.7 s (14.4–15.9) | 1.43× |
-| whole data volume (4.0M entries, 303.5 GB) | **12.6 s** (12.4–13.0) | 18.2 s (18.1–19.3) | 1.45× |
-| peak memory, home folder | **362 MB** | 665 MB | 1.8× less |
-| peak memory, whole volume | **454 MB** | 864 MB | 1.9× less |
+## What is measured
 
-For reference, on the home folder: a parallel `readdir` + per-file `lstat`
-walk takes 14.4 s and `du -skx` takes 65.3 s.
+The **scan engine only**: the call that walks a directory tree and returns the
+flat tree the UI reads. Two numbers per engine:
 
-## Apps
+- **Wall time** of the engine call, excluding process start.
+- **Peak RSS** of that engine's own process after the scan, with the tree still
+  loaded. Each engine runs in a separate process, so the two figures are not
+  added together.
 
-Both apps scanning `~/.t3` (720k entries, nothing that needs Full Disk
-Access), three launches each, as reported in each app's status bar:
+Both engines are alternated round by round (ABBA) after one unmeasured warmup,
+because cache warmth and background load drift over a run, and a block of
+AppleTree runs followed by a block of disktree runs would charge that drift to
+whichever engine went second.
 
-| | AppleTree | disktree 0.10.1 |
-|---|---|---|
-| scan time | **1.4–1.5 s** | 3.1–3.2 s |
-| memory after the scan | 237–279 MB | 242–272 MB |
+If the two engines disagree on allocated bytes, the run **fails**: the
+filesystem changed underneath it or an engine regressed, and a speed number
+from that run would be meaningless.
 
-The finished apps use about the same memory: both keep the whole tree
-loaded for the UI.
+## Results — 2026-10-04
 
-AppleTree scanning the whole data volume in the app takes 13.3–14.0 s when
-the machine is quiet and up to 20 s under heavy load. The in-app time is the
-engine scan plus about 0.15 s to hand the tree to the UI.
+**Host:** Apple M1 · 16 GB RAM · macOS 27.0 (8 cores)
+**Target:** `/Applications`, 247,465 files / 42,409 dirs / 12,618,919,936 bytes allocated
+**Method:** 5 measured rounds per engine, 1 warmup, ABBA alternation
 
-## Accuracy
+| | AppleTree | disktree 0.10.1 | ratio |
+|---|---:|---:|---:|
+| median scan | **0.512 s** | 1.121 s | **2.19× faster** |
+| range | 0.489–0.528 s | 0.903–1.128 s | |
+| peak RSS | **21.2 MB** | 70.0 MB | **3.30× less** |
+| allocated bytes | 12,618,919,936 | 12,618,919,936 | identical |
 
-- Home folder: both engines report 227.89 GB, the same as `du -skx`.
-- Whole volume: both report 303.48 GB, and each top-level folder agrees to
-  within 2 MB (files being written during the runs).
-- `df` shows 318.7 GB used; the 15.2 GB gap is root-only system data
-  (Spotlight index, logs and the like, 231 folders) that no unprivileged app
-  can read. AppleTree shows that gap in its status bar.
-- AppleTree counts every name of a hard-linked file in the file count but
-  its bytes once; disktree drops the extra names. That is why AppleTree lists
-  about 1% more files for identical totals.
+Full machine-readable data, including every individual sample:
+[`results/2026-10-04-apple-m1-macos27.0/`](results/2026-10-04-apple-m1-macos27.0/)
+(`run.json`, plus `run-fixture.json` for the deterministic synthetic tree).
 
-## Findings
+### Expected count differences
 
-- `searchfs(2)`, the closest thing macOS has to reading NTFS's MFT, was 5×
-  slower than the parallel walk on an earlier 1.9M-entry volume (38 s vs
-  7.1 s): it is one sequential kernel iteration over the catalog and cannot be
-  split across cores. The code is kept in `src/searchfs.rs` for reference.
-- Thread count sweet spot is about the core count. 32+ threads regress ~40%.
-- Scan threads run at `QOS_CLASS_USER_INITIATED`. At a GUI app's default
-  QoS they land on efficiency cores and the scan takes twice as long.
-  `QOS_CLASS_USER_INTERACTIVE` scanned no faster (home folder in the app:
-  8.8–9.6 s vs 9.3–9.4 s) but outranked the UI and the compositor, so the
-  window skipped frames for ~0.2–0.4 s mid-scan. Leaving cores free instead
-  cost speed: 4 workers took 14 s on the home folder, 6 took 11 s.
-- Treemap render (1600×1600 px, /Applications): 100–190 ms on one thread
-  originally, now ~5 ms layout + ~3 ms paint across 30 row bands, pixel-for-pixel
-  the same image.
-- The peak memory rows above predate the flat engine, which peaks at about
-  half of v0.5.1 (see the audit's third pass).
+Both engines agree on allocated bytes. Two counts differ, and neither is an
+accuracy problem:
+
+- **Files.** AppleTree counts every name of a hardlinked file and counts
+  symlinks as files; disktree counts a hardlinked file once. AppleTree therefore
+  reports more files for the same bytes (247,465 vs 235,540 here).
+- **Directories.** disktree counts the scan root itself as a directory; AppleTree
+  counts only the directories inside it, so disktree is one higher.
+
+## What this does not measure
+
+- **GUI time.** App launch, treemap layout, painting, hover and outline
+  performance. The earlier UI, rendering and agent harnesses were retired with
+  the rest of the old benchmark surface; nothing here replaces them.
+- **Whole-disk accuracy.** Only paths the process can read are counted. Without
+  Full Disk Access, root-only system data is invisible to *every* tool, which
+  undercounts all engines equally rather than comparing them.
+- **Memory beyond peak RSS.** The figure is a process peak, not the resident
+  size of the loaded tree over time.
+- **Other machines.** These are one M1's numbers, not a claim about every Mac.
+
+## Reproducing
+
+```sh
+cd bench && ./run.sh                          # fixture + /Applications, 5 rounds
+./run.sh --path "$HOME/Downloads"             # any folder you can read
+./run.sh --runs 10 --fixture-size medium      # more rounds, bigger fixture
+./run.sh --help                               # every option
+```
+
+Results land in `docs/benchmarks/results/<date>-<chip>-macos<version>/`.
+Re-running overwrites that directory's files; nothing else is touched.
+
+The synthetic fixtures (`--fixture-size small|medium|large`) are deterministic
+from a seed and carry a manifest beside the tree, so two people on two machines
+measure the same tree. `bench/` also exposes `fixture`, `verify`, `scan` and
+`host` directly if you want to drive it yourself.

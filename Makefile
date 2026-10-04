@@ -1,8 +1,7 @@
 # AppleTree — single build entry point.
 #
-# This Makefile replaces the former build.sh, deploy.sh, release.sh,
-# tests/swift/run.sh, and the former benchmarks/run-agent.sh and
-# benchmarks/run-ui.sh wrappers (now the `bench-agent` and `bench-ui` targets below).
+# This Makefile replaces the former build.sh, deploy.sh, release.sh and
+# tests/swift/run.sh.
 # All recipes run under bash (`SHELL` below) with errexit, nounset and
 # pipefail, matching the old `set -euo pipefail` contracts.
 #
@@ -15,10 +14,6 @@
 #                              optional: NOTES_FILE=path/to/notes.md
 #   make test                  guard unit tests (Swift, linked against the Rust staticlib)
 #   make test-rust             cargo test --release
-#   make bench-ui              UI benchmark with synthetic fixtures
-#   make bench-ui SCAN_PATHS="/Applications"   real read-only scan benchmark
-#   make bench-agent           agent data-algorithm benchmark (offline)
-#                              optional: ARGS="--check-only"
 #   make engine                cargo build --release only
 #   make icon                  regenerate AppIcon source (assets/gen_icon.py)
 #   make clean                 remove build/, .build/, AppleTree.dmg, SHA256SUMS.txt
@@ -51,15 +46,8 @@ SWIFT_FLAGS := -O -parse-as-library -swift-version 6 -default-isolation MainActo
                -target arm64-apple-macos$(MIN_MACOS) -framework AppKit -framework SwiftUI \
                -framework DiskArbitration -framework IOKit
 
-# Benchmark UI/agent file subset: production sources minus Main.swift (@main,
-# collides with the benchmark runners) and Settings.swift (its views are used
-# only by Main). ModelProvider is needed for ProviderStore, which Model references.
-BENCH_FILES := AgentSupport AgentLocator AgentSetup AgentStreamReader AgentPrompt \
-               AgentRun CleanupGuard CleanupModel Cleanup ContentView Model ModelProvider \
-               PlanParsing Treemap TreemapView SunburstView
-
 .DEFAULT_GOAL := help
-.PHONY: help all build engine bundle deploy release test test-rust bench-ui bench-agent icon clean
+.PHONY: help all build engine bundle deploy release test test-rust icon clean
 
 help:
 	@echo 'AppleTree targets:'
@@ -69,10 +57,6 @@ help:
 	@echo '                          optional NOTES_FILE=path/to/notes.md'
 	@echo '  make test               guard unit tests (Swift over the Rust staticlib)'
 	@echo '  make test-rust          cargo test --release'
-	@echo '  make bench-ui           UI benchmark (synthetic fixtures)'
-	@echo '  make bench-ui SCAN_PATHS="/Applications"   real read-only scan benchmark'
-	@echo '  make bench-agent        agent data-algorithm benchmark (offline)'
-	@echo '                          optional ARGS="--check-only"'
 	@echo '  make engine             cargo build --release only'
 	@echo '  make icon               regenerate AppIcon source (assets/gen_icon.py)'
 	@echo '  make clean              remove build/, .build/, dmg and checksums'
@@ -256,94 +240,6 @@ test: engine
 	    -L target/release -lappletree \
 	    -o .build/guard-tests
 	.build/guard-tests
-
-# ---------------------------------------------------------------------------
-# Benchmarks
-# ---------------------------------------------------------------------------
-
-# Python patcher for the agent benchmark: freeze production Swift and inject
-# benchmark hooks. Exported so the recipe shell reads it from the environment.
-define AGENT_PATCH_PY
-from pathlib import Path
-import sys
-p=Path(sys.argv[1]); source=p.read_text()
-changes={
-    'private var preparationTask: Task<Void, Never>?': 'var preparationTask: Task<Void, Never>?',
-    'start(input: input, env: env)': 'AgentBenchmarkLaunch.record(input)',
-    'AgentPrompt.build(tree: tree, scanRoot: scanRoot, known: known, running: running)': 'AgentBenchmarkGate.shared.waitIfArmed(); return AgentPrompt.build(tree: tree, scanRoot: scanRoot, known: known, running: running)',
-}
-for old,new in changes.items():
-    assert source.count(old)==1, f'Expected one benchmark hook: {old}'
-    source=source.replace(old,new)
-p.write_text(source)
-p=Path(sys.argv[2]); source=p.read_text()
-old='let result = await Trash.trash(items.map(\\.path))'
-assert source.count(old)==1, 'Expected one shared-trash pathway call'
-p.write_text(source.replace(old, 'let result = await AgentBenchmarkTrash.trash(items.map(\\.path))'))
-p=Path(sys.argv[3]); source=p.read_text()
-old='''    func startAgent(_ agent: InstalledAgent) {
-'''
-new='''    func startAgent(_ agent: InstalledAgent) {
-        AgentBenchmarkLaunch.agentStarts += 1
-'''
-assert source.count(old)==1, 'Expected one agent start'
-p.write_text(source.replace(old, new))
-endef
-export AGENT_PATCH_PY
-
-# Agent data algorithms, entirely offline: the production sources are copied
-# to a temp dir (frozen while other work may edit shared files), patched with
-# benchmark hooks, checksummed, compiled against the C fixture, and run.
-bench-agent: engine
-	@TMP=$$(mktemp -d /tmp/appletree-agent-bench.XXXXXX); \
-	trap 'rm -rf "$$TMP"' EXIT; \
-	mkdir "$$TMP/app"; \
-	cp app/*.swift "$$TMP/app/"; \
-	shasum -a 256 "$$TMP/app/AgentRun.swift" "$$TMP/app/CleanupModel.swift" "$$TMP/app/Model.swift"; \
-	python3 -c "$$AGENT_PATCH_PY" "$$TMP/app/AgentRun.swift" "$$TMP/app/CleanupModel.swift" "$$TMP/app/Model.swift"; \
-	clang -O2 -mmacosx-version-min=$(MIN_MACOS) -c benchmarks/fixture/ui_fixture.c -o "$$TMP/fixture.o"; \
-	swiftc "$$TMP/app/AgentSupport.swift" \
-	  "$$TMP/app/AgentLocator.swift" "$$TMP/app/AgentSetup.swift" \
-	  "$$TMP/app/AgentStreamReader.swift" "$$TMP/app/AgentPrompt.swift" \
-	  "$$TMP/app/AgentRun.swift" "$$TMP/app/CleanupGuard.swift" \
-	  "$$TMP/app/CleanupModel.swift" "$$TMP/app/Cleanup.swift" "$$TMP/app/ContentView.swift" \
-	  "$$TMP/app/Model.swift" "$$TMP/app/ModelProvider.swift" \
-	  "$$TMP/app/PlanParsing.swift" "$$TMP/app/Treemap.swift" \
-	  "$$TMP/app/TreemapView.swift" "$$TMP/app/SunburstView.swift" \
-	  benchmarks/agent/AgentReference.swift benchmarks/agent/AgentPerformance.swift "$$TMP/fixture.o" \
-	  -import-objc-header benchmarks/fixture/ui_fixture.h \
-	  $(SWIFT_FLAGS) \
-	  -o "$$TMP/agent-bench"; \
-	"$$TMP/agent-bench" $(ARGS)
-
-# UI benchmark: production Swift sources with synthetic fixtures, or a real
-# read-only scan when SCAN_PATHS is set (`make bench-ui SCAN_PATHS="/Applications"`).
-bench-ui:
-	@TMP=$$(mktemp -d /tmp/appletree-ui-bench.XXXXXX); \
-	trap 'rm -rf "$$TMP"' EXIT; \
-	mkdir "$$TMP/app"; \
-	cp app/*.swift "$$TMP/app/"; \
-	shasum -a 256 "$$TMP/app/Cleanup.swift" "$$TMP/app/Model.swift" "$$TMP/app/ContentView.swift"; \
-	INPUTS='benchmarks/ui/UIPerformance.swift'; \
-	LINK=''; \
-	HEADER=benchmarks/fixture/ui_fixture.h; \
-	if [[ -n '$(SCAN_PATHS)' ]]; then \
-	    [[ -f target/release/libappletree.a ]] || { echo 'Build the Rust library first: make engine' >&2; exit 2; }; \
-	    INPUTS='benchmarks/ui/UICleanupScan.swift'; \
-	    LINK='-L target/release -lappletree'; \
-	    HEADER=app/bz.h; \
-	else \
-	    clang -O2 -mmacosx-version-min=$(MIN_MACOS) -c benchmarks/fixture/ui_fixture.c -o "$$TMP/fixture.o"; \
-	    INPUTS="$$INPUTS $$TMP/fixture.o"; \
-	fi; \
-	BENCH_PATHS=(); \
-	for f in $(BENCH_FILES); do BENCH_PATHS+=("$$TMP/app/$$f.swift"); done; \
-	swiftc "$${BENCH_PATHS[@]}" \
-	  $${INPUTS} benchmarks/ui/UIReferenceCleanup.swift $${LINK} \
-	  -import-objc-header "$$HEADER" \
-	  $(SWIFT_FLAGS) \
-	  -o "$$TMP/ui-bench"; \
-	"$$TMP/ui-bench" $(SCAN_PATHS) $(ARGS)
 
 # ---------------------------------------------------------------------------
 # Clean

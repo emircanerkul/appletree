@@ -1,0 +1,43 @@
+[package]
+name = "btbench"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "AppleTree scan-engine benchmark: AppleTree vs disktree, headless and repeatable"
+
+# Standalone project: the repository root is not a workspace, and this crate
+# must never become a dependency of the shipped app.
+[workspace]
+
+[[bin]]
+name = "btbench"
+path = "src/main.rs"
+
+# Measurement isolation: each engine runs in its own process so peak RSS is
+# per-engine instead of additive, and timing covers only the engine call.
+[[bin]]
+name = "appletree-runner"
+path = "src/bin/appletree_runner.rs"
+
+# Only built with the comparator feature; `--no-default-features` must produce
+# a working AppleTree-only harness, including offline.
+[[bin]]
+name = "disktree-runner"
+path = "src/bin/disktree_runner.rs"
+required-features = ["disktree"]
+
+[features]
+default = ["disktree"]
+# The comparator is pinned by git tag because disktree-core is not published on
+# crates.io. Building it needs network access once; `--no-default-features`
+# builds an AppleTree-only harness that works fully offline.
+disktree = ["dep:disktree-core"]
+
+[dependencies]
+appletree = { path = ".." }
+libc = "0.2"
+
+[dependencies.disktree-core]
+git = "https://github.com/tobi/disktree"
+tag = "v0.10.1"
+optional = true

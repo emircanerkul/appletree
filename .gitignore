@@ -5,4 +5,5 @@ AppleTree.dmg
 __pycache__/
 /.cache
 /.build
-gpui-probe/target/
+# The benchmark harness is its own Cargo project with its own target dir.
+/bench/target/
