@@ -137,8 +137,6 @@
 "Relaunch" = "Relanzar";
 
 /* Providers captions, General planner summary */
-"Connect a relay, a self-hosted server, or any other OpenAI- or Anthropic-compatible endpoint by its base URL, protocol, and models." = "Conecta un relé, un servidor autoalojado o cualquier otro punto de conexión compatible con OpenAI o Anthropic por su URL base, protocolo y modelos.";
-"No custom providers. The Clean Up panel uses Claude Code or Codex when one is installed and signed in." = "No hay proveedores personalizados. El panel de limpieza usa Claude Code o Codex cuando uno está instalado y con sesión iniciada.";
 "Clean Up planner" = "Planificador de limpieza";
 "Scan when AppleTree opens" = "Escanear al abrir AppleTree";
 "Scan the whole disk at launch. Turn off to pick a folder yourself first." = "Escanea todo el disco al iniciar. Desactívelo para elegir primero una carpeta usted mismo.";
@@ -148,7 +146,6 @@
 
 /* Setup offer: custom providers */
 "Or use any model — a self-hosted server, a relay, a gateway." = "O usa cualquier modelo: un servidor autoalojado, un relé, una pasarela.";
-"Set up a model provider" = "";
 
 "Add a model provider" = "Añadir un proveedor de modelos";
 "Or" = "o";
@@ -192,3 +189,7 @@
 "%@ is not signed in — sign in from the Clean Up panel." = "%@ no tiene la sesión iniciada: inicia sesión desde el panel Limpieza.";
 "%@ is not installed — set it up from the Clean Up panel." = "%@ no está instalado: configúralo desde el panel Limpieza.";
 "Pick a planner and it plans what can go from this scan." = "Elige un planificador y planificará qué se puede eliminar.";
+
+/* Settings window tab labels. */
+"General" = "General";
+"Model Providers" = "Proveedores de modelos";

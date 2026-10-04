@@ -107,7 +107,13 @@ struct ProviderFormView: View {
                 } else {
                     Picker("Model", selection: $model) {
                         ForEach(models, id: \.self) { Text($0).tag($0) }
-                        Text(model).tag(model) // keep a typed-but-unlisted ID
+                        // Keep a typed-but-unlisted ID selectable, but only when
+                        // it is not already a row. This tag used to be added
+                        // unconditionally, so a model that the endpoint listed
+                        // *and* was already selected appeared twice in the menu.
+                        if !model.isEmpty && !models.contains(model) {
+                            Text(model).tag(model)
+                        }
                     }
                 }
                 TextField("Model ID", text: $model, prompt: Text("gpt-4o-mini"))
@@ -174,7 +180,10 @@ struct ProviderFormView: View {
             }
             if let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                let list = obj["data"] as? [[String: Any]] {
-                models = list.compactMap { $0["id"] as? String }.sorted()
+                // An endpoint can list the same id twice, and the Picker keys
+                // rows by the string itself — a repeat rendered the same model
+                // twice. Set drops the repeats; sorted() keeps the old order.
+                models = Set(list.compactMap { $0["id"] as? String }).sorted()
             } else {
                 error = String(localized: "Could not read a model list from this endpoint; type the ID.")
             }

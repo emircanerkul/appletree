@@ -254,7 +254,12 @@ struct CleanupPanel: View {
         .menuStyle(.button)
         .menuIndicator(.hidden)
         .buttonStyle(.bordered)
-        .controlSize(.large)
+        // `.extraLarge` to match the primary button's 28.5pt, not because the
+        // chevron is large: `.bordered` and `.borderedProminent` are different
+        // size tiers, so the same `.controlSize` yields 20.5pt beside 28.5pt.
+        // A frame cannot fix it either — the bordered capsule keeps its own
+        // intrinsic height, so `frame(height:)` only pads around it.
+        .controlSize(.extraLarge)
         .fixedSize()
         .help(String(localized: "Choose the planner"))
         .accessibilityLabel(String(localized: "Choose the planner"))
@@ -346,6 +351,10 @@ private struct AgentRunView: View {
     let model: ScanModel
     let retry: () -> Void
     let close: () -> Void
+
+    /// The locale SwiftUI resolved for this view, used to uppercase the
+    /// localized section headings correctly (see `section`).
+    @Environment(\.locale) private var locale
 
     private var safe: [PlanItem] { run.items.filter { $0.spec.group != "ask" } }
     private var ask: [PlanItem] { run.items.filter { $0.spec.group == "ask" } }
@@ -516,7 +525,11 @@ private struct AgentRunView: View {
 
     private func section(_ name: String, _ items: [PlanItem]) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(name.uppercased())
+            // Locale-aware: `String.uppercased()` maps i→I and ı→I regardless
+            // of language, so Turkish "Güvenle kaldırılabilir" rendered as
+            // "KALDIRILABILIR" instead of "KALDIRILABİLİR". Uppercasing a
+            // string that was just localized needs that same locale.
+            Text(name.uppercased(with: locale))
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(.tertiary)
                 .padding(.top, 6)

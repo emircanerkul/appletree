@@ -130,8 +130,6 @@
 "Follow system" = "Follow system";
 "Relaunch AppleTree to apply the language." = "Relaunch AppleTree to apply the language.";
 "Relaunch" = "Relaunch";
-"Connect a relay, a self-hosted server, or any other OpenAI- or Anthropic-compatible endpoint by its base URL, protocol, and models." = "Connect a relay, a self-hosted server, or any other OpenAI- or Anthropic-compatible endpoint by its base URL, protocol, and models.";
-"No custom providers. The Clean Up panel uses Claude Code or Codex when one is installed and signed in." = "No custom providers. The Clean Up panel uses Claude Code or Codex when one is installed and signed in.";
 "Clean Up planner" = "Clean Up planner";
 "Scan when AppleTree opens" = "Scan when AppleTree opens";
 "Scan the whole disk at launch. Turn off to pick a folder yourself first." = "Scan the whole disk at launch. Turn off to pick a folder yourself first.";
@@ -139,7 +137,6 @@
 "missing provider, back to the installed agent" = "missing provider, back to the installed agent";
 "the installed agent, Claude Code first" = "the installed agent, Claude Code first";
 "Or use any model — a self-hosted server, a relay, a gateway." = "Or use any model — a self-hosted server, a relay, a gateway.";
-"Set up a model provider" = "Set up a model provider";
 "Add a model provider" = "Add a model provider";
 
 "Or" = "Or";
@@ -183,3 +180,7 @@
 "%@ is not signed in — sign in from the Clean Up panel." = "%@ is not signed in — sign in from the Clean Up panel.";
 "%@ is not installed — set it up from the Clean Up panel." = "%@ is not installed — set it up from the Clean Up panel.";
 "Pick a planner and it plans what can go from this scan." = "Pick a planner and it plans what can go from this scan.";
+
+/* Settings window tab labels. */
+"General" = "General";
+"Model Providers" = "Model Providers";

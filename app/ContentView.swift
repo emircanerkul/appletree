@@ -894,6 +894,14 @@ private struct TitleCrumbs: View {
                 if i > 0 { chevron }
                 crumb(tree: tree, node: path.nodes[i], isLast: i == path.nodes.count - 1)
             }
+            // The pick sits below the folder on screen and the depth cap
+            // dropped the folders in between. Without this mark the trail read
+            // as complete, so the last crumb looked like the file's own folder
+            // rather than several levels above it.
+            if path.elidedBelow {
+                chevron
+                Text("…").foregroundStyle(.tertiary)
+            }
         }
     }
 

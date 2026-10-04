@@ -47,7 +47,7 @@ SWIFT_FLAGS := -O -parse-as-library -swift-version 6 -default-isolation MainActo
                -framework DiskArbitration -framework IOKit
 
 .DEFAULT_GOAL := help
-.PHONY: help all build engine bundle deploy release test test-planner test-rust icon clean
+.PHONY: help all build engine bundle deploy release test test-planner test-l10n test-rust icon clean
 
 help:
 	@echo 'AppleTree targets:'
@@ -57,6 +57,7 @@ help:
 	@echo '                          optional NOTES_FILE=path/to/notes.md'
 	@echo '  make test               guard unit tests (Swift over the Rust staticlib)'
 	@echo '  make test-planner       planner catalog, preference and sign-out tests'
+	@echo '  make test-l10n          every .strings table has the same keys, no duplicates'
 	@echo '  make test-rust          cargo test --release'
 	@echo '  make engine             cargo build --release only'
 	@echo '  make icon               regenerate AppIcon source (assets/gen_icon.py)'
@@ -261,6 +262,13 @@ test-planner:
 	    -target arm64-apple-macos$(MIN_MACOS) -framework Security \
 	    -o .build/planner-tests
 	.build/planner-tests
+
+# The 7 Localizable.strings tables must stay in lockstep: a key added to one
+# and forgotten in another renders English in that language, and a duplicate
+# key makes which translation wins undefined. Also checks that every
+# String(localized:) key in app/*.swift is actually defined somewhere.
+test-l10n:
+	python3 tests/check-l10n.py
 
 # ---------------------------------------------------------------------------
 # Clean

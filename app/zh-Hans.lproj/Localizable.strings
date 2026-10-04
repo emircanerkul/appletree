@@ -137,8 +137,6 @@
 "Relaunch" = "重新启动";
 
 /* Providers captions, General planner summary */
-"Connect a relay, a self-hosted server, or any other OpenAI- or Anthropic-compatible endpoint by its base URL, protocol, and models." = "通过基础 URL、协议和模型连接中继、自托管服务器或任何其他兼容 OpenAI 或 Anthropic 的端点。";
-"No custom providers. The Clean Up panel uses Claude Code or Codex when one is installed and signed in." = "暂无自定义提供商。清理面板在安装并登录后会使用 Claude Code 或 Codex。";
 "Clean Up planner" = "清理规划器";
 "Scan when AppleTree opens" = "启动时扫描";
 "Scan the whole disk at launch. Turn off to pick a folder yourself first." = "启动时扫描整个磁盘。关闭后可先自行选择文件夹。";
@@ -148,7 +146,6 @@
 
 /* Setup offer: custom providers */
 "Or use any model — a self-hosted server, a relay, a gateway." = "或使用任意模型——自托管服务器、中继或网关。";
-"Set up a model provider" = "";
 
 "Add a model provider" = "添加模型提供商";
 "Or" = "或";
@@ -192,3 +189,7 @@
 "%@ is not signed in — sign in from the Clean Up panel." = "%@ 未登录 — 请在“清理”面板中登录。";
 "%@ is not installed — set it up from the Clean Up panel." = "%@ 未安装 — 请在“清理”面板中设置。";
 "Pick a planner and it plans what can go from this scan." = "选择一个规划器，它就会规划可删除的内容。";
+
+/* Settings window tab labels. */
+"General" = "通用";
+"Model Providers" = "模型提供商";
