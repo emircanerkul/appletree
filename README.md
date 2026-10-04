@@ -3,8 +3,8 @@
 # AppleTree
 
 A fast, native disk-space treemap for macOS, in the spirit of WizTree. Scan a
-disk, see what is eating it, and clear the space back out — without handing your
-file list to anyone.
+disk, see exactly what is consuming it, and reclaim the space — without handing
+your file list to anyone.
 
 <p>
   <img src="assets/screenshot.png" width="49%" alt="AppleTree treemap view of /Applications">
@@ -13,11 +13,72 @@ file list to anyone.
 
 Requires Apple Silicon and macOS 14 or later.
 
+## Features
+
+**Scan any drive.** Alongside the built-in targets (the boot volume, your home
+folder, `/Applications`), every local storage volume is offered for scanning,
+including a second internal partition or an external drive. The list is read
+fresh whenever a disk is plugged in or ejected, so a drive that appears while
+the app is open shows up in the picker immediately. Network volumes and mounted
+disk images are excluded by device properties rather than by name, so no list of
+installer volumes has to be maintained.
+
+**Back and forward through the folders you visited.** The toolbar arrows, ⌘[
+and ⌘], and your mouse's side buttons walk the folder history. Only deliberate
+folder changes are recorded, so moving the keyboard focus never fills it. The
+folders visited and the one you were browsing are saved, and the next launch
+opens where you left off.
+
+**Right-click works everywhere.** The treemap, the rings and the directory list
+offer the same menu for any file or folder: Reveal in Finder, Copy Path, Select
+Enclosing Folder, and Move to Trash. One owner builds that menu, so no surface
+can offer a different set of actions for the same item.
+
+**A title path you can navigate.** The breadcrumb path follows the selection,
+and every folder above it is one click away.
+
+**Keyboard navigation.** Arrow keys move the focus, Return zooms in, Escape
+zooms out, and ⌘↑ selects the folder holding the focused item — useful when a
+tile is too small to click. Focus is chosen geometrically, so files and folders
+compete for the nearest tile together.
+
+**Clean Up panel.** Finds folders that are safe to remove — caches,
+`node_modules`, Rust `target`, Xcode DerivedData and more — so they can be
+moved to the Trash in one pass.
+
+**AI cleanup, using your own agent.** Click "Clean up with Claude Code" (or
+Codex) and the agent plans what can go while the treemap highlights those
+folders. AppleTree performs the cleanup itself, in two steps you approve: move
+to the Trash, then delete for good. If no agent is installed, one click installs
+and signs in to Codex (free with a ChatGPT account) or Claude Code.
+
+**Or plan with any model.** Settings → Model Providers connects any OpenAI- or
+Anthropic-compatible endpoint — a relay, a self-hosted server (Ollama, LM
+Studio) or a gateway — by its base URL, protocol and model. API keys are held in
+the Keychain, never in preferences. Such an endpoint only writes a plan;
+AppleTree still performs and re-checks every deletion.
+
+**Scan when AppleTree opens.** On by default. Turn it off in Settings → General
+to choose a folder yourself before anything is scanned. A whole-disk scan is
+never started without Full Disk Access.
+
+**Two ways to see the disk.** A cushion-shaded treemap colored by file type,
+with a synced Finder-style outline list, or DaisyDisk-style rings: click a
+folder to zoom in, the middle to go back.
+
+**Seven languages.** English, Türkçe, Deutsch, Français, Español, 简体中文 and
+日本語, selected in Settings. The agent prompt stays in English while the
+interface follows your choice.
+
+**Native, and quiet.** AppKit and SwiftUI throughout, with the Liquid Glass
+design on macOS 26 and later. Live progress while scanning, an optional
+free-space block, and no telemetry of any kind.
+
 ## Performance
 
-Every number below was measured on **Apple M1, 16 GB, macOS 27.0**, scanning
-`/Applications` (247,465 files, 12.6 GB). AppleTree and every tool it is
-compared against report the **same allocated bytes** (12,618,919,936).
+Every figure below was measured on **Apple M1, 16 GB, macOS 27.0**, scanning
+`/Applications` (247,465 files, about 12.6 GB). AppleTree and every tool
+compared against it report the **same allocated bytes**.
 
 **[Full method, every raw sample, and what these figures deliberately do not
 measure →](docs/benchmarks/BENCHMARKS.md)**
@@ -64,8 +125,8 @@ entire UI, which the engine-only figures above never load.
 ### Reproduce it
 
 ```sh
-cd bench && ./run.sh                                     # engine comparison
-cd bench && cargo run --release -- scan --compare-apps   # add the GUI apps
+cd bench && ./run.sh                                            # engine comparison
+cd bench && cargo run --release --bin btbench -- scan --compare-apps   # add the GUI apps
 ```
 
 The first run fetches the pinned `disktree-core` (needs network once); add
@@ -74,48 +135,40 @@ The first run fetches the pinned `disktree-core` (needs network once); add
 Three things do the work:
 
 - `getattrlistbulk(2)` reads a whole directory's metadata in one syscall instead of one `stat` per file.
-- A Rust worker pool keeps many directories in flight, and scan threads run at user-initiated QoS: they stay on performance cores without starving the UI.
+- A Rust worker pool keeps many directories in flight. Its workers run at user-initiated QoS, so they stay on performance cores without outranking the UI and the compositor.
 - The treemap is laid out once and painted on every core in parallel, so zooming redraws in a couple of frames.
-
-## Features
-
-- Cushion-shaded treemap colored by file type, with a synced Finder-style outline list
-- Prefer DaisyDisk? Switch to rings in the toolbar: click a folder to zoom in, the middle to go back
-- Zoom into folders, reveal in Finder, or move to Trash (with confirmation), from the map, the rings or the list
-- Keyboard navigation: arrows move the focus, Return zooms in, Escape zooms out, and ⌘↑ selects the folder holding the focused item — handy when a tile is too small to click. The title path follows the selection, so every folder above it is one click away
-- Back and forward through the folders you visited: the toolbar arrows, ⌘[ and ⌘], or your mouse's side buttons. Only deliberate folder changes count, so moving the focus with the arrows never fills the history; the folders visited and the one you were browsing are saved, so the next launch opens where you left off
-- Clean Up panel: finds folders that are safe to delete (caches, `node_modules`, Rust `target`, Xcode DerivedData and more) so you can trash them in one go
-- AI cleanup: click "Clean up with Claude Code" (or Codex) and your own agent plans what can go, live in the panel, while the treemap lights up those folders. AppleTree does the cleanup itself, in two steps you approve: move to Trash, then delete for good. No agent installed? One click sets up Codex (free with a ChatGPT account) or Claude Code
-- Or clean up with any model: Settings → Model Providers connects any OpenAI- or Anthropic-compatible endpoint — a relay, a self-hosted server (Ollama, LM Studio) or a gateway — by its base URL, protocol and key
-- English, Türkçe, Deutsch, Français, Español, 简体中文 and 日本語, picked in Settings; the agent prompt stays English while the UI follows you
-- Live progress while scanning, and an optional free-space block
-- Native AppKit/SwiftUI, with the Liquid Glass design on macOS 26 and later
-- No telemetry. AppleTree itself only goes online when the AI cleanup runs; it runs only when you click it, using your own agent, which sends folder paths and sizes from the scan (never file contents) to Anthropic or OpenAI
 
 ## Accuracy
 
-Sizes are allocated bytes, matching `du`. Hard-linked files count once, the scan
-stays on one volume, and cloud-only iCloud folders are never downloaded.
-Root-only system data that no app can read is reported in the status bar instead
-of hidden.
+Sizes are allocated bytes, matching `du`. An inode with several hard links is
+counted once, whichever name the scan reaches first, so byte totals do not
+depend on traversal order. The scan stays on one volume, and cloud-only iCloud
+folders are never downloaded. Root-only system data that no app can read is
+reported in the status bar instead of being hidden.
 
-AppleTree counts every name of a hard-linked file while disktree counts the file
-once, so AppleTree lists more files for identical byte totals — 247,465 against
-235,540 on `/Applications`. AppleTree also counts the directories inside the
-scan root, where disktree includes the root itself, so the directory counts
-differ by one. Neither affects the bytes, which match exactly.
+File counts differ from some tools, and not because of an accuracy problem.
+AppleTree lists every name of a hard-linked file and counts symlinks as files;
+disktree counts a hard-linked file once. AppleTree therefore reports more files
+for identical byte totals — 247,465 against 235,540 on `/Applications`.
+AppleTree also counts only the directories inside the scan root, where disktree
+includes the root itself, so the directory counts differ by one. Neither
+affects the bytes, which match exactly.
 
 ## AI cleanup
 
-The agent runs headless and read-only: it only writes a plan from the scan AppleTree already has. AppleTree then acts on it behind its own checks, whatever the plan says:
+The agent cannot change anything. It is given only read-only tools: a handful of
+inspection commands (`du`, `ls`, `stat`, `docker system df`, `xcrun simctl
+list`, `ollama list`) and `Read`, with no write or edit tool. Codex additionally
+runs in an explicit read-only sandbox. It writes a plan, and AppleTree then acts
+on that plan behind its own checks, whatever the plan says:
 
-- Only paths inside your home folder, never Documents, Desktop, Photos, iCloud Drive, Mail, keychains or `~/.ssh` (build output such as `node_modules` inside them is allowed, and so are the Codex app's chat folders in `~/Documents/Codex`), never a git repository or a whole folder like `~/Library/Caches`
-- Only each tool's own cache cleanup commands (`uv cache clean`, `brew cleanup`, `npm cache clean` and similar, plus `xcrun simctl` for Xcode simulator runtimes and device data), with no shell syntax
+- Only paths inside your home folder, never Documents, Desktop, Photos, iCloud Drive, Mail, keychains or `~/.ssh` (build output such as `node_modules` inside them is allowed, and so are the Codex app's chat folders in `~/Documents/Codex`), never a git repository, and never a whole folder such as `~/Library/Caches`
+- Only each tool's own cleanup commands (`uv cache clean`, `brew cleanup`, `npm cache clean` and similar, plus `xcrun simctl` for Xcode simulator runtimes and device data), with no shell syntax
 - Codex chats and projects you used in the last 2 days are left alone
-- Caches of apps that are open are skipped until you quit them
+- Caches belonging to apps that are open are skipped until you quit them
 - "Delete for good" removes only what this cleanup moved to the Trash
 
-## Trust & permissions
+## Trust, privacy and permissions
 
 AppleTree asks for Full Disk Access so the scan can read every folder on the
 disk, including the system-protected ones that normally stay out of reach.
@@ -130,6 +183,27 @@ are installed. Only commands matching a small allowlist of tool-specific
 cleanup invocations are ever run, but what runs is whatever the PATH resolves —
 the trust in your own PATH is residual.
 
+There is no telemetry. AppleTree contacts the network only when you explicitly
+ask it to: installing or signing in to an agent, fetching a model list, or
+running an AI cleanup. **Moving folders to the Trash yourself — from the map,
+the rings, the list or the Clean Up panel — is entirely local and sends
+nothing.**
+
+When you do run an AI cleanup, AppleTree sends the planner a *summary* of the
+scan, not your file list: the largest folder and file paths with their sizes (up
+to a few hundred entries), your home path, the scan root, and which apps are
+currently running. It is a plan-writing request; AppleTree still performs and
+re-checks every deletion itself.
+
+Note the boundary of that guarantee. AppleTree uploads only that summary, but
+the agent CLI it launches can read your disk and has a `Read` tool, so the agent
+can inspect more than the summary it was handed. What the agent chooses to read
+becomes part of its own conversation with Anthropic or OpenAI. Codex is held to
+a read-only sandbox; Claude Code is restricted by its tool allowlist rather than
+by an OS sandbox, so that boundary is a CLI-level policy, not an OS guarantee.
+The custom-endpoint path is strictly narrower: a model provider receives the
+summary over HTTP and runs no tools at all.
+
 ## Build from source
 
 Requires Xcode 16.3 or later (Swift 6.1) and Rust. The build probes your
@@ -140,6 +214,8 @@ make help              # every target
 make build             # build/AppleTree.app
 make deploy            # build and install to /Applications
 make open              # build and launch
+make release V=x.y.z   # notarize, package a .dmg, publish a GitHub release
+make test              # cleanup-guard unit tests
 cargo test --release   # engine tests
 ```
 
@@ -167,7 +243,8 @@ Clean Up panel's folder candidates — the same name/structure heuristics, with 
 new criteria and no safety assessment — which you should review before acting.
 Both report incomplete scans; allocated bytes are not a promise of reclaimable
 space, and the root itself is never a candidate. Neither command modifies the
-scanned files.
+scanned files. Exit code 0 is a report, 1 an I/O or scan failure, and 2 invalid
+arguments; `coverage.complete` should be checked even on exit 0.
 
 The CLI is built from source separately from the app; its JSON dependency is
 only compiled with the `cli` feature. Its behaviour is covered by
@@ -187,3 +264,9 @@ counts for identical bytes, and — just as importantly — what is **not** meas
 
 Results are regenerated with `cd bench && ./run.sh` and land in
 [`docs/benchmarks/results/`](docs/benchmarks/results/).
+
+## License
+
+AppleTree is dual-licensed by history: the code inherited from BlitzTree is MIT,
+and work on top of that snapshot is CC BY-NC-SA 4.0 (non-commercial). See
+[LICENSE](LICENSE) for the exact boundary between the two.
