@@ -27,6 +27,7 @@
 "Pick a target and scan" = "Bir hedef seçin ve tarayın";
 "%@ files · %@ folders · %@s" = "%@ dosya · %@ klasör · %@s";
 "%@ files · %@" = "%@ dosya · %@";
+"%@ · %@" = "%@ · %@";
 "%@ system folders unreadable%@" = "%@ sistem klasörü okunamadı%@";
 "%@ folders skipped — grant Full Disk Access" = "%@ klasör atlandı — Tam Disk Erişimi verin";
 "scanned in %@" = "%@ içinde tarandı";
@@ -136,7 +137,7 @@
 "Relaunch AppleTree to apply the language." = "Dili uygulamak için AppleTree'yi yeniden başlatın.";
 "Relaunch" = "Yeniden Başlat";
 
-/* Providers captions, General planner summary */
+/* General planner summary */
 "Clean Up planner" = "Temizleme planlayıcısı";
 "Scan when AppleTree opens" = "Açılışta tara";
 "Scan the whole disk at launch. Turn off to pick a folder yourself first." = "Açılışta tüm diski tarar. Önce kendiniz bir klasör seçmek isterseniz kapatın.";

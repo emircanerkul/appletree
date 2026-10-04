@@ -27,6 +27,7 @@
 "Pick a target and scan" = "対象を選んでスキャン";
 "%@ files · %@ folders · %@s" = "%@ ファイル · %@ フォルダ · %@秒";
 "%@ files · %@" = "%@ ファイル · %@";
+"%@ · %@" = "%@ · %@";
 "%@ system folders unreadable%@" = "読み取れないシステムフォルダ%@個%@";
 "%@ folders skipped — grant Full Disk Access" = "%@個のフォルダをスキップ — フルディスクアクセスを許可してください";
 "scanned in %@" = "スキャン時間 %@";
@@ -136,7 +137,7 @@
 "Relaunch AppleTree to apply the language." = "言語を適用するにはAppleTreeを再起動してください。";
 "Relaunch" = "再起動";
 
-/* Providers captions, General planner summary */
+/* General planner summary */
 "Clean Up planner" = "クリーンアップのプランナー";
 "Scan when AppleTree opens" = "起動時にスキャン";
 "Scan the whole disk at launch. Turn off to pick a folder yourself first." = "起動時にディスク全体をスキャンします。オフにすると、まず自分でフォルダを選択できます。";

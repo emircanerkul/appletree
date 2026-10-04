@@ -240,7 +240,9 @@ test-rust:
 # -import-objc-header, Swift 6, default-MainActor isolation, linked against
 # the Rust staticlib because the guard's command table comes from the
 # bz_cleanup_allowlist FFI (fail-closed).
-test: engine
+# The .strings check runs first: it is instant, and a table that drifted is a
+# bug the Swift tests cannot see, so there is no reason to compile first.
+test: engine test-l10n
 	@mkdir -p .build
 	swiftc tests/swift/main.swift app/CleanupGuard.swift \
 	    -import-objc-header app/bz.h \

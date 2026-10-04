@@ -27,6 +27,7 @@
 "Pick a target and scan" = "选择目标并扫描";
 "%@ files · %@ folders · %@s" = "%@ 个文件 · %@ 个文件夹 · %@ 秒";
 "%@ files · %@" = "%@ 个文件 · %@";
+"%@ · %@" = "%@ · %@";
 "%@ system folders unreadable%@" = "%@ 个系统文件夹无法读取%@";
 "%@ folders skipped — grant Full Disk Access" = "%@ 个文件夹已跳过 — 请授予完全磁盘访问权限";
 "scanned in %@" = "扫描用时 %@";
@@ -136,7 +137,7 @@
 "Relaunch AppleTree to apply the language." = "重新启动 AppleTree 以应用语言设置。";
 "Relaunch" = "重新启动";
 
-/* Providers captions, General planner summary */
+/* General planner summary */
 "Clean Up planner" = "清理规划器";
 "Scan when AppleTree opens" = "启动时扫描";
 "Scan the whole disk at launch. Turn off to pick a folder yourself first." = "启动时扫描整个磁盘。关闭后可先自行选择文件夹。";
