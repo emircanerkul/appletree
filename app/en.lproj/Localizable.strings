@@ -47,7 +47,6 @@
 "Move %@ to Trash · %@" = "Move %@ to Trash · %@";
 "Clean up with %@" = "Clean up with %@";
 "%@ reads this scan and suggests what can go. Nothing is removed until you say so." = "%@ reads this scan and suggests what can go. Nothing is removed until you say so.";
-"Choose the agent" = "Choose the agent";
 "Let AI clean up for you" = "Let AI clean up for you";
 "%@ reads this scan and plans what can go. %@" = "%@ reads this scan and plans what can go. %@";
 "Free with a ChatGPT account." = "Free with a ChatGPT account.";
@@ -55,7 +54,6 @@
 "Sign in to %@ and it plans what can go from this scan." = "Sign in to %@ and it plans what can go from this scan.";
 "Set up %@" = "Set up %@";
 "Sign in to %@" = "Sign in to %@";
-"Use %@" = "Use %@";
 "Stop" = "Stop";
 "Pick what to remove" = "Pick what to remove";
 "Move %@ to Trash" = "Move %@ to Trash";
@@ -167,3 +165,21 @@
 "A Codex chat you used in the last 2 days" = "A Codex chat you used in the last 2 days";
 "In projects you used in the last 2 days" = "In projects you used in the last 2 days";
 "About %@ can go." = "About %@ can go.";
+
+/* Planner choice and agent sign-out. */
+"Choose the planner" = "Choose the planner";
+"Sign in to %@…" = "Sign in to %@…";
+"Set up %@…" = "Set up %@…";
+"Sign out of %@" = "Sign out of %@";
+"Sign out of %@?" = "Sign out of %@?";
+"Couldn't sign out" = "Couldn't sign out";
+"Add a model provider…" = "Add a model provider…";
+"%@ (custom)" = "%@ (custom)";
+"%@ (not signed in)" = "%@ (not signed in)";
+"%@ (not installed)" = "%@ (not installed)";
+"%@ is installed but signed out. Signing in lets it plan what can go." = "%@ is installed but signed out. Signing in lets it plan what can go.";
+"%@ forgets the account it is signed in with. The next plan needs a browser sign-in again. Nothing else on your Mac changes." = "%@ forgets the account it is signed in with. The next plan needs a browser sign-in again. Nothing else on your Mac changes.";
+"%@ is still signed in. Sign out from a terminal, then reopen AppleTree." = "%@ is still signed in. Sign out from a terminal, then reopen AppleTree.";
+"%@ is not signed in — sign in from the Clean Up panel." = "%@ is not signed in — sign in from the Clean Up panel.";
+"%@ is not installed — set it up from the Clean Up panel." = "%@ is not installed — set it up from the Clean Up panel.";
+"Pick a planner and it plans what can go from this scan." = "Pick a planner and it plans what can go from this scan.";

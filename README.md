@@ -52,6 +52,15 @@ folders. AppleTree performs the cleanup itself, in two steps you approve: move
 to the Trash, then delete for good. If no agent is installed, one click installs
 and signs in to Codex (free with a ChatGPT account) or Claude Code.
 
+**Every planner stays reachable.** The Clean Up button carries a menu listing
+all of them: each installed agent, each custom provider, the agents that still
+need an install or a sign-in, and the account actions. Signing in to one agent
+therefore never hides or disables the others — switch planners at any time, and
+sign an agent out again from the same menu when you want to change account.
+Settings → General lists the same choices as one "Clean Up planner" row, and
+names whatever the picked one still needs. Both surfaces read one list, so the
+planner Settings shows is always the one the panel runs.
+
 **Or plan with any model.** Settings → Model Providers connects any OpenAI- or
 Anthropic-compatible endpoint — a relay, a self-hosted server (Ollama, LM
 Studio) or a gateway — by its base URL, protocol and model. API keys are held in

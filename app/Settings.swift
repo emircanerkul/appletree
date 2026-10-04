@@ -283,33 +283,7 @@ struct GeneralSettingsView: View {
                     .foregroundStyle(.secondary)
             }
             Divider()
-            VStack(alignment: .leading, spacing: 4) {
-                Picker("Clean Up planner", selection: Binding(
-                    get: {
-                        let picked = UserDefaults.standard.string(forKey: "bz.engine")
-                        // The selection must match a listed tag, or the row
-                        // renders blank — fall back to what actually exists.
-                        if let picked, picked.hasPrefix("provider:"),
-                           ProviderStore.shared.providers.contains(where: { "provider:\($0.id)" == picked }) {
-                            return picked
-                        }
-                        if let picked, picked == "claude" || picked == "codex" { return picked }
-                        if let first = ProviderStore.shared.providers.first { return "provider:\(first.id)" }
-                        return "claude"
-                    },
-                    set: { (value: String) in UserDefaults.standard.set(value, forKey: "bz.engine") }
-                )) {
-                    Text("Claude Code").tag("claude")
-                    Text("Codex").tag("codex")
-                    ForEach(ProviderStore.shared.providers) { provider in
-                        Text("\(provider.displayName) (custom)").tag("provider:\(provider.id)")
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                Text("Which AI proposes what can go from the scan. Nothing is removed without your say.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            PlannerSettingsView()
             Spacer(minLength: 0)
         }
         .padding(24)
@@ -317,4 +291,57 @@ struct GeneralSettingsView: View {
         .frame(maxHeight: .infinity, alignment: .top)
     }
 
+}
+
+/// The "Clean Up planner" row.
+///
+/// It lists the same catalog the Clean Up panel's menu does, so the planner
+/// Settings shows and the one the panel runs cannot disagree — they used to
+/// keep separate fallback rules (Settings preferred the first provider, the
+/// panel preferred a ready agent), which is how the two surfaces could point at
+/// different engines while both looked correct.
+///
+/// Every entry is always listed, signed in or not: hiding a signed-out agent
+/// was the other half of the report, since a planner you cannot select is a
+/// planner you cannot switch to.
+private struct PlannerSettingsView: View {
+    /// Re-read when model providers are added, edited or deleted.
+    @State private var store = ProviderStore.shared
+    /// The environment lookup finishes asynchronously; until then the agents
+    /// show as "not signed in" rather than flickering in.
+    @State private var agents = AgentEnvironment()
+
+    private var choices: [PlannerChoice] {
+        PlannerChoice.catalog(agents: agents, providers: store.providers)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Picker("Clean Up planner", selection: Binding(
+                get: {
+                    PlannerChoice.preferredID(
+                        stored: UserDefaults.standard.string(forKey: "bz.engine"),
+                        in: choices
+                    ) ?? "claude"
+                },
+                set: { (value: String) in UserDefaults.standard.set(value, forKey: "bz.engine") }
+            )) {
+                ForEach(choices) { choice in
+                    Text(choice.settingsLabel).tag(choice.id)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Text("Which AI proposes what can go from the scan. Nothing is removed without your say.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            if let id = PlannerChoice.preferredID(
+                stored: UserDefaults.standard.string(forKey: "bz.engine"), in: choices
+            ), let note = choices.first(where: { $0.id == id })?.readinessNote {
+                Text(note)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .task { agents = await AgentLocator.find() }
+    }
 }

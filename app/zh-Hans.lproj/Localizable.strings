@@ -48,7 +48,6 @@
 "Move %@ to Trash · %@" = "将 %@ 个文件夹移到废纸篓 · %@";
 "Clean up with %@" = "使用 %@ 清理";
 "%@ reads this scan and suggests what can go. Nothing is removed until you say so." = "%@ 会读取本次扫描并建议哪些内容可以删除。未经你确认，不会删除任何内容。";
-"Choose the agent" = "选择智能助手";
 "Let AI clean up for you" = "让 AI 帮你清理";
 "%@ reads this scan and plans what can go. %@" = "%@ 会读取本次扫描并规划哪些内容可以删除。%@";
 "Free with a ChatGPT account." = "使用 ChatGPT 账户即可免费使用。";
@@ -56,7 +55,6 @@
 "Sign in to %@ and it plans what can go from this scan." = "登录 %@，它会规划本次扫描中哪些内容可以删除。";
 "Set up %@" = "安装 %@";
 "Sign in to %@" = "登录 %@";
-"Use %@" = "使用 %@";
 "Stop" = "停止";
 "Pick what to remove" = "选择要移除的内容";
 "Move %@ to Trash" = "将 %@ 移到废纸篓";
@@ -176,3 +174,21 @@
 "A Codex chat you used in the last 2 days" = "您最近 2 天内使用过的 Codex 对话";
 "In projects you used in the last 2 days" = "在您最近 2 天内使用过的项目中";
 "About %@ can go." = "大约可移除 %@。";
+
+/* Planner choice and agent sign-out. */
+"Choose the planner" = "选择规划器";
+"Sign in to %@…" = "登录 %@…";
+"Set up %@…" = "设置 %@…";
+"Sign out of %@" = "退出 %@ 登录";
+"Sign out of %@?" = "要退出 %@ 登录吗？";
+"Couldn't sign out" = "无法退出登录";
+"Add a model provider…" = "添加模型提供方…";
+"%@ (custom)" = "%@（自定义）";
+"%@ (not signed in)" = "%@（未登录）";
+"%@ (not installed)" = "%@（未安装）";
+"%@ is installed but signed out. Signing in lets it plan what can go." = "%@ 已安装但未登录。登录后即可规划可删除的内容。";
+"%@ forgets the account it is signed in with. The next plan needs a browser sign-in again. Nothing else on your Mac changes." = "%@ 会忘记当前登录的账户。下次规划需要重新在浏览器中登录。Mac 上的其他内容不会改变。";
+"%@ is still signed in. Sign out from a terminal, then reopen AppleTree." = "%@ 仍处于登录状态。请在终端中退出登录，然后重新打开 AppleTree。";
+"%@ is not signed in — sign in from the Clean Up panel." = "%@ 未登录 — 请在“清理”面板中登录。";
+"%@ is not installed — set it up from the Clean Up panel." = "%@ 未安装 — 请在“清理”面板中设置。";
+"Pick a planner and it plans what can go from this scan." = "选择一个规划器，它就会规划可删除的内容。";

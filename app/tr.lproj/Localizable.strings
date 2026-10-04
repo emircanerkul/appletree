@@ -48,7 +48,6 @@
 "Move %@ to Trash · %@" = "%@ ögeyi Çöp Kutusu'na taşı · %@";
 "Clean up with %@" = "%@ ile temizle";
 "%@ reads this scan and suggests what can go. Nothing is removed until you say so." = "%@ bu taramayı okur ve nelerin gidebileceğini önerir. Siz onaylamadan hiçbir şey kaldırılmaz.";
-"Choose the agent" = "Ajanı seçin";
 "Let AI clean up for you" = "Yapay zekâ sizin için temizlesin";
 "%@ reads this scan and plans what can go. %@" = "%@ bu taramayı okur ve nelerin gidebileceğini planlar. %@";
 "Free with a ChatGPT account." = "ChatGPT hesabıyla ücretsiz.";
@@ -56,7 +55,6 @@
 "Sign in to %@ and it plans what can go from this scan." = "%@ hesabınıza giriş yapın, bu taramadan nelerin gidebileceğini planlar.";
 "Set up %@" = "%@ kur";
 "Sign in to %@" = "%@ hesabına giriş yap";
-"Use %@" = "Kullan: %@";
 "Stop" = "Durdur";
 "Pick what to remove" = "Nelerin kaldırılacağını seçin";
 "Move %@ to Trash" = "%@ Çöp Kutusu'na Taşı";
@@ -176,3 +174,21 @@
 "A Codex chat you used in the last 2 days" = "Son 2 günde kullandığınız bir Codex sohbeti";
 "In projects you used in the last 2 days" = "Son 2 günde kullandığınız projelerde";
 "About %@ can go." = "Yaklaşık %@ kaldırılabilir.";
+
+/* Planner choice and agent sign-out. */
+"Choose the planner" = "Planlayıcıyı seç";
+"Sign in to %@…" = "%@ oturumunu aç…";
+"Set up %@…" = "%@ uygulamasını kur…";
+"Sign out of %@" = "%@ oturumunu kapat";
+"Sign out of %@?" = "%@ oturumu kapatılsın mı?";
+"Couldn't sign out" = "Oturum kapatılamadı";
+"Add a model provider…" = "Model sağlayıcı ekle…";
+"%@ (custom)" = "%@ (özel)";
+"%@ (not signed in)" = "%@ (oturum açık değil)";
+"%@ (not installed)" = "%@ (kurulu değil)";
+"%@ is installed but signed out. Signing in lets it plan what can go." = "%@ kurulu ama oturum açık değil. Oturum açmak, nelerin kaldırılabileceğini planlamasını sağlar.";
+"%@ forgets the account it is signed in with. The next plan needs a browser sign-in again. Nothing else on your Mac changes." = "%@, oturum açtığı hesabı unutur. Bir sonraki plan için tarayıcıdan yeniden oturum açmanız gerekir. Mac'inizde başka hiçbir şey değişmez.";
+"%@ is still signed in. Sign out from a terminal, then reopen AppleTree." = "%@ hâlâ oturum açık. Bir terminalden oturumu kapatın, sonra AppleTree'yi yeniden açın.";
+"%@ is not signed in — sign in from the Clean Up panel." = "%@ oturum açık değil — Temizleme panelinden oturum açın.";
+"%@ is not installed — set it up from the Clean Up panel." = "%@ kurulu değil — Temizleme panelinden kurun.";
+"Pick a planner and it plans what can go from this scan." = "Bir planlayıcı seçin, bu taramadan nelerin kaldırılabileceğini planlasın.";

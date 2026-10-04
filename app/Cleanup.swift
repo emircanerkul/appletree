@@ -7,8 +7,8 @@ struct CleanupPanel: View {
     let model: ScanModel
     @State private var picked: Set<Int> = []
     @State private var confirming = false
-
-    private var agent: InstalledAgent? { model.preferredAgent }
+    /// The agent a sign-out was confirmed for, or nil.
+    @State private var signingOut: AgentKind?
 
     private var pickedItems: [CleanupItem] { model.cleanup.filter { picked.contains($0.id) } }
     private var pickedBytes: UInt64 { pickedItems.reduce(0) { $0 + $1.bytes } }
@@ -33,11 +33,42 @@ struct CleanupPanel: View {
         } message: {
             Text("You can put them back from the Trash until you empty it. The tools that made them rebuild them when needed.")
         }
+        .confirmationDialog(signOutTitle, isPresented: Binding(
+            get: { signingOut != nil }, set: { if !$0 { signingOut = nil } }
+        ), titleVisibility: .visible) {
+            if let kind = signingOut {
+                Button(String(localized: "Sign out of \(kind.name)"), role: .destructive) {
+                    signingOut = nil
+                    Task { await model.signOut(kind) }
+                }
+            }
+            Button("Cancel", role: .cancel) { signingOut = nil }
+        } message: {
+            Text(signOutMessage)
+        }
         .alert("Some folders couldn't be moved", isPresented: .constant(!model.cleanupTrash.failures.isEmpty)) {
             Button("OK") { model.cleanupTrash.clearFailures() }
         } message: {
             Text(model.cleanupTrash.failures.joined(separator: "\n"))
         }
+        .alert("Couldn't sign out", isPresented: Binding(
+            get: { model.signOutFailure != nil }, set: { if !$0 { model.signOutFailure = nil } }
+        )) {
+            Button("OK") { model.signOutFailure = nil }
+        } message: {
+            Text(model.signOutFailure ?? "")
+        }
+    }
+
+    /// Sign-out cannot happen mid-run: the engine would lose its planner.
+    private var signOutTitle: String {
+        guard let kind = signingOut else { return "" }
+        return String(localized: "Sign out of \(kind.name)?")
+    }
+
+    private var signOutMessage: String {
+        guard let kind = signingOut else { return "" }
+        return String(localized: "\(kind.name) forgets the account it is signed in with. The next plan needs a browser sign-in again. Nothing else on your Mac changes.")
     }
 
     private var reclaimable: some View {
@@ -104,117 +135,196 @@ struct CleanupPanel: View {
         }
     }
 
-    /// One click starts Claude Code or Codex in the background; the menu picks which.
+    /// What the primary button runs, and the menu that reaches everything else.
+    ///
+    /// This used to be an `if / else if` chain whose menu was itself gated on
+    /// `ready.count > 1 || !providers.isEmpty`. On this app's most common state
+    /// — one agent signed in, no custom provider — that rendered one bare
+    /// button with no menu at all, so a signed-in agent could not be swapped or
+    /// removed. Both halves are now unconditional: exactly one primary action
+    /// for the planner in effect, and always a menu built from the one catalog,
+    /// whatever is installed.
     @ViewBuilder private var agentButton: some View {
-        if let agent {
-            HStack(spacing: 6) {
-                Button {
-                    model.startAgent(agent)
-                } label: {
-                    Label("Clean up with \(agent.kind.name)", systemImage: "sparkles")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .help("\(agent.kind.name) reads this scan and suggests what can go. Nothing is removed until you say so.")
-                if model.agentEnv.ready.count > 1 || !model.providerStore.providers.isEmpty {
-                    Menu {
-                        ForEach(model.agentEnv.ready) { other in
-                            Button("Clean up with \(other.kind.name)") { model.startAgent(other) }
-                        }
-                        if !model.providerStore.providers.isEmpty {
-                            Divider()
-                            ForEach(model.providerStore.providers) { provider in
-                                Button("Clean up with \(provider.displayName)") { model.startProvider(provider) }
-                            }
-                        }
-                    } label: {
-                        Image(systemName: "chevron.down")
-                    }
-                    .menuStyle(.button)
-                    .menuIndicator(.hidden)
-                    .buttonStyle(.bordered)
-                    .controlSize(.large)
-                    .fixedSize()
-                    .help("Choose the agent")
-                }
-            }
-            .disabled(model.tree == nil || model.scanning)
-        } else if let provider = model.preferredProvider ?? model.providerStore.providers.first {
-            // A custom endpoint needs no install or sign-in: it is ready once
-            // its model and key are set in Settings. Preferred when picked in
-            // Settings, else the first configured provider leads and the CLI
-            // sign-in offer stays in Settings — one planner, one call to
-            // action, no stack of alternatives under the button.
-            Button {
-                model.startProvider(provider)
-            } label: {
-                Label("Clean up with \(provider.displayName)", systemImage: "sparkles")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .disabled(model.tree == nil || model.scanning)
-            .help("\(provider.displayName) reads this scan and suggests what can go. Nothing is removed until you say so.")
-        } else if let setup = model.agentSetup {
+        if let setup = model.agentSetup {
             SetupProgress(setup: setup) {
                 setup.cancel()
                 model.agentSetup = nil
             } retry: {
                 model.setUp(setup.kind)
             }
-        } else if model.agentEnv.loaded {
-            setupOffer
+        } else {
+            // The onboarding line the first-run panel carried. With nothing
+            // runnable the user has just arrived and does not yet know what the
+            // button will do, so the explanation sits beside it — derived from
+            // the *same* resolved choice the button uses.
+            if let choice = model.preferredChoice, !choice.runnable {
+                VStack(alignment: .leading, spacing: 2) {
+                    Label("Let AI clean up for you", systemImage: "sparkles")
+                        .font(.headline)
+                    Text(onboardingLine(choice))
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            HStack(spacing: 6) {
+                primaryAction
+                plannerMenu
+            }
+            .disabled(model.tree == nil || model.scanning || model.cleanupTrash.running)
         }
     }
 
-    /// Nothing ready: one click installs an agent and signs it in. Offer the
-    /// one already installed first; else Codex, which a free ChatGPT account runs.
-    private var setupOffer: some View {
-        let installed = model.agentEnv.agents.first
-        let kind = installed?.kind ?? .codex
-        let other: AgentKind = kind == .codex ? .claude : .codex
-        return VStack(alignment: .leading, spacing: 8) {
-            VStack(alignment: .leading, spacing: 2) {
-                Label("Let AI clean up for you", systemImage: "sparkles")
-                    .font(.headline)
-                Text(installed == nil
-                     ? "\(kind.name) reads this scan and plans what can go. \(kind == .codex ? String(localized: "Free with a ChatGPT account.") : String(localized: "Needs a Claude Pro plan."))"
-                     : "Sign in to \(kind.name) and it plans what can go from this scan.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(3)
+    /// The one-click path for the planner the user picked. Copy and behaviour
+    /// stay exactly as before for each kind; only the choice of *which* kind is
+    /// now owned by the catalog rather than this view.
+    @ViewBuilder private var primaryAction: some View {
+        switch model.preferredChoice {
+        case .agent(let agent):
+            Button {
+                model.startAgent(agent)
+            } label: {
+                Label(String(localized: "Clean up with \(agent.kind.name)"), systemImage: "sparkles")
+                    .frame(maxWidth: .infinity)
             }
-            // Both planners offered side by side, as one control: the
-            // recommended one reads as the action, the alternative as its
-            // peer instead of a dim line under it.
-            HStack(spacing: 6) {
-                Button {
-                    model.setUp(kind)
-                } label: {
-                    Text(installed == nil ? "Set up \(kind.name)" : "Sign in to \(kind.name)")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-
-                Button {
-                    model.setUp(other)
-                } label: {
-                    Text("Use \(other.name)")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.large)
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .help(String(localized: "\(agent.kind.name) reads this scan and suggests what can go. Nothing is removed until you say so."))
+        case .provider(let provider):
+            // A custom endpoint needs no install or sign-in: it is ready once
+            // its model and key are set in Settings.
+            Button {
+                model.startProvider(provider)
+            } label: {
+                Label(String(localized: "Clean up with \(provider.displayName)"), systemImage: "sparkles")
+                    .frame(maxWidth: .infinity)
             }
-            HStack(spacing: 4) {
-                Text("Or").font(.caption).foregroundStyle(.tertiary)
-                SettingsLink { Text("Add a model provider").font(.caption) }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .help(String(localized: "\(provider.displayName) reads this scan and suggests what can go. Nothing is removed until you say so."))
+        case .agentSignedOut(let kind):
+            Button {
+                model.setUp(kind)
+            } label: {
+                Label(String(localized: "Sign in to \(kind.name)"), systemImage: "person.crop.circle.badge.checkmark")
+                    .frame(maxWidth: .infinity)
             }
-            .frame(maxWidth: .infinity)
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .help(String(localized: "\(kind.name) is installed but signed out. Signing in lets it plan what can go."))
+        case .agentMissing(let kind):
+            Button {
+                model.setUp(kind)
+            } label: {
+                Label(String(localized: "Set up \(kind.name)"), systemImage: "arrow.down.circle")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .help(kind == .codex ? String(localized: "Free with a ChatGPT account.")
+                                 : String(localized: "Needs a Claude Pro plan."))
+        case .none:
+            // Nothing resolves at all (the catalog is still loading). The menu
+            // beside it is built from `AgentKind.allCases`, so it stays usable.
+            SettingsLink {
+                Label(String(localized: "Add a model provider"), systemImage: "plus")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .help(String(localized: "Or use any model — a self-hosted server, a relay, a gateway."))
         }
+    }
+
+    /// Every planner, always reachable. This is the control whose absence the
+    /// user hit: with one agent signed in there was no menu to swap it, and no
+    /// way at all to sign it out.
+    private var plannerMenu: some View {
+        Menu {
+            runSection
+            if !model.agentEnv.ready.isEmpty {
+                Divider()
+                accountSection
+            }
+        } label: {
+            Image(systemName: "chevron.down")
+        }
+        .menuStyle(.button)
+        .menuIndicator(.hidden)
+        .buttonStyle(.bordered)
+        .controlSize(.large)
+        .fixedSize()
+        .help(String(localized: "Choose the planner"))
+        .accessibilityLabel(String(localized: "Choose the planner"))
+    }
+
+    /// The planners to run: everything that can start now, then what needs one
+    /// setup step, then the way to add a provider. Between them these always
+    /// list both agents, so the menu is never empty.
+    @ViewBuilder private var runSection: some View {
+        let choices = model.plannerChoices
+        ForEach(choices.filter(\.runnable)) { choice in
+            Button(choice.label) { activate(choice) }
+        }
+        let needsWork = choices.filter { !$0.runnable && $0.kind != nil }
+        if !needsWork.isEmpty {
+            Divider()
+            ForEach(needsWork) { choice in
+                Button(choice.menuLabel) { activate(choice) }
+            }
+        }
+        // A `SettingsLink` renders as plain text rather than a menu row's
+        // button label, so it uses the label directly instead of the
+        // catalog's formatted one.
+        Divider()
+        SettingsLink { Text(String(localized: "Add a model provider…")) }
+    }
+
+    /// Signing out is the recovery path for a wrong or stale account, and the
+    /// litigated half of the report: the app could install and sign in but had
+    /// no way back out at all.
+    @ViewBuilder private var accountSection: some View {
+        ForEach(model.agentEnv.ready) { agent in
+            Button(String(localized: "Sign out of \(agent.kind.name)"), role: .destructive) {
+                signingOut = agent.kind
+            }
+        }
+    }
+
+    private func activate(_ choice: PlannerChoice) {
+        switch choice {
+        case .agent(let agent): model.startAgent(agent)
+        case .provider(let provider): model.startProvider(provider)
+        // From the menu the user asked to fix an account, not to spend a run.
+        case .agentSignedOut(let kind): model.setUp(kind, startWhenReady: false)
+        case .agentMissing(let kind): model.setUp(kind, startWhenReady: false)
+        }
+    }
+
+    /// Why the primary button is not a run right now: nothing is signed in, or
+    /// nothing is installed at all.
+    ///
+    /// Derived from the same resolved choice the button uses — not from "the
+    /// first installed agent" — because those can differ: with a stored plan
+    /// naming Claude Code while only Codex is installed, the old copy read
+    /// "Sign in to Codex" beside a "Set up Claude Code" button.
+    private func onboardingLine(_ choice: PlannerChoice) -> String {
+        switch choice {
+        case .agentSignedOut(let kind):
+            return String(localized: "Sign in to \(kind.name) and it plans what can go from this scan.")
+        case .agentMissing(let kind):
+            return String(localized: "\(kind.name) reads this scan and plans what can go. \(accountLine(kind))")
+        default:
+            return String(localized: "Pick a planner and it plans what can go from this scan.")
+        }
+    }
+
+    /// What an agent's account costs, so the offer is not a surprise.
+    private func accountLine(_ kind: AgentKind) -> String {
+        kind == .codex ? String(localized: "Free with a ChatGPT account.")
+                       : String(localized: "Needs a Claude Pro plan.")
     }
 
     private func trashPicked() {

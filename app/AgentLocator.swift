@@ -70,6 +70,27 @@ nonisolated enum AgentLocator {
         }
     }
 
+    /// The CLI's own sign-out command, with the same argument discipline as
+    /// the sign-in path: no extra flags, so what runs is exactly what the tool
+    /// documents. `codex logout` and `claude auth logout` both exit 0 on
+    /// success and leave the CLI needing a browser sign-in again.
+    static func signOutArguments(_ kind: AgentKind) -> [String] {
+        switch kind {
+        case .claude: return ["auth", "logout"]
+        case .codex: return ["logout"]
+        }
+    }
+
+    /// Signs an agent out through its own CLI. Returns whether it succeeded;
+    /// the caller re-reads the environment rather than assuming the result.
+    ///
+    /// Sign-out is a recovery path, not a convenience: without it a signed-in
+    /// agent was a one-way door, and the account could not be changed or
+    /// removed from inside the app at all.
+    static func signOut(_ kind: AgentKind, path: String, envPath: String) -> Bool {
+        run(path, signOutArguments(kind), envPath: envPath, timeout: 20).status == 0
+    }
+
     static func run(_ exe: String, _ args: [String], envPath: String? = nil,
                     timeout: TimeInterval = 5) -> (out: String, status: Int32) {
         let process = Process()

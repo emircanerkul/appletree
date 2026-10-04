@@ -307,21 +307,39 @@ final class ScanModel {
     var providerStore: ProviderStore { ProviderStore.shared }
 
     /// The planner for the Clean Up panel. `bz.engine` names it: a CLI agent
-    /// ("claude", "codex") or a custom provider ("provider:<id>"). Default:
-    /// the named agent if ready, else Claude Code, else Codex.
-    var preferredAgent: InstalledAgent? {
-        let ready = agentEnv.ready
-        let picked = UserDefaults.standard.string(forKey: "bz.engine") ?? UserDefaults.standard.string(forKey: "bz.agent")
-        if picked?.hasPrefix("provider:") == true { return nil }
-        return ready.first { $0.kind.rawValue == picked } ?? ready.first { $0.kind == .claude } ?? ready.first
-    }
+    /// ("claude", "codex") or a custom provider ("provider:<id>").
+    var preferredAgent: InstalledAgent? { preferredChoice?.installed }
 
     /// The provider picked in Settings, when `bz.engine` names one.
-    var preferredProvider: LLMProvider? {
-        guard let picked = UserDefaults.standard.string(forKey: "bz.engine"),
-              picked.hasPrefix("provider:") else { return nil }
-        let id = String(picked.dropFirst("provider:".count))
-        return ProviderStore.shared.providers.first { $0.id == id }
+    var preferredProvider: LLMProvider? { preferredChoice?.providerValue }
+
+    /// The whole choice in effect, so a caller that must react to its *kind*
+    /// (the panel's primary action, sign-out state) does not have to re-derive
+    /// it from two optionals that are each only half the answer.
+    var preferredChoice: PlannerChoice? {
+        let choices = plannerChoices
+        if let id = defaultPlannerID, let match = choices.first(where: { $0.id == id }) { return match }
+        return choices.first { $0.runnable }
+    }
+
+    /// Every planner the user may choose, in the order it is offered — the one
+    /// owner of that list, read by the panel's menu and by Settings → General.
+    var plannerChoices: [PlannerChoice] {
+        PlannerChoice.catalog(agents: agentEnv, providers: ProviderStore.shared.providers)
+    }
+
+    /// The planner in effect — one resolution, read by both the panel and
+    /// Settings, which each used to keep their own fallback chain (the panel
+    /// preferred a ready agent, Settings preferred the first provider, so the
+    /// row Settings showed and the engine the panel ran could disagree).
+    /// `bz.agent` is the legacy fallback for installs that never wrote
+    /// `bz.engine`; it can be retired once no release reads it.
+    var defaultPlannerID: String? {
+        PlannerChoice.preferredID(
+            stored: UserDefaults.standard.string(forKey: "bz.engine")
+                ?? UserDefaults.standard.string(forKey: "bz.agent"),
+            in: plannerChoices
+        )
     }
 
     /// Start the cleanup with whatever the user picked in Settings.
@@ -394,14 +412,59 @@ final class ScanModel {
     /// Bumped to ask the window to open the Clean Up panel.
     var panelRequests = 0
 
-    func setUp(_ kind: AgentKind) {
+    /// Re-read which agents exist and which are signed in, then publish it.
+    ///
+    /// Returns the discovered environment so a caller can act on what was found
+    /// (the sign-out path checks the session really ended). Launch and sign-out
+    /// both land here, so a readiness change cannot be applied two slightly
+    /// different ways.
+    @discardableResult
+    func refreshAgents() async -> AgentEnvironment {
+        let env = await AgentLocator.find()
+        agentEnv = env
+        return env
+    }
+
+    /// Install or sign in to an agent, then (by default) run the plan with it.
+    ///
+    /// `startWhenReady` is false for the menu's account section: there the user
+    /// asked to fix the account, not to spend a run, so the panel must not
+    /// launch an agent they did not ask for.
+    func setUp(_ kind: AgentKind, startWhenReady: Bool = true) {
         agentSetup?.cancel()
         let installed = agentEnv.agents.first { $0.kind == kind }
         agentSetup = AgentSetup(kind: kind, installed: installed, envPath: agentEnv.path) { [weak self] env in
             guard let self else { return }
             agentEnv = env
             agentSetup = nil
-            if let agent = env.ready.first(where: { $0.kind == kind }) { startAgent(agent) }
+            if startWhenReady, let agent = env.ready.first(where: { $0.kind == kind }) { startAgent(agent) }
+        }
+    }
+
+    /// True while a cleanup is on screen or running, when signing out would
+    /// pull the engine out from under live work.
+    var signOutBlocked: Bool { agentRun != nil || cleanupTrash.running }
+
+    /// Set when a sign-out did not take; shown once and cleared.
+    var signOutFailure: String?
+
+    /// Sign an agent out through its own CLI, then re-read readiness.
+    ///
+    /// The account belongs to the CLI, not to AppleTree: the app only invokes
+    /// the tool's own logout and reports what the environment says afterwards.
+    /// It runs off the main actor because the CLI is a process.
+    func signOut(_ kind: AgentKind) async {
+        guard !signOutBlocked, agentSetup == nil else { return }
+        guard let agent = agentEnv.agents.first(where: { $0.kind == kind }) else { return }
+        let path = agent.path, envPath = agentEnv.path
+        _ = await Task.detached(priority: .userInitiated) {
+            AgentLocator.signOut(kind, path: path, envPath: envPath)
+        }.value
+        let env = await refreshAgents()
+        // Trust the re-read, not the exit status: a CLI that reports success
+        // while still holding a session must not be shown as signed out.
+        if env.ready.contains(where: { $0.kind == kind }) {
+            signOutFailure = String(localized: "\(kind.name) is still signed in. Sign out from a terminal, then reopen AppleTree.")
         }
     }
     /// A tree has been shown at least once, so the views exist (see ContentView).

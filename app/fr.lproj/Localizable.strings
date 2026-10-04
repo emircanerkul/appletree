@@ -48,7 +48,6 @@
 "Move %@ to Trash · %@" = "Déplacer %@ à la Corbeille · %@";
 "Clean up with %@" = "Nettoyer avec %@";
 "%@ reads this scan and suggests what can go. Nothing is removed until you say so." = "%@ lit ce scan et propose ce qui peut partir. Rien n'est supprimé sans votre accord.";
-"Choose the agent" = "Choisir l'agent";
 "Let AI clean up for you" = "Laissez l'IA nettoyer pour vous";
 "%@ reads this scan and plans what can go. %@" = "%@ lit ce scan et planifie ce qui peut partir. %@";
 "Free with a ChatGPT account." = "Gratuit avec un compte ChatGPT.";
@@ -56,7 +55,6 @@
 "Sign in to %@ and it plans what can go from this scan." = "Connectez-vous à %@ et il planifie ce qui peut partir de ce scan.";
 "Set up %@" = "Installer %@";
 "Sign in to %@" = "Se connecter à %@";
-"Use %@" = "Utiliser %@";
 "Stop" = "Arrêter";
 "Pick what to remove" = "Choisissez quoi supprimer";
 "Move %@ to Trash" = "Déplacer %@ à la Corbeille";
@@ -176,3 +174,21 @@
 "A Codex chat you used in the last 2 days" = "Une conversation Codex utilisée ces 2 derniers jours";
 "In projects you used in the last 2 days" = "Dans des projets utilisés ces 2 derniers jours";
 "About %@ can go." = "Environ %@ peuvent partir.";
+
+/* Planner choice and agent sign-out. */
+"Choose the planner" = "Choisir le planificateur";
+"Sign in to %@…" = "Se connecter à %@…";
+"Set up %@…" = "Configurer %@…";
+"Sign out of %@" = "Se déconnecter de %@";
+"Sign out of %@?" = "Se déconnecter de %@ ?";
+"Couldn't sign out" = "Échec de la déconnexion";
+"Add a model provider…" = "Ajouter un fournisseur de modèle…";
+"%@ (custom)" = "%@ (personnalisé)";
+"%@ (not signed in)" = "%@ (non connecté)";
+"%@ (not installed)" = "%@ (non installé)";
+"%@ is installed but signed out. Signing in lets it plan what can go." = "%@ est installé mais déconnecté. S'y connecter lui permet de planifier ce qui peut être supprimé.";
+"%@ forgets the account it is signed in with. The next plan needs a browser sign-in again. Nothing else on your Mac changes." = "%@ oublie le compte utilisé. Le prochain plan demandera à nouveau une connexion dans le navigateur. Rien d'autre ne change sur votre Mac.";
+"%@ is still signed in. Sign out from a terminal, then reopen AppleTree." = "%@ est toujours connecté. Déconnectez-vous depuis un terminal, puis rouvrez AppleTree.";
+"%@ is not signed in — sign in from the Clean Up panel." = "%@ n'est pas connecté — connectez-vous depuis le panneau Nettoyage.";
+"%@ is not installed — set it up from the Clean Up panel." = "%@ n'est pas installé — installez-le depuis le panneau Nettoyage.";
+"Pick a planner and it plans what can go from this scan." = "Choisissez un planificateur et il planifiera ce qui peut être supprimé.";

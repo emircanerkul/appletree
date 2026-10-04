@@ -48,7 +48,6 @@
 "Move %@ to Trash · %@" = "%@個をゴミ箱へ · %@";
 "Clean up with %@" = "%@でクリーンアップ";
 "%@ reads this scan and suggests what can go. Nothing is removed until you say so." = "%@はこのスキャンを読み取り、削除できるものを提案します。あなたが承認するまで何も削除されません。";
-"Choose the agent" = "エージェントを選択";
 "Let AI clean up for you" = "AIにクリーンアップさせましょう";
 "%@ reads this scan and plans what can go. %@" = "%@はこのスキャンを読み取り、削除できるものを計画します。%@";
 "Free with a ChatGPT account." = "ChatGPTアカウントで無料。";
@@ -56,7 +55,6 @@
 "Sign in to %@ and it plans what can go from this scan." = "%@にサインインすると、このスキャンから削除できるものを計画します。";
 "Set up %@" = "%@をセットアップ";
 "Sign in to %@" = "%@にサインイン";
-"Use %@" = "使用：%@";
 "Stop" = "停止";
 "Pick what to remove" = "削除するものを選択";
 "Move %@ to Trash" = "%@をゴミ箱へ移動";
@@ -176,3 +174,21 @@
 "A Codex chat you used in the last 2 days" = "過去2日間に使用した Codex チャットです";
 "In projects you used in the last 2 days" = "過去2日間に使用したプロジェクトの中です";
 "About %@ can go." = "約 %@ 解放できます。";
+
+/* Planner choice and agent sign-out. */
+"Choose the planner" = "プランナーを選択";
+"Sign in to %@…" = "%@ にサインイン…";
+"Set up %@…" = "%@ をセットアップ…";
+"Sign out of %@" = "%@ からサインアウト";
+"Sign out of %@?" = "%@ からサインアウトしますか？";
+"Couldn't sign out" = "サインアウトできませんでした";
+"Add a model provider…" = "モデルプロバイダを追加…";
+"%@ (custom)" = "%@（カスタム）";
+"%@ (not signed in)" = "%@（未サインイン）";
+"%@ (not installed)" = "%@（未インストール）";
+"%@ is installed but signed out. Signing in lets it plan what can go." = "%@ はインストール済みですが未サインインです。サインインすると削除できるものを計画できます。";
+"%@ forgets the account it is signed in with. The next plan needs a browser sign-in again. Nothing else on your Mac changes." = "%@ はサインイン中のアカウントを忘れます。次回のプランにはブラウザでの再サインインが必要です。Mac 上の他のものは変わりません。";
+"%@ is still signed in. Sign out from a terminal, then reopen AppleTree." = "%@ はまだサインインしています。ターミナルからサインアウトして、AppleTree を開き直してください。";
+"%@ is not signed in — sign in from the Clean Up panel." = "%@ は未サインインです — 「クリーンアップ」パネルからサインインしてください。";
+"%@ is not installed — set it up from the Clean Up panel." = "%@ は未インストールです — 「クリーンアップ」パネルからセットアップしてください。";
+"Pick a planner and it plans what can go from this scan." = "プランナーを選ぶと、削除できるものを計画します。";

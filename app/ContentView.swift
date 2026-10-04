@@ -67,7 +67,7 @@ struct ContentView: View {
         }
         .toolbar { toolbar }
         .task {
-            model.agentEnv = await AgentLocator.find()
+            await model.refreshAgents()
             model.openPanelAfterLaunchScan()
         }
         // A drive plugged in or ejected while the window is open: keep the

@@ -47,7 +47,7 @@ SWIFT_FLAGS := -O -parse-as-library -swift-version 6 -default-isolation MainActo
                -framework DiskArbitration -framework IOKit
 
 .DEFAULT_GOAL := help
-.PHONY: help all build engine bundle deploy release test test-rust icon clean
+.PHONY: help all build engine bundle deploy release test test-planner test-rust icon clean
 
 help:
 	@echo 'AppleTree targets:'
@@ -56,6 +56,7 @@ help:
 	@echo '  make release V=x.y.z    notarize, package dmg, publish GitHub release'
 	@echo '                          optional NOTES_FILE=path/to/notes.md'
 	@echo '  make test               guard unit tests (Swift over the Rust staticlib)'
+	@echo '  make test-planner       planner catalog, preference and sign-out tests'
 	@echo '  make test-rust          cargo test --release'
 	@echo '  make engine             cargo build --release only'
 	@echo '  make icon               regenerate AppIcon source (assets/gen_icon.py)'
@@ -247,6 +248,19 @@ test: engine
 	    -L target/release -lappletree \
 	    -o .build/guard-tests
 	.build/guard-tests
+
+# Planner catalog and sign-out tests. Real shipping sources, no stubs, so this
+# fails if the catalog rule, the preference resolution both surfaces share, or
+# the CLI logout argv drifts. Needs Security for the provider model's Keychain
+# calls.
+test-planner:
+	@mkdir -p .build
+	swiftc tests/swift/planner.swift app/AgentSupport.swift app/AgentLocator.swift \
+	    app/ModelProvider.swift app/PlanParsing.swift \
+	    -parse-as-library -swift-version 6 -default-isolation MainActor \
+	    -target arm64-apple-macos$(MIN_MACOS) -framework Security \
+	    -o .build/planner-tests
+	.build/planner-tests
 
 # ---------------------------------------------------------------------------
 # Clean
