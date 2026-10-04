@@ -10,12 +10,12 @@
 
 | | AppleTree | disktree | ratio |
 |---|---:|---:|---:|
-| median scan | **0.512 s** | 1.121 s | 2.19× faster |
-| range | 0.489–0.528 s | 0.903–1.128 s | |
-| peak RSS | **21.2 MB** | 70.0 MB | 3.30× |
+| median scan | **0.736 s** | 1.587 s | 2.16× faster |
+| range | 0.668–0.784 s | 1.444–1.695 s | |
+| peak RSS | **21.7 MB** | 69.4 MB | 3.19× |
 | files | 247465 | 235540 | 11925 more links |
 | dirs | 42409 | 42410 | |
-| allocated bytes | 12618919936 | 12618919936 | **identical** |
+| allocated bytes | 12618940416 | 12618940416 | **identical** |
 | read errors | 0 | 0 | |
 
 Two count differences are expected and are not accuracy problems; both engines report identical allocated bytes, which is the number that matters for disk space:
