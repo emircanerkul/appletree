@@ -45,7 +45,7 @@ Peak RSS barely moved across five separate sessions on the same target
 
 | | AppleTree | disktree 0.10.1 | ratio |
 |---|---:|---:|---:|
-| peak RSS across 5 sessions | **20.6–22.2 MB** | **69.4–69.8 MB** | **~3.2× less** |
+| peak RSS across 5 sessions | **20.5–22.3 MB** | **69.0–69.3 MB** | **3.1× less** |
 
 That spread is small enough to state as a single claim, and both engines report
 **identical allocated bytes** on every target.
@@ -56,7 +56,7 @@ On the same target, median scan time across those sessions ranged:
 
 | target | AppleTree | disktree 0.10.1 | speed |
 |---|---:|---:|---:|
-| `/Applications` (5 sessions) | 0.56–0.80 s | 1.00–1.84 s | **1.8–2.3×** |
+| `/Applications` (5 sessions) | 0.53–0.69 s | 0.94–1.42 s | **1.8–2.1×** |
 | `~/Library/Developer`, 51,235 files | 0.367 s | 0.420 s | **1.14×** |
 | `~/Documents`, 8,628 files | 0.014 s | 0.023 s | 1.59× |
 | `~/Downloads`, 122 files | 0.001 s | 0.001 s | 1.25× |

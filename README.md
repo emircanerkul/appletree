@@ -2,18 +2,53 @@
 
 # AppleTree
 
-A fast, native disk-space treemap for macOS, in the spirit of WizTree.
+A fast, native disk-space treemap for macOS, in the spirit of WizTree. Scan a
+disk, see what is eating it, and clear the space back out — without handing your
+file list to anyone.
 
 <p>
   <img src="assets/screenshot.png" width="49%" alt="AppleTree treemap view of /Applications">
   <img src="assets/screenshot-rings.png" width="49%" alt="AppleTree rings view of /Applications">
 </p>
 
-## Install
+Requires Apple Silicon and macOS 14 or later.
 
-**[Download AppleTree.dmg](https://github.com/emircanerkul/appletree/releases/latest/download/AppleTree.dmg)** and drag the app into Applications. Requires Apple Silicon and macOS 14 or later.
+## Performance
 
-Signed with a Developer ID and notarized by Apple, so it opens like any other app. Grant Full Disk Access when prompted, then relaunch.
+Scanning `/Applications` (247,465 files, 12.6 GB) on an Apple M1, against
+[disktree](https://github.com/tobi/disktree) 0.10.1, both engines alternated in
+one run. Both report the **same allocated bytes** (12,618,919,936):
+
+| scan engine | Scan time | Peak memory |
+|---|---|---|
+| **AppleTree** | **0.53–0.69 s** | **20.5–22.3 MB** |
+| disktree 0.10.1 | 0.94–1.42 s | 69.0–69.3 MB |
+
+Peak memory is the stable figure; scan time moves with machine load, so both
+columns are a range over five separate sessions. The ratio is steadier than
+either absolute number: **3.1× less memory** and **1.8–2.1× faster** on this
+target. The margin is workload-dependent — on a directory-heavy tree the engine
+lead narrows to about 1.1×.
+
+Measured from the whole running app instead of the engine alone, on the same
+machine and target, AppleTree finishes its scan in **0.62–0.88 s** — ahead of
+disktree (~2.9–3.3 s), GrandPerspective 3.7.2 (5.6–8.0 s) and QDirStat 2.0.01
+(7.4–8.7 s).
+
+Everything behind those numbers, including every raw sample and what is
+deliberately **not** measured, is in
+[BENCHMARKS.md](docs/benchmarks/BENCHMARKS.md). Run it yourself:
+
+```sh
+cd bench && ./run.sh                            # engine comparison
+cd bench && cargo run --release -- scan --compare-apps   # include the GUI apps
+```
+
+Three things do the work:
+
+- `getattrlistbulk(2)` reads a whole directory's metadata in one syscall instead of one `stat` per file.
+- A Rust worker pool keeps many directories in flight, and scan threads run at user-initiated QoS: they stay on performance cores without starving the UI.
+- The treemap is laid out once and painted on every core in parallel, so zooming redraws in a couple of frames.
 
 ## Features
 
@@ -30,52 +65,16 @@ Signed with a Developer ID and notarized by Apple, so it opens like any other ap
 - Native AppKit/SwiftUI, with the Liquid Glass design on macOS 26 and later
 - No telemetry. AppleTree itself only goes online when the AI cleanup runs; it runs only when you click it, using your own agent, which sends folder paths and sizes from the scan (never file contents) to Anthropic or OpenAI
 
-## Performance
-
-Measured on an Apple M1 (16 GB, macOS 27.0) against
-[disktree](https://github.com/tobi/disktree) 0.10.1, both engines alternated in
-one run, 7 rounds, warm cache, scanning `/Applications` (247,465 files /
-12.6 GB). Both engines report the **same allocated bytes** (12,618,919,936).
-
-| scan engine, `/Applications` | Scan time | Peak memory |
-|---|---|---|
-| **AppleTree** | **0.56–0.80 s** | **20.6–22.2 MB** |
-| disktree 0.10.1 | 1.00–1.84 s | 69.4–69.8 MB |
-
-Peak memory is the reliable figure — it barely moves between runs. Scan time
-depends on machine load, so both columns are given as a range; the ratio
-(roughly 3.2× less memory, 1.8–2.3× faster here) is steadier than either
-absolute number. On a directory-heavy tree the engine lead narrows to about
-1.1×, and smaller trees show smaller absolute differences.
-
-Scanning from a whole running app rather than the engine alone, same machine
-and target:
-
-| whole app, `/Applications` | Scan finished after | Peak memory |
-|---|---|---:|
-| **AppleTree** | **0.62–0.88 s** | **137.6 MB** |
-| disktree 0.10.1 | ~2.9–3.3 s* | 156.5 MB |
-| GrandPerspective 3.7.2 | 5.6–8.0 s | 151.6 MB |
-| QDirStat 2.0.01 | 7.4–8.7 s | 212.9 MB |
-
-\* disktree's GUI reports no timing anywhere, so it is measured from outside
-until the process stops using CPU — an upper bound, not an equal measurement.
-Peak memory for the three non-AppleTree apps is sampled every 50 ms, so those
-figures are floors on the true peak; AppleTree's is the kernel's own high-water
-mark. Process memory includes the whole UI, which is why it is far larger than
-the engine figures above.
-
-- `getattrlistbulk(2)` reads a whole directory's metadata in one syscall instead of one `stat` per file.
-- A Rust worker pool keeps many directories in flight, and scan threads run at user-initiated QoS: they stay on performance cores without starving the UI.
-- The treemap is laid out once and painted on every core in parallel, so zooming redraws in a couple of frames.
-
-Run it yourself: `cd bench && ./run.sh`, or `cargo run --release -- scan
---compare-apps` to include the GUI apps. Method, every raw sample, and what is
-deliberately not measured: [BENCHMARKS.md](docs/benchmarks/BENCHMARKS.md).
-
 ## Accuracy
 
-Sizes are allocated bytes, matching `du`. Hard-linked files count once, the scan stays on one volume, and cloud-only iCloud folders are never downloaded. Root-only system data that no app can read is reported in the status bar instead of hidden.
+Sizes are allocated bytes, matching `du`. Hard-linked files count once, the scan
+stays on one volume, and cloud-only iCloud folders are never downloaded.
+Root-only system data that no app can read is reported in the status bar instead
+of hidden.
+
+AppleTree counts every name of a hard-linked file while some other tools count
+the file once, so it can list more files than they do for identical totals. The
+bytes are the same either way.
 
 ## AI cleanup
 
@@ -104,15 +103,24 @@ the trust in your own PATH is residual.
 
 ## Build from source
 
-Requires Xcode 26 or later and Rust.
+Requires Xcode 16.3 or later (Swift 6.1) and Rust. The build probes your
+toolchain and stops with a clear message if the Swift version is too old.
 
 ```sh
+make help              # every target
 make build             # build/AppleTree.app
 make deploy            # build and install to /Applications
+make open              # build and launch
 cargo test --release   # engine tests
 ```
 
-The Rust engine hands the finished tree to the Swift UI as flat arrays over a C interface, with no copying. `AppleTree <path>` scans a specific folder.
+The Rust engine hands the finished tree to the Swift UI as flat arrays over a C
+interface, with no copying. `AppleTree <path>` scans a specific folder.
+
+Sign the bundle with a real `Apple Development` or `Developer ID` identity if
+you intend to grant it Full Disk Access: an ad-hoc signature pins its identity
+to a hash that changes on every rebuild, so macOS drops the grant each time. The
+build warns when it has to fall back to ad-hoc for this reason.
 
 ## JSON CLI for agents and scripts
 
@@ -125,12 +133,13 @@ cargo build --locked --release --features cli --bin appletree
 ./target/release/appletree quick-wins --root "$HOME" --limit 20
 ```
 
-`scan` lists the largest directories and files as JSON. `quick-wins` includes
-that inventory plus the Clean Up panel's existing candidates and labels. The
-panel and CLI share one Rust implementation of the rules, with no new heuristics.
-Both report incomplete scans; allocated bytes are not
-a promise of reclaimable space. Neither command modifies the scanned files.
+`scan` lists the largest directories and files as JSON. `quick-wins` adds the
+Clean Up panel's folder candidates — the same name/structure heuristics, with no
+new criteria and no safety assessment — which you should review before acting.
+Both report incomplete scans; allocated bytes are not a promise of reclaimable
+space, and the root itself is never a candidate. Neither command modifies the
+scanned files.
 
-The CLI is built from source separately from the app. Its JSON dependency is
-only compiled with the `cli` feature. See [the CLI contract and tests](docs/AGENT_API.md).
-
+The CLI is built from source separately from the app; its JSON dependency is
+only compiled with the `cli` feature. Its behaviour is covered by
+[tests/test_cli.py](tests/test_cli.py).

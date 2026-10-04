@@ -1,0 +1,27 @@
+{
+  "host": {"chip":"Apple M1","ram_gb":16,"macos":"27.0"},
+  "target": "/Applications",
+  "tools": ["appletree", "disktree"],
+  "runs": 7,
+  "totals_agree": true,
+  "appletree": {"runs":7,"min_seconds":0.500322,"median_seconds":0.526259,"max_seconds":0.560517,"median_peak_rss_bytes":23429120,"files":247465,"dirs":42409,"bytes":12618940416,"errors":0},
+  "disktree": {"runs":7,"min_seconds":0.914705,"median_seconds":1.025047,"max_seconds":1.177503,"median_peak_rss_bytes":72646656,"files":235540,"dirs":42410,"bytes":12618940416,"errors":0},
+  "speedup": 1.9478,
+  "rss_ratio": 3.1007,
+  "measurements": [
+    {"tool":"appletree","seconds":0.558877,"files":247465,"dirs":42409,"bytes":12618940416,"errors":0,"peak_rss_bytes":23822336},
+    {"tool":"disktree","seconds":0.914705,"files":235540,"dirs":42410,"bytes":12618940416,"errors":0,"peak_rss_bytes":72646656},
+    {"tool":"disktree","seconds":1.117808,"files":235540,"dirs":42410,"bytes":12618940416,"errors":0,"peak_rss_bytes":74563584},
+    {"tool":"appletree","seconds":0.526259,"files":247465,"dirs":42409,"bytes":12618940416,"errors":0,"peak_rss_bytes":23429120},
+    {"tool":"appletree","seconds":0.513807,"files":247465,"dirs":42409,"bytes":12618940416,"errors":0,"peak_rss_bytes":21757952},
+    {"tool":"disktree","seconds":0.951732,"files":235540,"dirs":42410,"bytes":12618940416,"errors":0,"peak_rss_bytes":72663040},
+    {"tool":"disktree","seconds":1.124623,"files":235540,"dirs":42410,"bytes":12618940416,"errors":0,"peak_rss_bytes":73318400},
+    {"tool":"appletree","seconds":0.528454,"files":247465,"dirs":42409,"bytes":12618940416,"errors":0,"peak_rss_bytes":23035904},
+    {"tool":"appletree","seconds":0.500322,"files":247465,"dirs":42409,"bytes":12618940416,"errors":0,"peak_rss_bytes":25116672},
+    {"tool":"disktree","seconds":0.965835,"files":235540,"dirs":42410,"bytes":12618940416,"errors":0,"peak_rss_bytes":72155136},
+    {"tool":"disktree","seconds":1.177503,"files":235540,"dirs":42410,"bytes":12618940416,"errors":0,"peak_rss_bytes":72515584},
+    {"tool":"appletree","seconds":0.560517,"files":247465,"dirs":42409,"bytes":12618940416,"errors":0,"peak_rss_bytes":23740416},
+    {"tool":"appletree","seconds":0.524486,"files":247465,"dirs":42409,"bytes":12618940416,"errors":0,"peak_rss_bytes":20938752},
+    {"tool":"disktree","seconds":1.025047,"files":235540,"dirs":42410,"bytes":12618940416,"errors":0,"peak_rss_bytes":72351744}
+  ]
+}
