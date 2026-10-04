@@ -10,3 +10,11 @@ __pycache__/
 # Local Aegis method-pack workspace: kept on disk for the owner, never
 # committed. Its history was removed from this repository in full.
 /docs/aegis/
+# Under docs/, only benchmarks/ and screenshots/ are tracked. Everything else
+# (local aegis workspace, app-store metadata, OS junk) stays ignored.
+/docs/*
+!/docs/benchmarks/
+!/docs/screenshots/
+# Video scratch dir: source recording copy, analysis frames, encode variants.
+# The demo itself is hosted on the GitHub CDN; nothing here is committed.
+/video_work/

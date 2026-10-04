@@ -6,9 +6,10 @@ A fast, native disk-space treemap for macOS, in the spirit of WizTree. Scan a
 disk, see exactly what is consuming it, and reclaim the space — without handing
 your file list to anyone.
 
-<p>
-  <img src="assets/screenshot.png" width="49%" alt="AppleTree treemap view of /Applications">
-  <img src="assets/screenshot-rings.png" width="49%" alt="AppleTree rings view of /Applications">
+<p align="center">
+  <video src="https://github.com/user-attachments/assets/2b2eda2e-cfae-471b-b993-17f463eaa76c" width="90%" controls>
+    Your browser does not support embedded video.
+  </video>
 </p>
 
 Requires Apple Silicon and macOS 14 or later.

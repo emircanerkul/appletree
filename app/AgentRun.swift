@@ -200,7 +200,7 @@ final class AgentRun {
         withAnimation(.snappy) { steps.append(text) }
     }
 
-    /// `defaults write dev.emircan.appletree bz.claudeModel haiku` to try another.
+    /// `defaults write com.erklab.apps.appletree bz.claudeModel haiku` to try another.
     private static var claudeModel: String {
         ProcessInfo.processInfo.environment["BZ_CLAUDE_MODEL"]
             ?? UserDefaults.standard.string(forKey: "bz.claudeModel") ?? "sonnet"

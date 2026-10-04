@@ -51,7 +51,7 @@ nonisolated struct LLMProvider: Identifiable, Codable, Sendable, Equatable {
 }
 
 /// Providers and their API keys. Providers live in UserDefaults; keys live in
-/// the Keychain, keyed `dev.emircan.appletree.<provider id>` — never in prefs.
+/// the Keychain, keyed `com.erklab.apps.appletree.<provider id>` — never in prefs.
 @MainActor
 @Observable
 final class ProviderStore {
@@ -60,7 +60,7 @@ final class ProviderStore {
     private(set) var providers: [LLMProvider] = []
 
     private static let defaultsKey = "bz.providers"
-    nonisolated private static let servicePrefix = "dev.emircan.appletree."
+    nonisolated private static let servicePrefix = "com.erklab.apps.appletree."
 
     init() {
         if let data = UserDefaults.standard.data(forKey: Self.defaultsKey),

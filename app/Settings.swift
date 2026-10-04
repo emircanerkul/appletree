@@ -223,7 +223,7 @@ let availableLanguages: [(code: String, name: String)] = [
 /// system-wide AppleLanguages list (typically "en-US" and friends), which is
 /// not a picker tag and made the row render blank.
 func storedAppLanguage() -> String? {
-    let domain = Bundle.main.bundleIdentifier ?? "dev.emircan.appletree"
+    let domain = Bundle.main.bundleIdentifier ?? "com.erklab.apps.appletree"
     return (UserDefaults.standard.persistentDomain(forName: domain)?["AppleLanguages"] as? [String])?.first
 }
 

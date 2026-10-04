@@ -106,7 +106,7 @@ bundle: engine
 	    '<dict>' \
 	    '    <key>CFBundleName</key><string>AppleTree</string>' \
 	    '    <key>CFBundleDisplayName</key><string>AppleTree</string>' \
-	    '    <key>CFBundleIdentifier</key><string>dev.emircan.appletree</string>' \
+	    '    <key>CFBundleIdentifier</key><string>com.erklab.apps.appletree</string>' \
 	    "    <key>CFBundleVersion</key><string>$(VERSION)</string>" \
 	    "    <key>CFBundleShortVersionString</key><string>$(VERSION)</string>" \
 	    '    <key>CFBundleExecutable</key><string>AppleTree</string>' \

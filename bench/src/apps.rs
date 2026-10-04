@@ -270,7 +270,7 @@ fn defaults_write_string(domain: &str, key: &str, value: &str) -> Result<(), Str
 }
 
 /// AppleTree's preference domain.
-const APPLETREE_DOMAIN: &str = "dev.emircan.appletree";
+const APPLETREE_DOMAIN: &str = "com.erklab.apps.appletree";
 
 fn export_domain(domain: &str, plist: &Path) -> Result<(), String> {
     let status = Command::new("defaults")
@@ -648,7 +648,7 @@ mod tests {
     /// Uses a scratch domain so the test cannot touch the real preferences.
     #[test]
     fn domain_snapshot_restores_every_key_including_added_ones() {
-        let domain = "dev.emircan.appletree.btbench-test";
+        let domain = "com.erklab.apps.appletree.btbench-test";
 
         let preexisting = Command::new("defaults")
             .args(["write", domain, "bz.listWidth", "-float", "390"])

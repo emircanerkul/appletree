@@ -854,8 +854,8 @@ final class ScanModel {
         // dictionary read. Environment variables do not reach an app started
         // by LaunchServices (Finder, `open`), and `launchctl setenv` does not
         // reach a process launchd did not spawn, so the switch is a preference:
-        //   defaults write dev.emircan.appletree bz.benchTiming -bool true
-        //   defaults write dev.emircan.appletree bz.benchResult -string /tmp/at.json
+        //   defaults write com.erklab.apps.appletree bz.benchTiming -bool true
+        //   defaults write com.erklab.apps.appletree bz.benchResult -string /tmp/at.json
         // An app has no controlling terminal under LaunchServices, so `print`
         // would go nowhere: the line is written to the path the harness names.
         // bz.benchExit then quits, so a harness can time the app end to end.
