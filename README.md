@@ -55,8 +55,10 @@ and signs in to Codex (free with a ChatGPT account) or Claude Code.
 **Or plan with any model.** Settings → Model Providers connects any OpenAI- or
 Anthropic-compatible endpoint — a relay, a self-hosted server (Ollama, LM
 Studio) or a gateway — by its base URL, protocol and model. API keys are held in
-the Keychain, never in preferences. Such an endpoint only writes a plan;
-AppleTree still performs and re-checks every deletion.
+the Keychain, never in preferences. Such an endpoint receives the scan summary
+and nothing else: it runs no tools and never reads your disk, so it is the
+option to pick if you want file contents to stay local. AppleTree still performs
+and re-checks every deletion itself.
 
 **Scan when AppleTree opens.** On by default. Turn it off in Settings → General
 to choose a folder yourself before anything is scanned. A whole-disk scan is
@@ -77,8 +79,8 @@ free-space block, and no telemetry of any kind.
 ## Performance
 
 Every figure below was measured on **Apple M1, 16 GB, macOS 27.0**, scanning
-`/Applications` (247,465 files, about 12.6 GB). AppleTree and every tool
-compared against it report the **same allocated bytes**.
+`/Applications` (247,465 files, 12.6 GB). AppleTree and every tool compared
+against it report the **same allocated bytes** (12,618,940,416).
 
 **[Full method, every raw sample, and what these figures deliberately do not
 measure →](docs/benchmarks/BENCHMARKS.md)**
@@ -156,11 +158,11 @@ affects the bytes, which match exactly.
 
 ## AI cleanup
 
-The agent cannot change anything. It is given only read-only tools: a handful of
-inspection commands (`du`, `ls`, `stat`, `docker system df`, `xcrun simctl
-list`, `ollama list`) and `Read`, with no write or edit tool. Codex additionally
-runs in an explicit read-only sandbox. It writes a plan, and AppleTree then acts
-on that plan behind its own checks, whatever the plan says:
+Nothing here can write to your disk. The planner is invited only to read: a CLI
+agent is given inspection commands (`du`, `ls`, `stat`, `docker system df`,
+`xcrun simctl list`, `ollama list`) and `Read`, with no write or edit tool, and
+a custom model provider gets no tools at all. The planner writes a plan, and
+AppleTree then acts on that plan behind its own checks, whatever the plan says:
 
 - Only paths inside your home folder, never Documents, Desktop, Photos, iCloud Drive, Mail, keychains or `~/.ssh` (build output such as `node_modules` inside them is allowed, and so are the Codex app's chat folders in `~/Documents/Codex`), never a git repository, and never a whole folder such as `~/Library/Caches`
 - Only each tool's own cleanup commands (`uv cache clean`, `brew cleanup`, `npm cache clean` and similar, plus `xcrun simctl` for Xcode simulator runtimes and device data), with no shell syntax
@@ -189,20 +191,25 @@ running an AI cleanup. **Moving folders to the Trash yourself — from the map,
 the rings, the list or the Clean Up panel — is entirely local and sends
 nothing.**
 
-When you do run an AI cleanup, AppleTree sends the planner a *summary* of the
-scan, not your file list: the largest folder and file paths with their sizes (up
-to a few hundred entries), your home path, the scan root, and which apps are
-currently running. It is a plan-writing request; AppleTree still performs and
-re-checks every deletion itself.
+When you do run an AI cleanup, AppleTree itself sends the planner a *summary* of
+the scan, never file contents: the largest folder and file paths with their
+sizes (up to a few hundred entries), your home path, the scan root, and which
+apps are currently running. This holds for every planner.
 
-Note the boundary of that guarantee. AppleTree uploads only that summary, but
-the agent CLI it launches can read your disk and has a `Read` tool, so the agent
-can inspect more than the summary it was handed. What the agent chooses to read
-becomes part of its own conversation with Anthropic or OpenAI. Codex is held to
-a read-only sandbox; Claude Code is restricted by its tool allowlist rather than
-by an OS sandbox, so that boundary is a CLI-level policy, not an OS guarantee.
-The custom-endpoint path is strictly narrower: a model provider receives the
-summary over HTTP and runs no tools at all.
+The two kinds of planner differ in what else can reach the network, and the
+difference is worth knowing:
+
+- **A custom model provider** receives that summary over HTTP and nothing else.
+  It runs no tools and never sees the disk, so with a provider you connect
+  yourself, file contents are never sent.
+- **A CLI agent (Claude Code or Codex)** is a full agent with a `Read` tool, and
+  AppleTree cannot restrict what it chooses to read. AppleTree hands it the same
+  summary, but the agent can inspect further on its own, and what it reads
+  becomes part of its conversation with Anthropic or OpenAI. Codex runs in a
+  read-only sandbox and Claude Code is held by a tool allowlist, so neither can
+  write — but that is a CLI-level policy, not a guarantee about what they read.
+
+Either way, AppleTree performs and re-checks every deletion itself.
 
 ## Build from source
 
