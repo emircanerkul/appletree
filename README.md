@@ -44,13 +44,13 @@ with every app given the same target and 5 rounds × 3 sessions:
 | app | Scan finished after | Peak memory |
 |---|---:|---:|
 | **AppleTree** | **0.79–0.85 s** | **137.1–138.5 MB** |
-| disktree 0.10.1 | 2.43–4.40 s † | 152.4–156.6 MB |
+| disktree 0.10.1 | 2.43–4.40 s * | 152.4–156.6 MB |
 | GrandPerspective 3.7.2 | 5.21–5.82 s | 154.7–160.2 MB |
 | QDirStat 2.0.01 | 5.95–6.42 s | 199.4–214.2 MB |
 
 AppleTree is the fastest of the four, and the lightest of the four.
 
-† disktree's GUI reports no timing anywhere, so it is measured from outside
+* disktree's GUI reports no timing anywhere, so it is measured from outside
 until the process stops using CPU. That method has roughly a second of
 resolution and also counts window and render work, so it is an **upper bound**,
 not an equal measurement; the other three rows are each app's own "scan
