@@ -159,16 +159,22 @@ private struct AboutView: View {
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
 
-            Text("© 2026 Emircan ERKUL")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-                .padding(.top, 2)
-
-            VStack(spacing: 3) {
-                Text("brought to you by")
-                    .font(.caption2)
+            // One footer row: copyright anchored left, the erklab credit right,
+            // so they read as a single line rather than two stacked blocks.
+            // A `Spacer` between them is what puts them at the two edges —
+            // without it the row centres as a pair and drifts with the credit's
+            // width.
+            HStack(alignment: .center, spacing: 8) {
+                Text("© 2026 Emircan ERKUL")
+                    .font(.caption)
                     .foregroundStyle(.tertiary)
-                ErklabLogo(height: 18)
+                Spacer(minLength: 12)
+                HStack(spacing: 5) {
+                    Text("brought to you by")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                    ErklabLogo(height: 16)
+                }
             }
             .padding(.top, 5)
         }
