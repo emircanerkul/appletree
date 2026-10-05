@@ -1,13 +1,13 @@
 # AppleTree Privacy Policy
 
 **Bundle ID:** `com.erklab.apps.appletree`
-**Published at:** https://github.com/emircanerkul/appletree/wiki/Privacy-Policy
+**Published at:** https://github.com/emircanerkul/appletree/blob/main/docs/wiki/Privacy-Policy.md
 **Last updated:** 5 October 2026
 **Effective date:** 5 October 2026
 
 This policy covers the AppleTree application for macOS and the optional `appletree` command-line tool built from the same source. It does not cover any other software or website.
 
-See also: **[Support](https://github.com/emircanerkul/appletree/wiki/Support)** · **[Home](https://github.com/emircanerkul/appletree/wiki/Home)**
+See also: **[Support](https://github.com/emircanerkul/appletree/blob/main/docs/wiki/Support.md)** · **[Home](https://github.com/emircanerkul/appletree#readme)**
 
 ---
 

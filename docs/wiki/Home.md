@@ -12,8 +12,8 @@ Requires Apple silicon and macOS 14 or later.
 
 | Page | What it covers |
 |---|---|
-| **[Support](Support)** | Requirements, getting help, and answers to common questions |
-| **[Privacy Policy](Privacy-Policy)** | What AppleTree stores, what leaves your Mac, and how to delete it |
+| **[Support](https://github.com/emircanerkul/appletree/blob/main/docs/wiki/Support.md)** | Requirements, getting help, and answers to common questions |
+| **[Privacy Policy](https://github.com/emircanerkul/appletree/blob/main/docs/wiki/Privacy-Policy.md)** | What AppleTree stores, what leaves your Mac, and how to delete it |
 
 ---
 
@@ -21,7 +21,7 @@ Requires Apple silicon and macOS 14 or later.
 
 AppleTree has no accounts, no analytics, no crash reporting, no tracking and no servers of its own. Scanning, drawing the map, browsing folders and moving things to the Trash are all local and never touch the network.
 
-There is exactly one situation in which anything leaves your Mac: when **you** start an AI cleanup. AppleTree then sends a summary of the scan — paths, names and sizes, never file contents — to the planner you chose. You trigger it deliberately each time, and every other feature works without it. The full detail is in the **[Privacy Policy](Privacy-Policy)**.
+There is exactly one situation in which anything leaves your Mac: when **you** start an AI cleanup. AppleTree then sends a summary of the scan — paths, names and sizes, never file contents — to the planner you chose. You trigger it deliberately each time, and every other feature works without it. The full detail is in the **[Privacy Policy](https://github.com/emircanerkul/appletree/blob/main/docs/wiki/Privacy-Policy.md)**.
 
 ---
 

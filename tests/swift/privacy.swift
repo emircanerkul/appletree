@@ -96,35 +96,32 @@ enum PrivacyTests {
         check("the policy has no leaked markup",
               !shown.contains("<p align") && !shown.contains("<br>"))
 
-        // --- Every wiki URL is plain ASCII and internally consistent ---------
-        // The "Published at" line is what App Store Connect is given, and the
-        // links between pages have to agree with it. The live wiki page was
-        // created with U+2010 HYPHEN in its filename — visually identical to
-        // ASCII `-`, a different URL — so /wiki/Privacy-Policy 302-redirected
-        // to the wiki home and the policy was unreachable from every link
-        // pointing at it, including the one in this file.
+        // --- The published URL lives in the repo, not the wiki ----------------
+        // App Store Connect needs a publicly reachable Privacy Policy URL. The
+        // wiki was one candidate, but it is a second copy to keep in sync, and
+        // its page names come from file names in a separate repository — a
+        // U+2010 HYPHEN in one silently 302-redirected every link to the wiki
+        // home. The repo file is the source of truth, so it is the URL.
         //
-        // Wiki page names come from the file name in the wiki repo, so the
-        // guard is: no non-ASCII anywhere in a wiki URL, and no hyphen other
-        // than U+002D.
-        let wikiURLs = ["Home", "Privacy-Policy", "Support"]
-        for page in wikiURLs {
-            let url = "https://github.com/emircanerkul/appletree/wiki/\(page)"
-            check("\(page) has an all-ASCII URL",
-                  url.allSatisfy { $0.isASCII },
-                  "a non-ASCII character in a wiki page name breaks every link to it")
-        }
-        check("no U+2010 hyphen hides in a wiki link",
-              !shown.contains("\u{2010}") && !policy.contains("wiki/Privacy\u{2010}Policy"),
-              "U+2010 looks like '-' but resolves to a different page")
-
-        // The published URL must name the same page the other links use.
-        check("the Published-at URL uses the ASCII page name",
-              policy.contains("wiki/Privacy-Policy"),
+        // `github.com/.../blob/...` is the right form, not `raw.`: the raw URL
+        // serves `text/plain`, so a reviewer sees literal `# AppleTree Privacy
+        // Policy` and pipe tables instead of a rendered policy. The blob page
+        // renders headings and tables as a normal document.
+        check("the Published-at URL points at the repo file",
+              policy.contains("blob/main/docs/wiki/Privacy-Policy.md"),
               "App Store Connect is given this exact URL")
-        check("the Published-at URL is not the wiki home",
-              !policy.contains("Published at:** https://github.com/emircanerkul/appletree/wiki\n"),
-              "a URL that redirects to Home is not a privacy policy URL")
+        check("the Published-at URL is not a raw URL",
+              !policy.contains("raw.githubusercontent.com"),
+              "raw serves text/plain: unrendered markdown to a reviewer")
+        check("no wiki URL is referenced anywhere",
+              !policy.contains("appletree/wiki"),
+              "the wiki is a second copy to maintain, and it broke once already")
+        check("no U+2010 hyphen hides in a URL",
+              !shown.contains("\u{2010}"),
+              "U+2010 looks like '-' but is a different URL")
+        check("the bundled policy and the published copy are the same file",
+              makefile.contains("docs/wiki/Privacy-Policy.md"),
+              "one source, bundled into the app and published from the repo")
 
         // A scheme-less link can only be safe if it names a bundled document.
         let schemeLess = ["privacy-policy", "privacy", "Privacy-Policy", "privacy-policy.md"]

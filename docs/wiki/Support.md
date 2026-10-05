@@ -2,7 +2,7 @@
 
 AppleTree is a disk-space treemap for macOS: scan a drive, see what is filling it, and clean up the folders that tools rebuild on demand.
 
-See also: **[Privacy Policy](Privacy-Policy)** · **[Home](Home)**
+See also: **[Privacy Policy](https://github.com/emircanerkul/appletree/blob/main/docs/wiki/Privacy-Policy.md)** · **[Home](https://github.com/emircanerkul/appletree#readme)**
 
 ---
 
@@ -67,7 +67,7 @@ You do not need it to scan your home folder, `/Applications`, or any folder you 
 
 ### I revoked Full Disk Access but the app still seems to have it
 
-That is how macOS behaves: it stops applying a revocation to a process that is already running. Quit AppleTree, remove its row in **System Settings → Privacy & Security → Full Disk Access**, then relaunch. See [Privacy Policy §3](Privacy-Policy) for the related note about child processes.
+That is how macOS behaves: it stops applying a revocation to a process that is already running. Quit AppleTree, remove its row in **System Settings → Privacy & Security → Full Disk Access**, then relaunch. See [Privacy Policy §3](https://github.com/emircanerkul/appletree/blob/main/docs/wiki/Privacy-Policy.md) for the related note about child processes.
 
 ### The Clean Up button is greyed out
 
@@ -84,7 +84,7 @@ Either way, the AI cleanup is optional. The Clean Up panel's own cache detection
 
 ### Do I have to give the AI my files?
 
-No. It receives a summary of the scan — paths, names, sizes and dates — never the contents of your files. The exact limits and what is included are in [Privacy Policy §5.2](Privacy-Policy).
+No. It receives a summary of the scan — paths, names, sizes and dates — never the contents of your files. The exact limits and what is included are in [Privacy Policy §5.2](https://github.com/emircanerkul/appletree/blob/main/docs/wiki/Privacy-Policy.md).
 
 If you want the strongest option, configure a provider in **Settings → Model Providers** pointing at a model running on your own Mac (`Ollama`, `LM Studio`) or your own network. In that case nothing leaves your machine at all.
 
@@ -94,7 +94,7 @@ Those are excluded on purpose. AppleTree lists local storage volumes only — an
 
 ### How do I delete what AppleTree stores about me?
 
-Everything is local and yours to remove: the app, `~/Library/Application Support/AppleTree`, the preferences, and your API keys in the Keychain. Step by step in [Privacy Policy §8.2](Privacy-Policy). Reverting Full Disk Access is step 5 there.
+Everything is local and yours to remove: the app, `~/Library/Application Support/AppleTree`, the preferences, and your API keys in the Keychain. Step by step in [Privacy Policy §8.2](https://github.com/emircanerkul/appletree/blob/main/docs/wiki/Privacy-Policy.md). Reverting Full Disk Access is step 5 there.
 
 ### Is there a command-line version?
 
