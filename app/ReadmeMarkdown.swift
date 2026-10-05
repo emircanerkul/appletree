@@ -115,11 +115,13 @@ nonisolated enum Readme {
 
     /// A README written for GitHub, trimmed to what renders in the app.
     ///
-    /// The file opens with an HTML header table and a hosted demo `<video>`.
-    /// Foundation's markdown parser has no HTML support: it either shows those
-    /// tags as literal text or swallows the prose inside them. Both blocks are
-    /// removed here, and the viewer draws its own header instead — which keeps
-    /// the title, the icons and the App Store link without any markup leaking.
+    /// The file opens with an HTML header block (icon, title, tagline, buttons,
+    /// the maker's mark) and a hosted demo `<video>`. Foundation's markdown
+    /// parser has no HTML support: it either shows those tags as literal text or
+    /// swallows the prose wrapped inside them. Both blocks are removed here, and
+    /// the viewer draws its own header instead — the same icon, title, tagline
+    /// and buttons, plus the App Store and license actions — so nothing is lost
+    /// by dropping the markup.
     ///
     /// Fenced code is passed through untouched: a `<` in a code sample is
     /// content, not markup, and must survive.
@@ -128,9 +130,22 @@ nonisolated enum Readme {
         var inFence = false
         // The closing tag of a multi-line HTML block being skipped.
         var skippingUntil: String?
+        // The README's own header is an HTML block that runs from the first
+        // line to its own terminator. Skipping it by its real extent, rather
+        // than line by line, is what keeps the wrapped prose inside it from
+        // leaking the `<br>`/`</p>` that surrounds it.
+        var skippingHeader = markdown.trimmingCharacters(in: .whitespaces).hasPrefix("<")
         for raw in markdown.components(separatedBy: "\n") {
             let line = raw.trimmingCharacters(in: .whitespaces)
 
+            if skippingHeader {
+                // The header's explicit terminator. Keyed on the marker rather
+                // than the `<br clear="all">` that sits *inside* the header for
+                // the title's float, which would end the skip too early and
+                // leak the rest of the header as literal markup.
+                if line.hasPrefix("<!-- /header") { skippingHeader = false }
+                continue
+            }
             if line.hasPrefix("```") {
                 inFence.toggle()
                 out.append(raw)
@@ -146,19 +161,36 @@ nonisolated enum Readme {
             }
             if line.hasPrefix("<table") { skippingUntil = "</table>"; continue }
             if line.hasPrefix("<video") { skippingUntil = "</video>"; continue }
-            // Any other standalone markup line: <p …>, </p>, <br>, <sub>,
-            // <picture>, <source …>, <img …>. Only a line that is *wholly*
-            // markup is dropped, so prose mentioning a tag inside backticks
-            // (e.g. `AppleTree <path>`) is untouched.
-            if isMarkupOnly(line) { continue }
+            // Elsewhere in the document, a line whose tags can be removed
+            // leaving nothing but whitespace goes too. Removing the tags first
+            // is what makes this safe: real prose containing a tag
+            // (`` `AppleTree <path>` ``) keeps its text and survives.
+            if line.contains("<"), stripMarkup(line).trimmingCharacters(in: .whitespaces).isEmpty {
+                continue
+            }
             out.append(raw)
         }
         return out.joined(separator: "\n")
     }
 
-    /// Whether a line is nothing but an HTML tag.
-    private static func isMarkupOnly(_ line: String) -> Bool {
-        line.hasPrefix("<") && line.hasSuffix(">")
+    /// Remove every HTML tag from a line, leaving whatever text it wrapped.
+    ///
+    /// A deliberate single-pass scanner rather than a regex: it walks the string
+    /// once, skips anything between `<` and `>`, and keeps the rest. No nesting
+    /// to handle, because this only ever sees one line of a README.
+    static func stripMarkup(_ line: String) -> String {
+        var out = ""
+        var inTag = false
+        for character in line {
+            if character == "<" {
+                inTag = true
+            } else if character == ">" {
+                inTag = false
+            } else if !inTag {
+                out.append(character)
+            }
+        }
+        return out
     }
 }
 

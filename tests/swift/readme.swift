@@ -50,10 +50,140 @@ enum ReadmeTests {
         check("no <picture>/<source> survives",
               !shown.contains("<picture") && !shown.contains("<source"))
         check("no leaked <p> line survives", !shown.contains("<p align"))
+
+        // --- The header's own markup is gone, whichever tag would reveal it ---
+        // The header is skipped as one block, so EVERY tag inside it must be
+        // absent. Asserting only on `<p align` would pass even if the skip
+        // stopped early, because the lines after the halfway point use `<h1>`,
+        // `<sub>` and `<br>`. These are the markers that catch a short skip.
+        check("no <h1> markup survives", !shown.contains("<h1"))
+        check("no <img> markup survives", !shown.contains("<img"))
+        check("no <sub> markup survives", !shown.contains("<sub"))
+        check("no html comment survives", !shown.contains("<!--"))
+
+        // --- The header's terminator is exclusive -----------------------------
+        // The in-app skip ends at the header's explicit `<!-- /header -->`
+        // marker, NOT at the `<br clear="all">` inside it. That inner `<br>`
+        // exists to end the title's float; treating it as the terminator ended
+        // the skip halfway and leaked the rest of the header as literal text.
+        //
+        // The header's own prose is deliberately absent either way — the viewer
+        // draws the title, tagline and App Store button for itself, so re-adding
+        // them here would duplicate them. What must survive is everything AFTER
+        // the header, which is what a short skip would swallow.
+        check("the Features heading still follows the header",
+              shown.contains("## Features"))
+        // Asserted against the tagline *read out of the file* rather than a
+        // hardcoded copy of it. A literal here would silently stop testing
+        // anything the next time the wording changes — the check would pass
+        // because the old string is genuinely absent, not because the new one
+        // was correctly stripped from the body.
+        //
+        // The markup is stripped from the derived line before comparing. The
+        // raw line ends in `</p>`, and `forDisplay` removes that tag, so a
+        // comparison against the raw text can never match what the viewer holds
+        // — the assertion would pass no matter what leaked.
+        if let tagRange = raw.range(of: "in under a second.</strong><br>\n") {
+            let after = raw[tagRange.upperBound...]
+            let tagline = Readme.stripMarkup(String(after.prefix { $0 != "\n" }))
+                .trimmingCharacters(in: .whitespaces)
+            check("the header's tagline is not duplicated into the body",
+                  !tagline.isEmpty && !shown.contains(tagline),
+                  "the viewer draws its own tagline; this would duplicate it")
+        } else {
+            check("the header has a tagline line", false,
+                  "expected the tagline to follow the headline in the header")
+        }
         // `</p>` and `<br>` are the ones that got glued to prose and rendered
         // as literal text next to real words.
         check("no stray closing </p> survives", !shown.contains("</p>"))
         check("no stray <br> survives", !shown.contains("<br>"))
+
+        // --- The header stays compact ----------------------------------------
+        // The title's `<br clear="all">` is what used to force the floats onto
+        // their own row and add a whole extra band of vertical space. Without
+        // it the title sits beside the marks, which is the compact layout.
+        // Asserting on the raw file, not the displayed text, because the header
+        // is removed from what the viewer shows.
+        check("the header has no <br clear> spacer",
+              !raw.contains("<br clear="),
+              "that element adds a full row above the title")
+        check("the header is terminated for the in-app skip",
+              raw.contains("<!-- /header -->"),
+              "without it the header markup leaks into the README window")
+        // A table cannot be made borderless on GitHub, so its return would also
+        // bring the borders back.
+        check("the header is not a table", !raw.prefix(1200).contains("<table"))
+
+        // --- The header marks stay clickable ---------------------------------
+        // GitHub wraps every heading in `<div class="markdown-heading">`, which
+        // its CSS gives `position: relative`. A positioned box paints ABOVE a
+        // float, so a logo floated on its own line before the heading ends up
+        // underneath that div — visible, but not clickable. Measured against
+        // GitHub's own stylesheets: 42 of 49 probe points on the erklab mark hit
+        // the heading instead of the link.
+        //
+        // Inside the heading there is no such overlap: the floats belong to the
+        // heading's own box. So the header must put both marks INSIDE the <h1>,
+        // which also keeps the compact single-row layout.
+        let headerText = raw.prefix(900)
+        let h1Start = headerText.range(of: "<h1")
+        let h1End = headerText.range(of: "</h1>")
+        check("the header has an <h1>", h1Start != nil && h1End != nil)
+        if let s = h1Start, let e = h1End {
+            let heading = String(headerText[s.lowerBound..<e.upperBound])
+            check("the erklab link is inside the <h1>",
+                  heading.contains("erklab.com"),
+                  "outside it, the heading's positioned box covers the mark")
+            check("the app icon is inside the <h1>",
+                  heading.contains("assets/icon.png"),
+                  "outside it, the heading's positioned box covers the mark")
+            check("the erklab mark is an anchor, not a bare image",
+                  heading.contains("<a href=\"https://erklab.com\">"))
+        }
+        // Floats outside the heading are the bug; they also cost a row.
+        let beforeH1 = h1Start.map { String(headerText[headerText.startIndex..<$0.lowerBound]) } ?? ""
+        check("no float is stranded before the <h1>",
+              !beforeH1.contains("<img"),
+              "a float here is covered by the heading and not clickable")
+
+        // --- The marks are small enough to clear the <h1> underline ----------
+        // GitHub draws `border-bottom: 1px solid` under an h1, at the bottom of
+        // its content box. A float INSIDE the h1 that is taller than the line
+        // box hangs below that line, and the rule is painted across it.
+        //
+        // Measured against GitHub's real stylesheets: the h1 content box ends at
+        // y=74 in a 24px-padded document, and the 1px rule sits exactly there.
+        // A 64px icon spans y 24..88 and is sliced; 48px spans 24..72 and clears
+        // it. The h1's own line box (font-size 2em x line-height 1.25 = 40px) is
+        // the natural bound, so 48px is the largest safe square icon here.
+        //
+        // These assertions read the declared widths from the markup, which is
+        // what actually controls the rendered height.
+        func declaredWidth(of asset: String) -> Int? {
+            guard let r = raw.range(of: "src=\"\(asset)\"") else { return nil }
+            let after = raw[r.upperBound...]
+            guard let w = after.range(of: "width=\""),
+                  let close = after[w.upperBound...].firstIndex(of: "\"") else { return nil }
+            return Int(after[w.upperBound..<close])
+        }
+        if let icon = declaredWidth(of: "assets/icon.png") {
+            check("the app icon is not taller than the h1 line box",
+                  icon <= 48,
+                  "declared \(icon)px: a square icon over ~48px crosses the h1 rule")
+        } else {
+            check("the app icon declares a width", false, "no width= on assets/icon.png")
+        }
+        // The erklab mark is 301x98, so its height is width / 3.07. It must also
+        // stay under the rule.
+        if let logo = declaredWidth(of: "assets/erklab-logo.svg") {
+            let height = Double(logo) / (301.0 / 98.0)
+            check("the erklab mark is not taller than the h1 line box",
+                  height <= 48,
+                  "declared \(logo)px wide -> \(String(format: "%.0f", height))px tall")
+        } else {
+            check("the erklab mark declares a width", false, "no width=")
+        }
         // A backticked tag is documentation, not markup.
         check("prose mentioning a tag is kept", shown.contains("AppleTree <path>"))
 
@@ -93,7 +223,14 @@ enum ReadmeTests {
         // --- Prose outside a fence starts a NEW block -----------------------
         // Directly targets the regression: unclassified text must not merge with
         // the heading that follows it.
+        //
+        // Deliberately NOT starting with markup: a document that opens with an
+        // HTML block has its header skipped wholesale (that is how the real
+        // README's header is dropped), so a fixture beginning with `<p>` would
+        // test the header rule instead of the parser's.
         let leaky = """
+        Intro paragraph.
+
         <p align="center">
         </p>
         ## Features

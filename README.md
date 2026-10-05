@@ -1,29 +1,12 @@
-<table>
-  <tr>
-    <td width="20%" align="center" valign="middle">
-      <img src="assets/icon.png" width="112" alt="AppleTree icon">
-    </td>
-    <td width="60%" align="center" valign="middle">
-      <h1>AppleTree</h1>
-      <p><strong>A fast, native disk-space treemap for macOS</strong>, in the spirit of WizTree.<br>
-      Scan a disk, see exactly what is consuming it, and reclaim the space —<br>
-      without handing your file list to anyone.</p>
-      <p>Requires Apple Silicon and macOS 14 or later.</p>
-      <p><a href="https://apps.apple.com/app/id6819034229"><strong>▶︎ Get AppleTree on the Mac App Store</strong></a></p>
-      <p><sub>Free for non-commercial use. <strong>Buying it on the App Store is what grants commercial use</strong> — the source itself stays non-commercial. See <a href="#license">License</a>.</sub></p>
-    </td>
-    <td width="20%" align="center" valign="middle">
-      <a href="https://erklab.com">
-        <picture>
-          <source media="(prefers-color-scheme: dark)" srcset="assets/erklab-logo-white.svg">
-          <img src="assets/erklab-logo.svg" width="132" alt="erklab">
-        </picture>
-      </a>
-      <br>
-      <sub>brought to you by <a href="https://erklab.com">erklab</a></sub>
-    </td>
-  </tr>
-</table>
+<h1 align="center"><img align="left" src="assets/icon.png" width="48" alt="AppleTree icon"><a href="https://erklab.com"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/erklab-logo-white.svg"><img align="right" src="assets/erklab-logo.svg" width="112" alt="erklab"></picture></a>AppleTree</h1>
+
+<p align="center"><strong>A native macOS disk-space treemap that scans a 250,000-file drive in under a second.</strong><br>
+Shows you what's safe to delete, not just what's big.</p>
+
+<p align="center"><strong><a href="https://apps.apple.com/app/id6819034229">Get AppleTree on the Mac App Store</a></strong> — or build it from source and use it non-commercially, free.<br>
+<sub>Requires Apple Silicon and macOS 14 or later.</sub></p>
+
+<!-- /header -->
 
 <p align="center">
   <video src="https://github.com/user-attachments/assets/2b2eda2e-cfae-471b-b993-17f463eaa76c" width="90%" controls>
