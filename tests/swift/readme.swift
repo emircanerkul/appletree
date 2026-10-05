@@ -140,8 +140,49 @@ enum ReadmeTests {
         // has three fenced blocks (its ```sh samples).
         let codeBlocks = blocks.filter { if case .codeBlock = $0.role { return true } else { return false } }
         check("all three code blocks were detected", codeBlocks.count == 3, "got \(codeBlocks.count)")
-        let tableRows = blocks.filter { if case .tableRow = $0.role { return true } else { return false } }
-        check("table rows were detected", tableRows.count >= 8, "got \(tableRows.count)")
+        // --- Tables are ROWS of cells, not one cell per block ---------------
+        // The bug: keying a run on the first intent component keyed on the
+        // CELL, so every cell became its own full-width block and the benchmark
+        // tables rendered as a stack of single-cell rows. Counting `.tableRow`
+        // blocks alone did NOT catch that, because each cell was itself such a
+        // block — so the assertions below check cell counts and widths.
+        let tableRows = blocks.compactMap { block -> (cells: [AttributedString], header: Bool, align: [ColumnAlign])? in
+            if case .tableRow(let cells, let header, let align) = block.role { return (cells, header, align) }
+            return nil
+        }
+        check("table rows were detected", tableRows.count >= 6, "got \(tableRows.count)")
+        check("rows carry more than one cell",
+              tableRows.allSatisfy { $0.cells.count >= 2 },
+              "cell counts: \(tableRows.map(\.cells.count))")
+        // The README's three tables are 3, 3 and 2 columns wide.
+        check("a three-column table produced three cells in a row",
+              tableRows.contains { $0.cells.count == 3 },
+              "widths seen: \(Set(tableRows.map(\.cells.count)).sorted())")
+        check("a header row is marked as one",
+              tableRows.contains(where: \.header),
+              "no row flagged header")
+        // Column alignment must be read from the `---:` markers: the benchmark
+        // tables right-align their numbers, and losing that is invisible in text.
+        check("a row carries per-column alignment",
+              tableRows.contains { $0.align.count >= 3 },
+              "alignments: \(tableRows.map { $0.align.count })")
+        // Cell text must be the cell, not the whole row concatenated. The README
+        // has three tables; each header row's cells must be exactly the header
+        // labels, individually — not the row's text in one cell.
+        let headerRows = tableRows.filter(\.header)
+        check("every table has a header row", headerRows.count >= 3, "got \(headerRows.count)")
+        for row in headerRows {
+            // A header cell is short (a label), never the whole row joined.
+            check("header cells are individual labels",
+                  row.cells.allSatisfy { String($0.characters).count < 30 },
+                  "cells: \(row.cells.map { String($0.characters) })")
+        }
+        check("the engine table's header row holds its own labels",
+              headerRows.contains { row in
+                  let labels = row.cells.map { String($0.characters).trimmingCharacters(in: .whitespaces) }
+                  return labels.contains("Scan time") && labels.contains("Peak memory")
+              },
+              "headers: \(headerRows.map { $0.cells.map { String($0.characters) } })")
         let listItems = blocks.filter { if case .listItem = $0.role { return true } else { return false } }
         check("list items were detected", listItems.count >= 8, "got \(listItems.count)")
 

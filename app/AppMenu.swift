@@ -166,9 +166,9 @@ private struct AboutView: View {
                 Text("brought to you by")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
-                ErklabLogo(height: 22)
+                ErklabLogo(height: 18)
             }
-            .padding(.top, 6)
+            .padding(.top, 5)
         }
         .padding(24)
         .frame(width: 420)

@@ -215,16 +215,36 @@ private struct DocumentBlockView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(Color.white.opacity(0.06),
                             in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        case .tableRow:
-            Text(block.text)
-                .font(.system(.callout, design: .monospaced))
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 3)
-                .padding(.horizontal, 8)
-                .background(Color.white.opacity(0.04),
-                            in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        case .tableRow(let cells, let header, let align):
+            // Real columns, one row: the markdown's own column alignment drives
+            // a Grid so numbers line up as a table rather than as stacked rows.
+            Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 0) {
+                GridRow {
+                    ForEach(Array(cells.enumerated()), id: \.offset) { index, cell in
+                        Text(cell)
+                            .font(.system(.callout, design: .monospaced))
+                            .fontWeight(header ? .semibold : .regular)
+                            .frame(maxWidth: .infinity, alignment: frameAlignment(for: align, at: index))
+                    }
+                }
+            }
+            .padding(.vertical, 4)
+            .padding(.horizontal, 8)
+            .background(Color.white.opacity(header ? 0.08 : 0.04),
+                        in: RoundedRectangle(cornerRadius: 6, style: .continuous))
         case .paragraph:
             Text(block.text).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// A column's alignment, falling back to leading when the table declared
+    /// fewer alignments than it has cells.
+    private func frameAlignment(for align: [ColumnAlign], at index: Int) -> Alignment {
+        guard align.indices.contains(index) else { return .leading }
+        switch align[index] {
+        case .leading: return .leading
+        case .center: return .center
+        case .trailing: return .trailing
         }
     }
 

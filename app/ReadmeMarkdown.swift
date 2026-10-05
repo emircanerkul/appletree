@@ -10,12 +10,19 @@ import Foundation
 // This file is deliberately free of SwiftUI: it is the part worth testing, and
 // a test can compile it without linking a view framework.
 
+/// How one table column is aligned, from the markdown's `---:` markers.
+nonisolated enum ColumnAlign: Equatable {
+    case leading, center, trailing
+}
+
 /// What a markdown block is, which decides how it is drawn.
 nonisolated enum BlockRole: Equatable {
     case heading(Int)
     case listItem(Int)
     case codeBlock
-    case tableRow
+    /// One table row: its cells plus each column's alignment. A row is a block,
+    /// not a cell — see `MarkdownBlocks.parse`.
+    case tableRow(cells: [AttributedString], header: Bool, align: [ColumnAlign])
     case paragraph
 }
 
@@ -86,6 +93,17 @@ nonisolated enum Readme {
 
 /// Turns the README into blocks using Foundation's own markdown parser.
 nonisolated enum MarkdownBlocks {
+    /// Structural role, kept separate from the rendered `BlockRole` because a
+    /// table row needs its cells collected before it becomes a block.
+    private enum RunRole: Equatable {
+        case heading(Int)
+        case listItem(Int)
+        case codeBlock
+        case tableCell(column: Int, row: Int, header: Bool)
+        case tableStart
+        case paragraph
+    }
+
     static func parse(_ markdown: String) -> [ReadmeBlock] {
         var options = AttributedString.MarkdownParsingOptions()
         options.interpretedSyntax = .full
@@ -93,20 +111,62 @@ nonisolated enum MarkdownBlocks {
         guard let parsed = try? AttributedString(markdown: markdown, options: options) else { return [] }
 
         var blocks: [ReadmeBlock] = []
+        /// Alignment declared by the table's `---:` markers, indexed by column.
+        var align: [ColumnAlign] = []
+
+        // The block being accumulated, and the cells of the table row being
+        // accumulated. A table row is ONE block: keying on the run's first
+        // intent component would key on the CELL, which turned every cell into
+        // its own full-width row (the bug the README's benchmark tables showed).
         var text = AttributedString()
         var role: BlockRole?
-        // The intent container's numeric identity: successive runs of one
-        // paragraph share it; a new paragraph gets a new one.
         var container: Int?
 
-        func flush() {
+        var cells: [AttributedString] = []
+        var cellsContainer: Int?
+        var cellsHeader = false
+
+        func appendBlock() {
             defer { text = AttributedString(); role = nil; container = nil }
             guard !text.characters.isEmpty, let role else { return }
             blocks.append(ReadmeBlock(id: blocks.count, text: text, role: role))
         }
 
+        func flushCells() {
+            defer { cells = []; cellsContainer = nil; cellsHeader = false }
+            guard !cells.isEmpty else { return }
+            blocks.append(ReadmeBlock(
+                id: blocks.count,
+                text: AttributedString(),
+                role: .tableRow(cells: cells, header: cellsHeader, align: align)))
+        }
+
         for run in parsed.runs {
-            let runRole = roleOf(run)
+            let runRole = runRoleOf(run)
+
+            // A table cell: collect it into the current row. Its own identity is
+            // per-cell, which is exactly why the row is keyed on the row
+            // identity instead.
+            if case .tableCell(_, let row, let header) = runRole {
+                let rowContainer = containerOf(run, for: row)
+                if cellsContainer != rowContainer {
+                    flushCells()
+                    cellsContainer = rowContainer
+                    cellsHeader = header
+                }
+                // Column alignment rides on every cell run (the `.table`
+                // component is attached to each one, not to a run of its own),
+                // so it is read here rather than from a table-start run.
+                if align.isEmpty { align = alignmentOf(run) }
+                let piece = AttributedString(parsed[run.range])
+                // Cells are drawn in their own Grid columns, so the separator is
+                // only needed when a cell's own text is empty (a blank column).
+                cells.append(piece)
+                continue
+            }
+            // Anything after a table belongs to a new block.
+            flushCells()
+
             let runContainer = run.presentationIntent?.components.first?.identity
 
             // Whether this run continues the block being built.
@@ -120,34 +180,104 @@ nonisolated enum MarkdownBlocks {
             let continues: Bool
             switch (container, runContainer) {
             case (nil, nil):
-                continues = !text.characters.isEmpty && sameKind(runRole, role)
+                continues = !text.characters.isEmpty && sameKind(blockRole(runRole), role)
             case (let open?, let next?):
-                continues = open == next && sameKind(runRole, role)
+                continues = open == next && sameKind(blockRole(runRole), role)
             default:
                 continues = false
             }
-            if !continues { flush() }
+            if !continues { appendBlock() }
 
-            role = runRole
+            role = blockRole(runRole)
             container = runContainer
             text.append(parsed[run.range])
         }
-        flush()
+        // Order matters: a trailing table row is a block, and must be emitted
+        // even when no later run flushes it.
+        flushCells()
+        appendBlock()
         return blocks
     }
 
-    static func roleOf(_ run: AttributedString.Runs.Run) -> BlockRole {
-        guard let components = run.presentationIntent?.components else { return .paragraph }
+    /// The container identity a table cell belongs to.
+    ///
+    /// For a cell the intent chain is `[cell, row, table]`, so the ROW is the
+    /// second component. Grouping by the row is what makes one block per row.
+    private static func containerOf(_ run: AttributedString.Runs.Run, for row: Int) -> Int {
+        let components = run.presentationIntent?.components ?? []
         for component in components {
             switch component.kind {
-            case .header(let level): return .heading(level)
-            case .listItem(let ordinal): return .listItem(ordinal)
-            case .codeBlock: return .codeBlock
-            case .tableHeaderRow, .tableRow: return .tableRow
+            case .tableRow(let n):
+                if n == row { return component.identity }
+            case .tableHeaderRow:
+                return component.identity
+            default:
+                continue
+            }
+        }
+        // No row component: fall back to the table itself so all cells of an
+        // unclassifiable table still group by table rather than one per cell.
+        return components.last?.identity ?? -1
+    }
+
+    private static func alignmentOf(_ run: AttributedString.Runs.Run) -> [ColumnAlign] {
+        let components = run.presentationIntent?.components ?? []
+        for component in components {
+            if case .table(let columns) = component.kind {
+                return columns.map { column in
+                    switch column.alignment {
+                    case .right: return .trailing
+                    case .center: return .center
+                    default: return .leading
+                    }
+                }
+            }
+        }
+        return []
+    }
+
+    private static func runRoleOf(_ run: AttributedString.Runs.Run) -> RunRole {
+        guard let components = run.presentationIntent?.components else { return .paragraph }
+        var headingLevel: Int?
+        var listOrdinal: Int?
+        var inCode = false
+        var cell: (column: Int, row: Int, header: Bool)?
+        var headerColumn: Int?
+        var sawTable = false
+        for component in components {
+            switch component.kind {
+            case .header(let level): headingLevel = level
+            case .listItem(let ordinal): listOrdinal = ordinal
+            case .codeBlock: inCode = true
+            case .tableCell(let column):
+                cell = (column, 0, false)
+            case .tableRow(let row):
+                if let c = cell { cell = (c.column, row, false) }
+            case .tableHeaderRow:
+                if let c = cell { headerColumn = c.column }
+            case .table: sawTable = true
             default: continue
             }
         }
+        if let headerColumn { return .tableCell(column: headerColumn, row: -1, header: true) }
+        if let cell { return .tableCell(column: cell.column, row: cell.row, header: false) }
+        if sawTable { return .tableStart }
+        if let headingLevel { return .heading(headingLevel) }
+        if let listOrdinal { return .listItem(listOrdinal) }
+        if inCode { return .codeBlock }
         return .paragraph
+    }
+
+    private static func blockRole(_ role: RunRole) -> BlockRole {
+        switch role {
+        case .heading(let level): return .heading(level)
+        case .listItem(let ordinal): return .listItem(ordinal)
+        case .codeBlock: return .codeBlock
+        // Cells never reach here; the table branch consumes them.
+        case .tableCell: return .paragraph
+        case .tableStart: return .paragraph
+        case .paragraph: return .paragraph
+        }
     }
 
     /// Whether two roles are the same kind of block. Successive runs of one
