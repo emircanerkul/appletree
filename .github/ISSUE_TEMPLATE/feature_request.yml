@@ -1,0 +1,59 @@
+name: Feature request
+description: Propose a feature in the issue tracker.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea. Please describe the problem before the solution —
+        it is the part that decides whether a feature fits AppleTree's shape.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: |
+        What are you trying to do that AppleTree makes hard or impossible
+        today? A concrete situation is worth more than an abstract one.
+      placeholder: |
+        I scan several drives, and every time I have to…
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like AppleTree to do?
+      description: Your suggested behaviour. A rough sketch is fine.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What have you tried instead?
+      description: |
+        Other tools, workarounds, or other ways AppleTree could solve it.
+        Optional, but it often rules out an approach before anyone builds it.
+    validations:
+      required: false
+
+  - type: textarea
+    id: mockup
+    attributes:
+      label: Mockups or examples
+      description: Drag in a screenshot or a drawing if it helps explain the idea.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and this is not a duplicate.
+          required: true
+        - label: This is a feature request, not a bug report or a support question.
+          required: true

@@ -189,3 +189,22 @@
 /* Settings window tab labels. */
 "General" = "General";
 "Model Providers" = "Model Providers";
+
+/* About panel and Help menu. */
+"About AppleTree" = "About AppleTree";
+"Version %@" = "Version %@";
+"AppleTree on GitHub" = "AppleTree on GitHub";
+"Bug Report" = "Bug Report";
+"Report a bug in AppleTree" = "Report a bug in AppleTree";
+"Report a security vulnerability" = "Report a security vulnerability";
+"Please review our security policy for more details" = "Please review our security policy for more details";
+"Feature request" = "Feature request";
+"Propose a feature in the issue tracker" = "Propose a feature in the issue tracker";
+"Question" = "Question";
+"Ask a question in the issue tracker" = "Ask a question in the issue tracker";
+"Browse the source, releases and issues" = "Browse the source, releases and issues";
+"Open source on GitHub" = "Open source on GitHub";
+"View license" = "View license";
+"AppleTree shows you what is filling your disk, and cleans up the folders tools rebuild on demand. Nothing is removed without your say-so." = "AppleTree shows you what is filling your disk, and cleans up the folders tools rebuild on demand. Nothing is removed without your say-so.";
+"Free for non-commercial use. Dual-licensed: MIT and CC BY-NC-SA 4.0." = "Free for non-commercial use. Dual-licensed: MIT and CC BY-NC-SA 4.0.";
+"© 2026 Emircan ERKUL" = "© 2026 Emircan ERKUL";

@@ -27,6 +27,24 @@ struct AppleTreeApp: App {
                 .preferredColorScheme(.dark)
         }
         .windowStyle(.automatic)
+        .commands {
+            // Replace AppKit's stock About panel: it can show a version, but
+            // not that the app is open source or where the project lives.
+            CommandGroup(replacing: .appInfo) {
+                Button(String(localized: "About AppleTree")) { AboutWindow.show() }
+            }
+            // AppKit's Help menu normally points at a help book; with none,
+            // macOS greys it out with "Help isn't available for AppleTree".
+            // AppleTree has no manual to write — it is one window and a button
+            // — so the menu carries the places a user actually needs instead:
+            // the bug form, security, feature requests, questions, and source.
+            CommandGroup(replacing: .help) {
+                ForEach(AppLinkItem.all) { item in
+                    Button(item.title) { AppLinks.open(item.url) }
+                        .helpText(item.detail)
+                }
+            }
+        }
 
         // Cmd+, — language and custom model providers.
         Settings {
@@ -39,4 +57,11 @@ struct AppleTreeApp: App {
             .frame(minHeight: 360)
         }
     }
+}
+
+private extension View {
+    /// `.help()` takes a `LocalizedStringKey`, and the tooltip text here is
+    /// already resolved, so it goes through the verbatim initializer to avoid
+    /// looking the resolved sentence up in the tables a second time.
+    func helpText(_ text: String) -> some View { help(Text(verbatim: text)) }
 }

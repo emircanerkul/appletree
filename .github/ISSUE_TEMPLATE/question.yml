@@ -1,0 +1,47 @@
+name: Question
+description: Ask a question about using AppleTree.
+title: "[Question]: "
+labels:
+  - question
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before asking, the README answers the common ones: what AppleTree
+        touches, why a whole-disk scan needs Full Disk Access, and how the
+        two-step cleanup works.
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question
+      description: Ask it in your own words. Please include what you already tried.
+    validations:
+      required: true
+
+  - type: input
+    id: app-version
+    attributes:
+      label: AppleTree version
+      description: "Found in AppleTree → About AppleTree. Fill this in if your question is version-specific."
+      placeholder: "e.g. 0.0.1"
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Anything else?
+      description: Screenshots, the exact wording of a message, or extra context.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I read the README and searched existing issues.
+          required: true
+        - label: I have not included any API keys or tokens.
+          required: true

@@ -1,0 +1,10 @@
+# The template chooser: what a reporter sees at /issues/new/choose.
+#
+# Discussions is deliberately not enabled on this repository, so feature
+# requests and questions are issue forms rather than contact links. A contact
+# link pointing at a disabled Discussions would 404 for every reporter.
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/emircanerkul/appletree/security/policy
+    about: Please review our security policy for more details.

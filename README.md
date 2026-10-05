@@ -285,6 +285,22 @@ counts for identical bytes, and — just as importantly — what is **not** meas
 Results are regenerated with `cd bench && ./run.sh` and land in
 [`docs/benchmarks/results/`](docs/benchmarks/results/).
 
+## Getting help
+
+AppleTree has no manual — it is one window and a button, and this README covers
+the rest. The **Help** menu carries the places that are actually useful instead:
+
+| Menu item | Where it goes |
+|---|---|
+| Bug Report | the issue form, with fields for your version, macOS and setup |
+| Report a security vulnerability | [SECURITY.md](.github/SECURITY.md), for private reporting |
+| Feature request | the feature-request issue form |
+| Question | the question issue form |
+| AppleTree on GitHub | the source, releases and issues |
+
+**AppleTree → About AppleTree** carries the version and links to the project and
+its license.
+
 ## License
 
 AppleTree is dual-licensed by history: the code inherited from BlitzTree is MIT,

@@ -1,0 +1,154 @@
+name: Bug Report
+description: Something in AppleTree does not work the way it should.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this. AppleTree only ever moves
+        folders to the Trash, so nothing here is permanent — if a cleanup
+        went wrong, your files are almost certainly still in the Trash.
+
+  - type: markdown
+    attributes:
+      value: |
+        > **Please do not paste API keys or tokens here.** They are stored in
+        > your macOS Keychain, never in a preference file, so they are not
+        > needed to diagnose anything.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Describe the bug in your own words.
+      placeholder: I clicked Scan, and…
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+      placeholder: I expected the treemap to…
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The exact clicks that lead to the problem.
+      placeholder: |
+        1. Open AppleTree
+        2. Click "Scan" and choose Home
+        3. …
+    validations:
+      required: true
+
+  - type: input
+    id: app-version
+    attributes:
+      label: AppleTree version
+      description: "Found in AppleTree → About AppleTree, next to the icon."
+      placeholder: "e.g. 0.0.1"
+    validations:
+      required: true
+
+  - type: input
+    id: macos-version
+    attributes:
+      label: macOS version
+      description: "Apple menu → About This Mac."
+      placeholder: "e.g. 27.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: chip
+    attributes:
+      label: Chip
+      description: AppleTree requires Apple Silicon.
+      options:
+        - Apple Silicon (M-series)
+        - Intel
+        - Other / not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: full-disk-access
+    attributes:
+      label: Is Full Disk Access granted?
+      description: |
+        System Settings → Privacy & Security → Full Disk Access. Without it,
+        a whole-disk scan is refused by design and shows the permission card.
+      options:
+        - "Yes — granted"
+        - "No — not granted"
+        - "Not sure"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part of the app?
+      options:
+        - Scanning
+        - Treemap view
+        - Rings view
+        - Directory list
+        - Clean Up panel (manual)
+        - Clean Up panel (AI planner)
+        - Model providers / Settings
+        - Menus / window
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: planner
+    attributes:
+      label: Which planner were you using, if any?
+      description: Only relevant to the Clean Up panel.
+      options:
+        - Not using a planner
+        - Claude Code
+        - Codex
+        - A custom model provider
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: |
+        If the problem is visual, a screenshot helps a lot. Drag images here
+        or paste them. Please check they do not show files you would rather
+        keep private.
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Anything else?
+      description: |
+        Console output, a crash report, or any detail that did not fit above.
+        You can skip this if you have nothing to add.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and this is not a duplicate.
+          required: true
+        - label: I have removed anything private (API keys, tokens, personal file names).
+          required: true

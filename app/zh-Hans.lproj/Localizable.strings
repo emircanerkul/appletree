@@ -195,3 +195,22 @@
 /* Settings window tab labels. */
 "General" = "通用";
 "Model Providers" = "模型提供商";
+
+/* About panel and Help menu. */
+"About AppleTree" = "关于 AppleTree";
+"Version %@" = "版本 %@";
+"AppleTree on GitHub" = "GitHub 上的 AppleTree";
+"Bug Report" = "报告缺陷";
+"Report a bug in AppleTree" = "报告 AppleTree 的缺陷";
+"Report a security vulnerability" = "报告安全漏洞";
+"Please review our security policy for more details" = "详情请参阅我们的安全政策";
+"Feature request" = "功能建议";
+"Propose a feature in the issue tracker" = "在议题跟踪器中提出功能建议";
+"Question" = "提问";
+"Ask a question in the issue tracker" = "在议题跟踪器中提问";
+"Browse the source, releases and issues" = "浏览源码、发行版和议题";
+"Open source on GitHub" = "在 GitHub 上开源";
+"View license" = "查看许可证";
+"AppleTree shows you what is filling your disk, and cleans up the folders tools rebuild on demand. Nothing is removed without your say-so." = "AppleTree 显示磁盘空间被什么占用，并清理工具按需重建的文件夹。未经你同意不会删除任何内容。";
+"Free for non-commercial use. Dual-licensed: MIT and CC BY-NC-SA 4.0." = "非商业用途免费。双重许可：MIT 和 CC BY-NC-SA 4.0。";
+"© 2026 Emircan ERKUL" = "© 2026 Emircan ERKUL";

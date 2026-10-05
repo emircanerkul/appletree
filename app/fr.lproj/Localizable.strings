@@ -195,3 +195,22 @@
 /* Settings window tab labels. */
 "General" = "Général";
 "Model Providers" = "Fournisseurs de modèles";
+
+/* About panel and Help menu. */
+"About AppleTree" = "À propos d'AppleTree";
+"Version %@" = "Version %@";
+"AppleTree on GitHub" = "AppleTree sur GitHub";
+"Bug Report" = "Signaler un bug";
+"Report a bug in AppleTree" = "Signaler un bug dans AppleTree";
+"Report a security vulnerability" = "Signaler une vulnérabilité";
+"Please review our security policy for more details" = "Consultez notre politique de sécurité pour plus de détails";
+"Feature request" = "Demande de fonctionnalité";
+"Propose a feature in the issue tracker" = "Proposer une fonctionnalité dans le suivi des tickets";
+"Question" = "Question";
+"Ask a question in the issue tracker" = "Poser une question dans le suivi des tickets";
+"Browse the source, releases and issues" = "Parcourir le code source, les versions et les tickets";
+"Open source on GitHub" = "Open source sur GitHub";
+"View license" = "Voir la licence";
+"AppleTree shows you what is filling your disk, and cleans up the folders tools rebuild on demand. Nothing is removed without your say-so." = "AppleTree vous montre ce qui remplit votre disque et nettoie les dossiers que les outils recréent à la demande. Rien n'est supprimé sans votre accord.";
+"Free for non-commercial use. Dual-licensed: MIT and CC BY-NC-SA 4.0." = "Gratuit pour un usage non commercial. Double licence : MIT et CC BY-NC-SA 4.0.";
+"© 2026 Emircan ERKUL" = "© 2026 Emircan ERKUL";
