@@ -243,10 +243,11 @@ struct GeneralSettingsView: View {
     /// The saved choice, "system" when following macOS.
     @State private var language: String
     @State private var saved: String
-    /// Scan automatically at launch. Default on: the absence of a stored
-    /// value must read as true, which object(forKey:) + explicit registration
-    /// below handle.
-    @AppStorage("bz.autoScan") private var autoScan = true
+    /// Scan automatically at launch. Default off: the absence of a stored
+    /// value means "do not scan", so a first run never starts a whole-disk
+    /// scan before the user has chosen. Changing this here also answers the
+    /// one-time home-screen offer, so the two cannot disagree.
+    @AppStorage("bz.autoScan") private var autoScan = false
 
     init() {
         // Default "system" (Follow system). A stored tag is normalized to a
@@ -287,6 +288,10 @@ struct GeneralSettingsView: View {
             Divider()
             VStack(alignment: .leading, spacing: 4) {
                 Toggle("Scan when AppleTree opens", isOn: $autoScan)
+                    // Settings is the durable home of this preference; changing
+                    // it deliberately also answers the first-run offer, so the
+                    // home screen never re-asks a question already decided here.
+                    .onChange(of: autoScan) { ScanModel.answerAutoScan(autoScan) }
                 Text("Scan the whole disk at launch. Turn off to pick a folder yourself first.")
                     .font(.caption)
                     .foregroundStyle(.secondary)

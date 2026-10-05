@@ -271,15 +271,10 @@ final class ScanModel {
     var elapsed: Double = 0
     var tree: Tree?
     var scanRoot: String = {
-        // `AppleTree /some/path` scans that path on launch (also handy for QA).
-        // An explicit argument is a deliberate choice for this launch, so it
-        // wins over the saved target.
-        if CommandLine.arguments.count > 1 {
-            var isDir: ObjCBool = false
-            let p = (CommandLine.arguments[1] as NSString).expandingTildeInPath
-            if FileManager.default.fileExists(atPath: p, isDirectory: &isDir), isDir.boolValue {
-                return p
-            }
+        // An explicit path argument is a deliberate choice for this launch, so
+        // it wins over the saved target.
+        if let p = commandLineTarget {
+            return p
         }
         // The target scanned last time, so the session opens where it left off.
         // Only if it is still there: an unmounted drive must not become the
@@ -541,6 +536,12 @@ final class ScanModel {
         static let scanRoot = "bz.scanRoot"
         static let trail = "bz.trail"
         static let trailIndex = "bz.trailIndex"
+        /// The launch-scan preference, shared with Settings through @AppStorage.
+        static let autoScan = "bz.autoScan"
+        /// Whether the user has answered the launch-scan question at all.
+        /// Distinct from `autoScan` itself: "never asked" and "asked and said
+        /// no" are different states, and only the first one offers the choice.
+        static let autoScanAnswered = "bz.autoScanSet"
     }
 
     /// Folders visited, oldest first, as absolute paths.
@@ -564,6 +565,53 @@ final class ScanModel {
     /// exactly "no parent left" — and mid-scan the tree is gone, as with
     /// back/forward.
     var canGoUp: Bool { tree != nil && !scanning && viewRoot != 0 }
+
+    // MARK: launch scan preference
+
+    /// The path passed on the command line, when there is a real one.
+    ///
+    /// `AppleTree /some/path` scans that path on launch (also handy for QA).
+    /// The check is "an existing directory", not "argv has a second element":
+    /// when the app is launched by double-clicking it in Finder, LaunchServices
+    /// appends its own `-psn_0_…` process-serial-number argument, which is not
+    /// a path. Counting arguments read that as an explicit target and silently
+    /// disabled the launch scan, so double-clicking behaved differently from
+    /// running the binary from a shell.
+    static var commandLineTarget: String? {
+        guard CommandLine.arguments.count > 1 else { return nil }
+        let p = (CommandLine.arguments[1] as NSString).expandingTildeInPath
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: p, isDirectory: &isDir), isDir.boolValue
+        else { return nil }
+        return p
+    }
+
+    /// The saved launch-scan choice. Reads `false` when never set: a first run
+    /// must not scan — and must not request Full Disk Access — until the user
+    /// says so.
+    static var autoScanPreference: Bool {
+        UserDefaults.standard.bool(forKey: Saved.autoScan)
+    }
+    /// True only while the user has never answered the launch-scan question.
+    ///
+    /// Distinct from the preference itself: "never asked" and "asked and said
+    /// no" are different states, and only the first offers the choice.
+    static var autoScanUnanswered: Bool {
+        !UserDefaults.standard.bool(forKey: Saved.autoScanAnswered)
+    }
+
+    /// Answer the question: store the value and retire the offer for good.
+    ///
+    /// Called by the first scan (the single owner of "a scan began") and by
+    /// Settings, since deliberately changing the setting there is also an
+    /// answer. One writer per key, so the value and the answered flag cannot
+    /// drift apart. Posts `autoScanAnswered` so a home screen that is already
+    /// on screen retires its offer without needing a relaunch.
+    static func answerAutoScan(_ enabled: Bool) {
+        UserDefaults.standard.set(enabled, forKey: Saved.autoScan)
+        UserDefaults.standard.set(true, forKey: Saved.autoScanAnswered)
+        NotificationCenter.default.post(name: .autoScanAnswered, object: nil)
+    }
 
     /// Show the folder that contains the one on screen.
     ///
@@ -801,8 +849,23 @@ final class ScanModel {
     private var activity: NSObjectProtocol?
     private var volumeTask: Task<VolumeSpace, Never>?
 
+    /// Whether the empty home screen still offers the launch-scan choice.
+    ///
+    /// Lives on the model rather than in the view so the one owner of "a scan
+    /// began" — `startScan`, whatever triggered it — can retire the offer. A
+    /// view-held flag would have to be cleared at all five scan entry points
+    /// and would drift the moment one was added.
+    var launchScanOffered = ScanModel.autoScanUnanswered
+
     func startScan(path: String? = nil) {
         if scanning || cleanupTrash.running { return }
+        // A scan is the answer, whichever control started it: record the
+        // current preference and retire the first-run offer for good. Saving
+        // the value here (rather than only in the checkbox) is what makes a
+        // bare "scan now" without touching the checkbox persist as "no" to
+        // auto-scan.
+        Self.answerAutoScan(Self.autoScanPreference)
+        launchScanOffered = false
         if let path { scanRoot = path }
         tree = nil
         cleanup = []
@@ -997,4 +1060,11 @@ nonisolated func rssBytes() -> (peak: UInt64, current: UInt64) {
 nonisolated enum Fmt {
     static func size(_ b: UInt64) -> String { Int64(b).formatted(.byteCount(style: .file)) }
     static func num(_ n: UInt64) -> String { n.formatted() }
+}
+
+extension Notification.Name {
+    /// The launch-scan question has been answered, so any home screen still
+    /// offering it should retire the offer. Posted by `answerAutoScan`, which
+    /// is the only writer of the answered flag.
+    static let autoScanAnswered = Notification.Name("bz.autoScanAnswered")
 }

@@ -70,9 +70,12 @@ and nothing else: it runs no tools and never reads your disk, so it is the
 option to pick if you want file contents to stay local. AppleTree still performs
 and re-checks every deletion itself.
 
-**Scan when AppleTree opens.** On by default. Turn it off in Settings → General
-to choose a folder yourself before anything is scanned. A whole-disk scan is
-never started without Full Disk Access.
+**Scan when AppleTree opens.** Off by default. The first launch shows the empty
+home screen with a one-time checkbox to turn launch scanning on; whatever you
+choose is saved and the offer is never shown again. Change it later in
+Settings → General. A whole-disk scan is never started without Full Disk Access:
+picking **Macintosh HD** without the grant shows the permission card first,
+while Home, Applications and a specific drive scan straight away.
 
 **Two ways to see the disk.** A cushion-shaded treemap colored by file type,
 with a synced Finder-style outline list, or DaisyDisk-style rings: click a

@@ -7,9 +7,11 @@ struct ContentView: View {
     @State private var showTable = true
     @AppStorage("bz.showCleanup") private var showCleanup = false
     @AppStorage("bz.listWidth") private var listWidth = 390.0
-    /// Scan the whole disk at launch. Default on; the user can turn it off
-    /// in Settings → General.
-    @AppStorage("bz.autoScan") private var autoScan = true
+    /// Scan the whole disk at launch. Default off: a first run must not start a
+    /// whole-disk scan — nor raise the Full Disk Access prompt — before the
+    /// user has said so. The empty home screen offers the choice once; Settings
+    /// → General carries it afterwards.
+    @AppStorage("bz.autoScan") private var autoScan = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -79,6 +81,12 @@ struct ContentView: View {
         // An agent run or the setup offer always shows in the panel.
         .onChange(of: model.agentRun == nil) { if model.agentRun != nil { showCleanup = true } }
         .onChange(of: model.panelRequests) { showCleanup = true }
+        // Settings also answers the launch-scan question. Without this the
+        // offer would linger on an already-open home screen until a relaunch,
+        // and the user would be asked something they just decided.
+        .onReceive(NotificationCenter.default.publisher(for: .autoScanAnswered)) { _ in
+            model.launchScanOffered = false
+        }
         .hidingWindowTitle()
         // Mouse side buttons walk the folder trail, the way they do in a
         // browser. They arrive as `otherMouseDown` on whatever view is under
@@ -89,19 +97,45 @@ struct ContentView: View {
         .onAppear {
             // Never start a whole-disk scan without FDA: every protected
             // app container would fire a permission prompt.
-            // bz.autoScan (default on) lets the user skip the launch scan;
-            // with it off the window shows the idle overlay until a scan
-            // is picked from the toolbar.
-            if !autoScan { return }
-            if FDA.isActive() {
-                model.startScan()
-            } else {
-                needsFDA = true
-            }
+            // bz.autoScan defaults to off, so a first run shows the empty home
+            // screen with the one-time launch-scan offer instead of scanning.
+            // An explicit `AppleTree /path` argument still scans: that is a
+            // deliberate choice for this launch, made before the window opened.
+            // `commandLineTarget` ignores the `-psn_0_…` argument that
+            // LaunchServices adds on a double-click, which is what a plain
+            // `arguments.count > 1` check mistook for a target.
+            guard autoScan || ScanModel.commandLineTarget != nil else { return }
+            requestScan()
         }
     }
 
     @State private var needsFDA = false
+    /// The path the FDA card is asking permission for, so "Scan without it"
+    /// resumes the target the user actually picked instead of silently
+    /// switching to the whole disk.
+    @State private var pendingScanPath: String? = nil
+
+    /// The one way a scan starts from the UI.
+    ///
+    /// A whole-disk scan without Full Disk Access makes macOS fire a
+    /// permission prompt for every protected app container, so the launch path
+    /// has always refused to start one — and README promises exactly that
+    /// ("A whole-disk scan is never started without Full Disk Access"). With
+    /// auto-scan off by default the first run reaches the scan buttons
+    /// directly, so that guard has to live here, where every button passes,
+    /// rather than only on the launch path.
+    ///
+    /// A narrower target (Home, Applications, a drive) raises no such prompts,
+    /// so it starts immediately even without the grant.
+    private func requestScan(path: String? = nil) {
+        let target = path ?? model.scanRoot
+        guard target == ScanTargets.macintoshHD.path, !FDA.isActive() else {
+            model.startScan(path: path)
+            return
+        }
+        pendingScanPath = path
+        needsFDA = true
+    }
 
     private var fdaOverlay: some View {
         // Top-anchored like the window's other states: dead-center made the
@@ -120,7 +154,9 @@ struct ContentView: View {
             }
             Button("Scan without it") {
                 needsFDA = false
-                model.startScan()
+                // The target the FDA card interrupted, or the default whole
+                // disk when the launch path raised it.
+                model.startScan(path: pendingScanPath)
             }
             .buttonStyle(.plain)
             .font(.caption)
@@ -201,7 +237,7 @@ struct ContentView: View {
         ToolbarItemGroup(placement: .automatic) {
             Menu {
                 ForEach(model.scanTargets) { target in
-                    Button(target.title) { model.startScan(path: target.path) }
+                    Button(target.title) { requestScan(path: target.path) }
                 }
                 Divider()
                 Button("Choose Folder…") { chooseFolder() }
@@ -212,7 +248,7 @@ struct ContentView: View {
             .help("Choose what to scan")
 
             Button {
-                model.startScan()
+                requestScan()
             } label: {
                 Label("Rescan", systemImage: "arrow.clockwise")
             }
@@ -269,9 +305,16 @@ struct ContentView: View {
                 .foregroundStyle(.secondary)
             Text("Pick a target and scan")
                 .foregroundStyle(.secondary)
+            // The one-time launch-scan question, above the targets because it
+            // decides what happens on *future* launches while the buttons below
+            // act on this one. Shown only until the first scan answers it, and
+            // never again after — not even after a Settings change.
+            if model.launchScanOffered {
+                launchScanOffer
+            }
             FlowLayout(spacing: 10) {
                 ForEach(model.scanTargets) { target in
-                    Button(target.title) { model.startScan(path: target.path) }
+                    Button(target.title) { requestScan(path: target.path) }
                         .buttonStyle(.bordered)
                         .controlSize(.large)
                 }
@@ -293,13 +336,37 @@ struct ContentView: View {
         }
     }
 
+    /// The first-run launch-scan choice.
+    ///
+    /// Same checkbox and wording as Settings → General, so the two surfaces
+    /// teach one concept rather than two. Reading it here and later finding it
+    /// in Settings should feel like the same switch moving, not a second
+    /// question. Flipping it only stores the value; the offer is retired when a
+    /// scan actually starts, so quitting before scanning keeps the choice
+    /// visible next launch.
+    private var launchScanOffer: some View {
+        VStack(spacing: 6) {
+            // @AppStorage persists to bz.autoScan on its own, so flipping this
+            // stores the value without retiring the offer: the question is
+            // answered when a scan starts, not when the box is ticked.
+            Toggle("Scan when AppleTree opens", isOn: $autoScan)
+                .toggleStyle(.checkbox)
+            Text("Scan the whole disk at launch. Turn off to pick a folder yourself first.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 10)
+        .padding(.horizontal, 16)
+        .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 10))
+    }
+
     private func chooseFolder() {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
         if panel.runModal() == .OK, let url = panel.url {
-            model.startScan(path: url.path)
+            requestScan(path: url.path)
         }
     }
 
