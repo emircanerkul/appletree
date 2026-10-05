@@ -293,7 +293,18 @@ struct ContentView: View {
             Toggle(isOn: $showCleanup) {
                 Label("Clean Up", systemImage: "sparkles")
             }
-            .help("Show folders that are safe to clean up")
+            // Off by default, and unavailable until a scan has produced
+            // something to show: the panel is the AI cleanup offer plus the
+            // reclaimable folders, so with no tree it would be an empty drawer.
+            //
+            // Never disabled while it is OPEN. A rescan clears the tree, so
+            // gating purely on the scan state would disable the only control
+            // that closes the drawer and strand the user with an empty panel
+            // they cannot dismiss.
+            .disabled(!model.canShowCleanup && !showCleanup)
+            .help(model.canShowCleanup || showCleanup
+                  ? "Show folders that are safe to clean up"
+                  : "Scan first — the Clean Up panel needs a finished scan")
         }
     }
 

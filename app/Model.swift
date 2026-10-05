@@ -404,19 +404,46 @@ final class ScanModel {
         withAnimation(.snappy) { agentRun = run }
     }
 
+    /// Whether the Clean Up drawer can be opened.
+    ///
+    /// It needs a finished scan: without a tree there are no reclaimable folders
+    /// and no scan for a planner to read, so the panel would be an empty drawer
+    /// advertising an AI cleanup that cannot run.
+    var canShowCleanup: Bool { tree != nil && !scanning }
+
+    /// Open Settings on Model Providers with the add-provider form raised.
+    ///
+    /// The intent is recorded in the shared router and applied by the Settings
+    /// scene; this only asks. `openSettings` needs an environment value, so the
+    /// view that owns a click passes its own action in — the model cannot reach
+    /// the Settings scene on its own, which is exactly why the request has to
+    /// travel through a shared object rather than a direct call.
+    func addModelProvider(openSettings: @escaping () -> Void) {
+        SettingsRouter.shared.requestAddProvider()
+        openSettings()
+    }
+
     /// After the launch scan: open the panel on the Clean Up button or the
     /// setup offer. Nothing goes to an agent until the user clicks.
+    ///
+    /// The Clean Up drawer is **off by default** and this no longer opens it.
+    /// It used to: every launch scan ended by force-opening a right-hand panel
+    /// the user had not asked for, which put an AI cleanup offer in front of
+    /// someone who only wanted to look at their disk. The panel is now opened
+    /// only by the toolbar's Clean Up toggle or by starting a run, so the disk
+    /// view is what the app opens on.
     func openPanelAfterLaunchScan() {
         guard !panelOpenedAfterLaunch, agentEnv.loaded, tree != nil, !scanning,
               !cleanupTrash.running, agentRun == nil else { return }
         panelOpenedAfterLaunch = true
-        // Nothing goes to a planner on launch: this only opens the panel (or
-        // presses the QA setup button). A click in the panel starts a run.
-        panelRequests += 1
         // QA only: BZ_QA_SETUP=claude|codex presses the setup button. A
         // configured provider needs no sign-in, so it is not "not set up".
+        // The panel is shown first, because that button lives inside it.
         if preferredAgent == nil, preferredProvider == nil,
-           let kind = ProcessInfo.processInfo.environment["BZ_QA_SETUP"].flatMap(AgentKind.init) { setUp(kind) }
+           let kind = ProcessInfo.processInfo.environment["BZ_QA_SETUP"].flatMap(AgentKind.init) {
+            panelRequests += 1
+            setUp(kind)
+        }
     }
 
     /// Run the same cleanup again: whatever produced this run (CLI agent or

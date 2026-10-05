@@ -11,6 +11,14 @@ import SwiftUI
 struct ProvidersView: View {
     @State private var store = ProviderStore.shared
     @State private var editing: ProviderForm?
+    private let router = SettingsRouter.shared
+    /// The last add-provider request this view has honoured.
+    ///
+    /// A request can arrive before Settings exists (a click in the main window
+    /// opens Settings as a side effect), so the router hands out a counter and
+    /// this remembers what it has seen. Wiring the form to a plain flag would
+    /// drop exactly that first click — the one the user made.
+    @State private var handledRequest = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -51,6 +59,13 @@ struct ProvidersView: View {
         .frame(maxHeight: .infinity, alignment: .top)
         .sheet(item: $editing) { form in
             ProviderFormView(initial: form)
+        }
+        // Honour a pending "Add a model provider" from anywhere in the app, and
+        // keep honouring new ones for as long as this view is mounted.
+        .onChange(of: router.addProviderRequests, initial: true) { _, pending in
+            guard pending > handledRequest else { return }
+            handledRequest = pending
+            editing = .new
         }
     }
 }

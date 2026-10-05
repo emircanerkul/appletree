@@ -5,6 +5,9 @@ import SwiftUI
 /// agent cleanup is on screen, the whole panel is that run.
 struct CleanupPanel: View {
     let model: ScanModel
+    /// Raises the Settings window. Needed to reach the add-provider form, which
+    /// lives in a Scene the panel cannot call into directly.
+    @Environment(\.openSettings) private var openSettings
     /// Ticked rows, keyed by PATH.
     ///
     /// This was a `Set<Int>` of node IDs, which a rescan invalidates: node IDs
@@ -250,7 +253,14 @@ struct CleanupPanel: View {
         case .none:
             // Nothing resolves at all (the catalog is still loading). The menu
             // beside it is built from `AgentKind.allCases`, so it stays usable.
-            SettingsLink {
+            //
+            // A Button, not a `SettingsLink`: SettingsLink only opens Settings,
+            // leaving the user on whichever pane was showing with no way to
+            // reach the form. This opens Model Providers with the add-provider
+            // sheet already up.
+            Button {
+                model.addModelProvider { openSettings() }
+            } label: {
                 Label(String(localized: "Add a model provider"), systemImage: "plus")
                     .frame(maxWidth: .infinity)
             }
@@ -302,11 +312,10 @@ struct CleanupPanel: View {
                 Button(choice.menuLabel) { activate(choice) }
             }
         }
-        // A `SettingsLink` renders as plain text rather than a menu row's
-        // button label, so it uses the label directly instead of the
-        // catalog's formatted one.
+        // A real menu row rather than a `SettingsLink`, which rendered as plain
+        // text here and could only open Settings, not the add-provider form.
         Divider()
-        SettingsLink { Text(String(localized: "Add a model provider…")) }
+        Button(String(localized: "Add a model provider…")) { model.addModelProvider { openSettings() } }
     }
 
     /// Signing out is the recovery path for a wrong or stale account, and the

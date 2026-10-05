@@ -13,6 +13,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 @main
 struct AppleTreeApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    /// Which Settings pane shows, and whether the add-provider form is pending.
+    /// Shared, because the main window's buttons set it.
+    @State private var settings = SettingsRouter.shared
 
     init() {
         // `AppleTree /some/path` is a scan target, not a document to open.
@@ -54,11 +57,16 @@ struct AppleTreeApp: App {
 
         // Cmd+, — language and custom model providers.
         Settings {
-            TabView {
+            // Bound to the router so a click on "Add a model provider" anywhere
+            // in the app can select this tab. The provider form's own sheet is
+            // raised by ProvidersView from the same request.
+            TabView(selection: $settings.tab) {
                 GeneralSettingsView()
                     .tabItem { Label(String(localized: "General"), systemImage: "gear") }
+                    .tag(SettingsRouter.Tab.general)
                 ProvidersView()
                     .tabItem { Label(String(localized: "Model Providers"), systemImage: "point.3.filled.connected.trianglepath.dotted") }
+                    .tag(SettingsRouter.Tab.providers)
             }
             .frame(minHeight: 360)
         }
