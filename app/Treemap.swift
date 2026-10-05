@@ -88,11 +88,41 @@ nonisolated enum Squarify {
     typealias Placed = (node: Int, rect: CGRect)
 
     /// The direct children of `dir` worth laying out, into a reused buffer.
+    ///
+    /// Each child's weight comes from `ShareWeight`, not its raw bytes, so a
+    /// sibling too small to click — the 4 KB file beside a 1.08 GB one — still
+    /// gets a share of the parent's area and a real tile.
+    ///
+    /// One pass over the contiguous children array: one compare each to count
+    /// the siblings that carry bytes, then one append each. No allocation
+    /// beyond `items` itself.
+    ///
+    /// Children reporting 0 bytes are skipped and left out of the divisor, as
+    /// they always were. Keeping them was tried and measured: a folder of
+    /// 20,000 empty files beside one real one went from 1 paint step to 20,001
+    /// and cost ~1 ms, to make 20,000 contentless specks clickable. The pool is
+    /// for siblings with a size to show, so the divisor and the drawn set stay
+    /// the same set — which is also what keeps `Σ weight == Tree.alloc[dir]`
+    /// exact (empty children contribute 0 to both).
+    ///
+    /// Weight is an increasing affine function of bytes, so the buffer stays
+    /// sorted largest-first — `layoutItems` relies on that for its early stop,
+    /// and that early stop is what keeps a folder of tens of thousands of
+    /// entries cheap.
     static func items(tree: Tree, dir: Int, into items: inout [Item]) {
         items.removeAll(keepingCapacity: true)
-        for k in tree.children(dir) {
-            let s = Double(tree.alloc[Int(k)])
-            if s > 0 { items.append((Int(k), s)) }
+        let kids = tree.children(dir)
+        var siblings = 0
+        for k in kids where tree.alloc[Int(k)] > 0 { siblings += 1 }
+        guard siblings > 0 else { return }
+        let parentTotal = tree.alloc[dir]
+        for k in kids {
+            let node = Int(k)
+            let bytes = tree.alloc[node]
+            if bytes > 0 {
+                items.append((node, ShareWeight.weight(bytes: bytes, siblings: siblings,
+                                                       parentTotal: parentTotal)))
+            }
         }
     }
 
@@ -509,7 +539,18 @@ nonisolated enum TreemapRenderer {
             if content.rawWidth >= 3, content.rawHeight >= 3 {
                 Squarify.items(tree: tree, dir: layoutNode, into: &items)
                 if depth == 0, showFree, freeBytes > 0 {
-                    // Free disk space competes for area like a file.
+                    // Free disk space competes for area like a file, but it is
+                    // not one of the folder's siblings and takes no part in the
+                    // equal split: it keeps its true bytes, so the used/free
+                    // boundary on screen still reads as the disk does.
+                    //
+                    // The children's weights sum to the folder's own total
+                    // whenever the children account for it (the usual case), so
+                    // the pool moves area only *between* siblings and leaves
+                    // this boundary alone. A folder that keeps bytes of its
+                    // own leaves at most `pooled` of that entry unaccounted
+                    // for — a few KB on a real directory — which is below what
+                    // the squarified rows can resolve anyway.
                     items.append((-1, Double(freeBytes)))
                     items.sort { $0.size > $1.size }
                 }

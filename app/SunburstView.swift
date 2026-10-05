@@ -132,7 +132,10 @@ final class SunburstNSView: NSView {
 
     /// Edges of the centre disc and every ring. Fewer, fatter rings in a
     /// small window so the outer ones stay readable.
-    nonisolated private static func ringRadii(outer: CGFloat) -> [CGFloat] {
+    ///
+    /// Internal so the arc geometry can be exercised against the real radii
+    /// instead of a test-local copy that could silently drift.
+    nonisolated static func ringRadii(outer: CGFloat) -> [CGFloat] {
         let outer = max(outer, 40)
         let rings = max(4, min(8, Int(outer / 42)))
         let hole = outer * Style.hole
@@ -163,7 +166,18 @@ final class SunburstNSView: NSView {
 
     /// Lays out every arc big enough to see. Children too thin to draw are
     /// gathered into one grey "smaller items" arc at the end of their folder.
-    nonisolated private static func layout(tree: Tree, root: Int, radii: [CGFloat], freeBytes: UInt64) -> [SBSegment] {
+    ///
+    /// An arc's span follows `ShareWeight`, not raw bytes, so a sibling too
+    /// small to hit still gets a readable, clickable wedge. The blend applies
+    /// at every level, so it nests. Each segment keeps its real `bytes`, so
+    /// the tooltip, the centre label and its share percentage stay truthful —
+    /// the drawn width is the only thing that differs.
+    ///
+    /// Internal, like `TreemapView.pick(at:)`, so the arc geometry can be
+    /// exercised directly instead of through a synthesized event: the
+    /// regression it guards (a sibling too thin to hit) is invisible to a
+    /// typecheck and needs no window on screen to reproduce.
+    nonisolated static func layout(tree: Tree, root: Int, radii: [CGFloat], freeBytes: UInt64) -> [SBSegment] {
         var out: [SBSegment] = []
         let rings = radii.count - 1
         // Thinnest arc per ring: about 2 pt along its inner edge.
@@ -171,14 +185,30 @@ final class SunburstNSView: NSView {
 
         func place(_ dir: Int, ring: Int, start: Double, span: Double) {
             guard ring < rings, span >= minAngle[ring] else { return }
-            let total = Double(max(tree.alloc[dir], 1))
+            let parentTotal = tree.alloc[dir]
             let kids = tree.children(dir)
+            // The divisor is the siblings that carry bytes — exactly the set the
+            // treemap blends and the set that can be drawn. Children reporting 0
+            // bytes stay out of both, so they cannot dilute a real sibling's
+            // floor, and `Σ share` still lands on the folder's span.
+            var siblings = 0
+            for k in kids where tree.alloc[Int(k)] > 0 { siblings += 1 }
             var a = start
             var shown = 0
             for k in kids {
                 let node = Int(k)
                 let bytes = tree.alloc[node]
-                let s = span * Double(bytes) / total
+                let share: Double
+                if siblings > 1 {
+                    // `weight` is ≥ the pool's per-sibling floor, so a sibling
+                    // with bytes always keeps a real share here.
+                    share = ShareWeight.share(bytes: bytes, siblings: siblings, parentTotal: parentTotal)
+                } else {
+                    // One such sibling, or none: strict bytes, so a lone file
+                    // fills its folder and the free-space split stays exact.
+                    share = parentTotal > 0 ? Double(bytes) / Double(parentTotal) : 0
+                }
+                let s = span * share
                 // Sorted largest first: once one is too thin, all the rest are.
                 if s < minAngle[ring] { break }
                 let isDir = tree.isDir(node)
@@ -188,12 +218,20 @@ final class SunburstNSView: NSView {
                 a += s
                 shown += 1
             }
-            let rest = start + span - a
-            if shown < kids.count, rest >= minAngle[ring] {
-                var bytes: UInt64 = 0
-                for k in kids[shown...] { bytes += tree.alloc[Int(k)] }
-                out.append(SBSegment(node: -2, ring: ring, start: a, end: start + span, bytes: bytes,
-                                     count: kids.count - shown, color: (0.30, 0.30, 0.32)))
+            if shown < kids.count {
+                // The tail is the siblings left undrawn. Its bytes stay the
+                // true total of that tail, which is what the tooltip and the
+                // "N smaller items" label report; its span is whatever of the
+                // folder is left, so the ring still tiles and the free-space
+                // split is untouched. Summing only when the arc is big enough
+                // to draw keeps the tail walk off the layout's hot path.
+                let rest = start + span - a
+                if rest >= minAngle[ring] {
+                    var bytes: UInt64 = 0
+                    for k in kids[shown...] { bytes += tree.alloc[Int(k)] }
+                    out.append(SBSegment(node: -2, ring: ring, start: a, end: start + span, bytes: bytes,
+                                         count: kids.count - shown, color: (0.30, 0.30, 0.32)))
+                }
             }
         }
 

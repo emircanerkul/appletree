@@ -47,7 +47,7 @@ SWIFT_FLAGS := -O -parse-as-library -swift-version 6 -default-isolation MainActo
                -framework DiskArbitration -framework IOKit
 
 .DEFAULT_GOAL := help
-.PHONY: help all build engine bundle open deploy release test test-planner test-drawer test-links test-readme test-doclinks test-router test-privacy test-l10n test-rust icon clean
+.PHONY: help all build engine bundle open deploy release test test-planner test-drawer test-links test-readme test-doclinks test-router test-privacy test-l10n test-mapweights test-rust icon clean
 
 help:
 	@echo 'AppleTree targets:'
@@ -58,6 +58,7 @@ help:
 	@echo '  make test               guard unit tests (Swift over the Rust staticlib)'
 	@echo '  make test-planner       planner catalog, preference and sign-out tests'
 	@echo '  make test-drawer        right-drawer trash outcome and plan-group tests'
+	@echo '  make test-mapweights    small siblings stay clickable in the map and rings'
 	@echo '  make test-links         Help-menu and About link destinations'
 	@echo '  make test-readme        bundled README parses into renderable blocks'
 	@echo '  make test-doclinks      document links resolve (no scheme-less paths)'
@@ -331,7 +332,7 @@ test-rust:
 # bz_cleanup_allowlist FFI (fail-closed).
 # The .strings check runs first: it is instant, and a table that drifted is a
 # bug the Swift tests cannot see, so there is no reason to compile first.
-test: engine test-l10n test-drawer test-links test-readme test-doclinks test-router test-privacy
+test: engine test-l10n test-drawer test-mapweights test-links test-readme test-doclinks test-router test-privacy
 	@mkdir -p .build
 	swiftc tests/swift/main.swift app/CleanupGuard.swift \
 	    -import-objc-header app/bz.h \
@@ -357,6 +358,32 @@ test-drawer: engine
 	    -framework DiskArbitration -framework IOKit -framework Security \
 	    -o .build/drawer-tests
 	.build/drawer-tests
+
+# Small-sibling clickability: the map's and the rings' layout weights.
+#
+# Compiled against the real shipping sources (the whole app except Main.swift)
+# because the regression lives at a seam no typecheck can see — a sibling sized
+# purely by its bytes is a sub-pixel sliver, which compiles and draws fine and is
+# still impossible to click. The fixture is a disposable scan built with the real
+# engine (a preallocated sparse file stands in for the 1.08 GB sibling), so the
+# node layout, sizes and child order are the ones the app actually reads.
+#
+# NOTE: the test file MUST NOT be named `shareweight.swift`. On a
+# case-insensitive filesystem the test and `app/ShareWeight.swift` would both
+# emit `ShareWeight.o` into one invocation, and swiftc silently clobbers one of
+# them — the link then fails on an undefined `ShareWeight.share`. Same trap the
+# NOTE on test-router documents for `settingsrouter.swift`.
+test-mapweights: engine
+	@mkdir -p .build
+	swiftc tests/swift/mapweights.swift $(filter-out app/Main.swift,$(wildcard app/*.swift)) \
+	    -import-objc-header app/bz.h \
+	    -parse-as-library \
+	    -swift-version 6 -default-isolation MainActor \
+	    -target arm64-apple-macos$(MIN_MACOS) \
+	    -L target/release -lappletree \
+	    -framework DiskArbitration -framework IOKit -framework Security \
+	    -o .build/mapweight-tests
+	.build/mapweight-tests
 
 # Help-menu and About link destinations. Pure data — no FFI, no fixtures — so it
 # stays fast and hermetic (it asserts the URLs, never that github.com answers).
