@@ -26,7 +26,7 @@ BLOCKS = {
         "Open source on GitHub": "Open source on GitHub",
         "View license": "View license",
         "AppleTree shows you what is filling your disk, and cleans up the folders tools rebuild on demand. Nothing is removed without your say-so.": "AppleTree shows you what is filling your disk, and cleans up the folders tools rebuild on demand. Nothing is removed without your say-so.",
-        "Free for non-commercial use. Dual-licensed: MIT and CC BY-NC-SA 4.0.": "Free for non-commercial use. Dual-licensed: MIT and CC BY-NC-SA 4.0.",
+        "Free for non-commercial use. Buy it on the App Store to use the app commercially.": "Free for non-commercial use. Buy it on the App Store to use the app commercially.",
         "© 2026 Emircan ERKUL": "© 2026 Emircan ERKUL",
     },
     "tr": {
@@ -45,7 +45,7 @@ BLOCKS = {
         "Open source on GitHub": "GitHub'da açık kaynak",
         "View license": "Lisansı görüntüle",
         "AppleTree shows you what is filling your disk, and cleans up the folders tools rebuild on demand. Nothing is removed without your say-so.": "AppleTree diskinizi neyin doldurduğunu gösterir ve araçların gerektiğinde yeniden oluşturduğu klasörleri temizler. Siz izin vermeden hiçbir şey silinmez.",
-        "Free for non-commercial use. Dual-licensed: MIT and CC BY-NC-SA 4.0.": "Ticari olmayan kullanım için ücretsiz. Çift lisanslı: MIT ve CC BY-NC-SA 4.0.",
+        "Free for non-commercial use. Buy it on the App Store to use the app commercially.": "Ticari olmayan kullanım ücretsizdir. Uygulamayı ticari olarak kullanmak için App Store'dan satın alın.",
         "© 2026 Emircan ERKUL": "© 2026 Emircan ERKUL",
     },
     "de": {
@@ -64,7 +64,7 @@ BLOCKS = {
         "Open source on GitHub": "Open Source auf GitHub",
         "View license": "Lizenz ansehen",
         "AppleTree shows you what is filling your disk, and cleans up the folders tools rebuild on demand. Nothing is removed without your say-so.": "AppleTree zeigt Ihnen, was Ihre Festplatte füllt, und räumt Ordner auf, die Tools bei Bedarf neu erstellen. Ohne Ihre Zustimmung wird nichts entfernt.",
-        "Free for non-commercial use. Dual-licensed: MIT and CC BY-NC-SA 4.0.": "Kostenlos für nicht-kommerzielle Nutzung. Doppelt lizenziert: MIT und CC BY-NC-SA 4.0.",
+        "Free for non-commercial use. Buy it on the App Store to use the app commercially.": "Für nicht-kommerzielle Nutzung kostenlos. Für kommerzielle Nutzung im App Store kaufen.",
         "© 2026 Emircan ERKUL": "© 2026 Emircan ERKUL",
     },
     "fr": {
@@ -83,7 +83,7 @@ BLOCKS = {
         "Open source on GitHub": "Open source sur GitHub",
         "View license": "Voir la licence",
         "AppleTree shows you what is filling your disk, and cleans up the folders tools rebuild on demand. Nothing is removed without your say-so.": "AppleTree vous montre ce qui remplit votre disque et nettoie les dossiers que les outils recréent à la demande. Rien n'est supprimé sans votre accord.",
-        "Free for non-commercial use. Dual-licensed: MIT and CC BY-NC-SA 4.0.": "Gratuit pour un usage non commercial. Double licence : MIT et CC BY-NC-SA 4.0.",
+        "Free for non-commercial use. Buy it on the App Store to use the app commercially.": "Gratuit pour un usage non commercial. Achetez-le sur l'App Store pour l'utiliser à des fins commerciales.",
         "© 2026 Emircan ERKUL": "© 2026 Emircan ERKUL",
     },
     "es": {
@@ -102,7 +102,7 @@ BLOCKS = {
         "Open source on GitHub": "Código abierto en GitHub",
         "View license": "Ver la licencia",
         "AppleTree shows you what is filling your disk, and cleans up the folders tools rebuild on demand. Nothing is removed without your say-so.": "AppleTree te muestra qué está llenando tu disco y limpia las carpetas que las herramientas recrean cuando hace falta. No se elimina nada sin tu permiso.",
-        "Free for non-commercial use. Dual-licensed: MIT and CC BY-NC-SA 4.0.": "Gratis para uso no comercial. Doble licencia: MIT y CC BY-NC-SA 4.0.",
+        "Free for non-commercial use. Buy it on the App Store to use the app commercially.": "Gratis para uso no comercial. Cómprala en el App Store para usarla con fines comerciales.",
         "© 2026 Emircan ERKUL": "© 2026 Emircan ERKUL",
     },
     "zh-Hans": {
@@ -121,7 +121,7 @@ BLOCKS = {
         "Open source on GitHub": "在 GitHub 上开源",
         "View license": "查看许可证",
         "AppleTree shows you what is filling your disk, and cleans up the folders tools rebuild on demand. Nothing is removed without your say-so.": "AppleTree 显示磁盘空间被什么占用，并清理工具按需重建的文件夹。未经你同意不会删除任何内容。",
-        "Free for non-commercial use. Dual-licensed: MIT and CC BY-NC-SA 4.0.": "非商业用途免费。双重许可：MIT 和 CC BY-NC-SA 4.0。",
+        "Free for non-commercial use. Buy it on the App Store to use the app commercially.": "非商业用途免费。如需商业使用，请在 App Store 购买。",
         "© 2026 Emircan ERKUL": "© 2026 Emircan ERKUL",
     },
     "ja": {
@@ -140,7 +140,7 @@ BLOCKS = {
         "Open source on GitHub": "GitHub でオープンソース",
         "View license": "ライセンスを表示",
         "AppleTree shows you what is filling your disk, and cleans up the folders tools rebuild on demand. Nothing is removed without your say-so.": "AppleTree はディスクを圧迫しているものを示し、ツールが再生成するフォルダーを整理します。あなたの同意なく削除されることはありません。",
-        "Free for non-commercial use. Dual-licensed: MIT and CC BY-NC-SA 4.0.": "非商用利用は無料。デュアルライセンス：MIT および CC BY-NC-SA 4.0。",
+        "Free for non-commercial use. Buy it on the App Store to use the app commercially.": "非商用利用は無料。商用で利用するには App Store で購入してください。",
         "© 2026 Emircan ERKUL": "© 2026 Emircan ERKUL",
     },
 }

@@ -1,4 +1,4 @@
-AppleTree is dual-licensed, based on the history of the code:
+AppleTree is licensed in two parts, based on the history of the code:
 
 1. The squashed history through the commit "Docs: flat engine results in
    the third performance pass"
@@ -8,12 +8,50 @@ AppleTree is dual-licensed, based on the history of the code:
 
 2. Work on top of that snapshot is licensed by Emircan ERKUL under
    CC BY-NC-SA 4.0, whose full text follows the MIT license text below.
-   CC BY-NC-SA 4.0 is a non-commercial license: you may share and adapt
-   this software and build on it, but you may not sell it or use it
-   commercially without separate permission from Emircan ERKUL. Where a
-   change builds on Ahmed Khaleel's MIT-licensed portions, those
-   portions remain MIT; the combined work is therefore distributed
+   That license covers non-commercial use: you may share and adapt this
+   software and build on it, but it does not by itself grant commercial
+   use. Where a change builds on Ahmed Khaleel's MIT-licensed portions,
+   those portions remain MIT; the combined work is therefore distributed
    under MIT (for his portions) and CC BY-NC-SA 4.0 (for the rest).
+
+=== Commercial use (one relaxation, granted by the copyright holder)
+
+Emircan ERKUL holds the copyright in the work described in part 2 above, and
+grants exactly one relaxation of its NonCommercial term. This is a separate
+permission from the Licensor in the sense of Section 7(b) of the CC BY-NC-SA
+4.0 text below: it is independent of that Public License, and it does not alter
+it for anyone else.
+
+  Distribution through the Mac App Store. Apple Inc. and its App Store are
+  authorised to distribute the compiled AppleTree application, including in
+  Apple's commercial App Store programme. That distribution is a commercial
+  act and would otherwise be barred by the NonCommercial term.
+
+  Commercial use by the buyer. A copy of AppleTree bought on the Mac App
+  Store may be used for commercial purposes by the person who bought it, on
+  the devices they use it on. That covers *running the compiled application*
+  in commercial work: at a business, on paid projects, to earn revenue.
+
+The buyer's grant is personal to that purchase and does not travel with the app
+or with the code. It is **not** a redistribution right and **not** a licence to
+the source. In particular, it does not let you use, copy, modify, or ship the
+**source code** commercially, embed AppleTree in another product, resell it, or
+pass the app to anyone who did not buy it. None of that is granted to App Store
+buyers, and none of it is granted by these terms to anyone else: all of it
+remains NonCommercial under part 2.
+
+The **source code's** licence therefore does not change. It stays CC BY-NC-SA
+4.0 without exception, for everyone, including App Store buyers. This section
+relaxes NonCommercial for the distribution and use of the compiled App Store
+application only; it grants no rights over the source.
+
+No purchase is needed for non-commercial use, which part 2 already grants.
+
+For anything wider than one buyer running their own purchased copy — bundling
+AppleTree into another product, commercial redistribution, or deployment across
+an organisation — write to <licensing@appletree.apps.erklab.com> for a separate
+licence. Nothing here grants rights in the name "AppleTree" or in any
+third-party mark.
 
 === MIT license (applies to the squashed history through the third
 === performance pass)

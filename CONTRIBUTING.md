@@ -21,7 +21,10 @@ AppleTree is distributed under a dual license:
 * the historical snapshot described in [`LICENSE`](./LICENSE) remains
   **MIT**-licensed, and
 * all later work is licensed under **CC BY-NC-SA 4.0**, with a separate
-  commercial license available from the project owner.
+  commercial license available from the project owner. The published form of
+  that commercial edition is AppleTree on the Mac App Store, where buying a
+  copy grants that buyer commercial use of the app; the **source** stays
+  CC BY-NC-SA 4.0 either way.
 
 This means the project owner publishes a community edition under
 CC BY-NC-SA 4.0 **and** may sell or otherwise commercialize the project

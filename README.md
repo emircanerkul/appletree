@@ -303,6 +303,16 @@ its license.
 
 ## License
 
-AppleTree is dual-licensed by history: the code inherited from BlitzTree is MIT,
-and work on top of that snapshot is CC BY-NC-SA 4.0 (non-commercial). See
-[LICENSE](LICENSE) for the exact boundary between the two.
+AppleTree is licensed in two parts by history: the code inherited from BlitzTree
+is MIT, and work on top of that snapshot is CC BY-NC-SA 4.0. Non-commercial use
+is free under those terms.
+
+**Commercial use of the compiled app is granted by purchase.** Buying AppleTree
+on the Mac App Store lets that purchaser use their copy commercially, on their
+own devices. That grant is personal to the purchase: it does not cover the
+source code, redistribution, reselling, or bundling AppleTree into another
+product. The source stays CC BY-NC-SA 4.0 without exception, for everyone.
+
+For anything wider than one buyer running their own purchased copy, ask about a
+separate licence at licensing@appletree.apps.erklab.com. See [LICENSE](LICENSE)
+for the exact wording and the boundary between the two parts.

@@ -136,7 +136,9 @@ private struct AboutView: View {
                     .buttonStyle(.link)
             }
 
-            Text("Free for non-commercial use. Dual-licensed: MIT and CC BY-NC-SA 4.0.")
+            // Precise on purpose: the commercial grant covers running a
+            // purchased copy, not the source code. See LICENSE.
+            Text("Free for non-commercial use. Buy it on the App Store to use the app commercially.")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
                 .multilineTextAlignment(.center)

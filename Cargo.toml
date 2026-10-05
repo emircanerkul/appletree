@@ -2,6 +2,10 @@
 name = "appletree"
 version = "0.0.1"
 edition = "2021"
+# The SOURCE licence, unchanged: inherited BlitzTree history is MIT, everything
+# on top of it is CC BY-NC-SA 4.0. Buying the app on the Mac App Store grants
+# that buyer commercial use of their compiled copy — a personal grant that does
+# not alter the source terms, which stay NonCommercial for everyone. See LICENSE.
 license = "MIT AND CC-BY-NC-SA-4.0"
 
 [lib]
