@@ -37,13 +37,56 @@ nonisolated enum PlanGroup: String, Decodable, Sendable, Equatable {
     }
 }
 
+/// What a plan item asks AppleTree to do. ONE type owns the vocabulary the
+/// schema declares, so "is this a command?" is answered in one place instead
+/// of by comparing a `String` against literals at each call site.
+///
+/// Failure direction, mirroring `PlanGroup`'s reasoning about the asymmetric
+/// risk of guessing — with the opposite conclusion, because here there is no
+/// safe fallback. Only the two words the schema names are recognized;
+/// everything else is REJECTED, not defaulted to `trash`.
+///
+/// `PlanGroup` can fail to `ask` because that outcome still shows the card:
+/// the user decides. An action has no equivalent resting place. `trash` is the
+/// reversible step but still hands paths to the two-step deleter, and an item
+/// that decodes as `.trash` is eligible to be auto-ticked and trashed; a
+/// fallback to `.command` would instead hand the string to the command runner.
+/// Leaving the item "unacted" is not available either: `PlanItem.init` treats
+/// every non-command item as a trash candidate, so an unknown action would be
+/// trashed by the fall-through. An unrecognized action therefore fails to
+/// decode. For a CLI planner the schema's enum already makes this unreachable;
+/// a custom provider gets `json_object` with no enum, so this is where a
+/// near-miss ("Trash", "delete", "rm") is stopped: the plan does not decode
+/// and `PlanJSON.decode` returns nil, which the callers already report as an
+/// invalid plan. Nothing is trashed or run on a guessed action. Surrounding
+/// whitespace is trimmed first, exactly as `PlanGroup` does it, so a padded but
+/// otherwise exact literal still decodes.
+nonisolated enum PlanAction: Decodable, Sendable, Equatable {
+    /// Move paths to the Trash; the reversible step.
+    case trash
+    /// Run one of the allowlisted tool commands.
+    case command
+
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        switch raw.trimmingCharacters(in: .whitespacesAndNewlines) {
+        case "trash": self = .trash
+        case "command": self = .command
+        default:
+            throw DecodingError.dataCorrupted(.init(
+                codingPath: decoder.codingPath,
+                debugDescription: "Unknown plan action \(raw.debugDescription); expected \"trash\" or \"command\""))
+        }
+    }
+}
+
 nonisolated struct PlanItemSpec: Decodable, Sendable, Equatable {
     let title: String
     let detail: String
     let group: PlanGroup
     let bytes: Int64
     let paths: [String]
-    let action: String
+    let action: PlanAction
     let command: String
 }
 

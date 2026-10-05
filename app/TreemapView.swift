@@ -27,6 +27,7 @@ final class TreemapNSView: NSView {
     private var lastSize: CGSize = .zero
     private var lastRoot: Int = -1
     private var lastTreeID: ObjectIdentifier?
+    private var lastRevision = -1
     private var lastShowFree = false
 
     override var isFlipped: Bool { true }
@@ -39,7 +40,10 @@ final class TreemapNSView: NSView {
     func relayoutIfNeeded() {
         guard let model, let tree = model.tree else { return }
         let treeID = ObjectIdentifier(tree)
+        // `treeRevision` too: an in-place removal keeps the same `Tree` object,
+        // so identity alone would never tell this view the sizes changed.
         if bounds.size != lastSize || model.viewRoot != lastRoot || treeID != lastTreeID
+            || model.treeRevision != lastRevision
             || model.showFreeSpace != lastShowFree {
             relayout()
         }
@@ -57,6 +61,7 @@ final class TreemapNSView: NSView {
         lastSize = bounds.size
         lastRoot = model.viewRoot
         lastTreeID = ObjectIdentifier(tree)
+        lastRevision = model.treeRevision
         lastShowFree = model.showFreeSpace
 
         rects.removeAll(keepingCapacity: true)
@@ -842,8 +847,42 @@ final class NodeMenu: NSObject {
         alert.addButton(withTitle: String(localized: "Move to Trash"))
         alert.addButton(withTitle: String(localized: "Cancel"))
         if alert.runModal() == .alertFirstButtonReturn {
-            try? FileManager.default.trashItem(at: url, resultingItemURL: nil)
-            // Note: sizes refresh on next rescan; v1 keeps it simple.
+            // Through `Trash.trash`, the one trash owner, so every surface
+            // reports a removal the same way. `.userDirect`, NOT the guard:
+            // the alert just answered is the authorization. The guard's
+            // "inside your home folder" rule belongs to README "## AI
+            // cleanup" — it bounds what a *planner* may nominate, because a
+            // planner writes a plan from a scan summary and AppleTree then
+            // acts on paths it never showed the user. Here the user right-
+            // clicked one specific item and named it in this dialog, and the
+            // app's own scan targets are mostly outside `$HOME`
+            // (`/Applications`, a whole drive). Running the planner's policy
+            // here refused `/Applications/Java 8 Update 491.app` with
+            // "Outside your home folder" — a disk-space tool that cannot empty
+            // /Applications is not doing its job.
+            //
+            // What DOES still apply: a symlink is judged by where it lands
+            // (inside `Trash.trash`), and every failure is reported rather
+            // than swallowed by the `try?` this used to be.
+            Task { @MainActor in
+                let outcome = await Trash.trash([path], authority: .userDirect).first
+                if outcome?.moved == true {
+                    // The folder is gone, so forget it locally rather than
+                    // re-walking the disk: the engine cuts this node's link in
+                    // place, every other id keeps its meaning, and the zoom,
+                    // the selection and the size totals all stay consistent.
+                    // A rescan here would renumber every id and throw away the
+                    // user's place in the tree for the sake of one folder.
+                    c.model.forgetPath(path)
+                } else if let reason = outcome?.reason {
+                    let failure = NSAlert()
+                    failure.alertStyle = .warning
+                    failure.messageText = String(localized: "Some folders couldn't be moved")
+                    failure.informativeText = "\(url.lastPathComponent): \(reason)"
+                    failure.addButton(withTitle: String(localized: "OK"))
+                    failure.runModal()
+                }
+            }
         }
     }
 }

@@ -39,6 +39,9 @@ final class SunburstNSView: NSView {
     private var lastSize: CGSize = .zero
     private var lastRoot: Int = -1
     private var lastTreeID: ObjectIdentifier?
+    /// In-place removals keep the same `Tree` object, so identity cannot signal
+    /// them; this is the counter that can (see `ScanModel.treeRevision`).
+    private var lastRevision = -1
     private var lastShowFree = false
     private var hoveredSegment: Int?
     private var hoveringCenter = false
@@ -63,6 +66,7 @@ final class SunburstNSView: NSView {
     func relayoutIfNeeded() {
         guard let model, let tree = model.tree else { return }
         if bounds.size != lastSize || model.viewRoot != lastRoot || ObjectIdentifier(tree) != lastTreeID
+            || model.treeRevision != lastRevision
             || model.showFreeSpace != lastShowFree {
             // Zooming crossfades; resizing and rescans just redraw.
             let zoomed = lastTreeID == ObjectIdentifier(tree) && model.viewRoot != lastRoot
@@ -90,6 +94,7 @@ final class SunburstNSView: NSView {
         lastSize = bounds.size
         lastRoot = model.viewRoot
         lastTreeID = ObjectIdentifier(tree)
+        lastRevision = model.treeRevision
         lastShowFree = model.showFreeSpace
 
         center = CGPoint(x: bounds.midX, y: bounds.midY)

@@ -98,6 +98,27 @@ nonisolated enum CleanupGuard {
     /// forms stay exact here.
     static let oneArgumentCommands = ["ollama rm", "xcrun simctl runtime delete", "xcrun simctl erase"]
 
+    /// The one token these commands may take must be *data*, never a flag and
+    /// never the documented destructive keyword.
+    ///
+    /// Matching "one space-free token" alone is not enough, because the token is
+    /// handed to `zsh -c` and interpreted by the tool. Apple's own tools document
+    /// broader meanings that a single token reaches:
+    ///
+    ///   xcrun simctl help erase    → "Usage: simctl erase <device> | all"
+    ///                                "Specifying all will erase all existing devices."
+    ///   xcrun simctl help runtime  → delete (<identifier>|--notUsedSinceDays <days>
+    ///                                       |--unusable|--outdated) … ; alias 'all'
+    ///
+    /// So `xcrun simctl erase all` erases every simulator on the machine, and a
+    /// value beginning with `-` is read as a flag rather than an identifier —
+    /// while the plan card describes one device or one runtime. A real target is
+    /// an identifier (a UDID, a model name, `com.apple.CoreSimulator.SimRuntime.…`),
+    /// which is neither.
+    private static func oneArgumentAllowed(_ token: String) -> Bool {
+        !token.isEmpty && !token.hasPrefix("-") && token != "all"
+    }
+
     /// Why a path may not be touched, or nil when it may.
     static func blockReason(path: String) -> String? {
         // Resolve before matching: `trashItem` follows a symlink in the last
@@ -134,13 +155,25 @@ nonisolated enum CleanupGuard {
     static func blockReason(command: String) -> String? {
         let c = command.trimmingCharacters(in: .whitespaces)
         // Argument discipline (S6): extra flags or arguments beyond the forms
-        // above are rejected, not silently run.
-        guard commands.contains(c) || oneArgumentCommands.contains(where: {
+        // above are rejected, not silently run. A single token is additionally
+        // required to be data, not a flag and not the tools' `all` keyword —
+        // see `oneArgumentAllowed`: one token is enough to mean "everything".
+        let oneArg = oneArgumentCommands.first(where: {
             c.hasPrefix($0 + " ") && !c.dropFirst($0.count + 1).contains(" ")
-        }) else {
+        })
+        if oneArg != nil {
+            let token = String(c.dropFirst(oneArg!.count + 1))
+            if !oneArgumentAllowed(token) {
+                return String(localized: "Command not allowed")
+            }
+        }
+        guard commands.contains(c) || oneArg != nil else {
             return String(localized: "AppleTree only runs tools' own cleanup commands")
         }
-        let banned = [";", "|", "&", ">", "<", "`", "$", "\n", "*", "\\"]
+        // Shell metacharacters, including the glob/brace forms zsh expands
+        // before the tool ever sees the argument: `{a,b}` and `?`/`[ab]` reach
+        // the command as a token, so "no spaces" was never a glob rule.
+        let banned = [";", "|", "&", ">", "<", "`", "$", "\n", "*", "\\", "{", "}", "?", "[", "]"]
         if banned.contains(where: { c.contains($0) }) { return String(localized: "Command not allowed") }
         return nil
     }

@@ -29,7 +29,14 @@ struct ContentView: View {
                     // seconds after every scan with the panel open.
                     HStack(spacing: 0) {
                         if showTable {
-                            OutlinePanel(model: model)
+                            // The three state values are read *here* on purpose:
+                            // it is what makes SwiftUI re-run `updateNSView` when
+                            // the map zooms or the tree is edited in place (see
+                            // `OutlinePanel`).
+                            OutlinePanel(model: model,
+                                         viewRoot: model.viewRoot,
+                                         selection: model.selection,
+                                         revision: model.treeRevision)
                                 .frame(width: listWidth)
                             ListDivider(width: $listWidth)
                         }
@@ -669,6 +676,25 @@ final class ValueCell: NSTableCellView {
 struct OutlinePanel: NSViewRepresentable {
     let model: ScanModel
 
+    /// The model state this list RENDERS, passed in as a value.
+    ///
+    /// `NSViewRepresentable` only calls `updateNSView` when a dependency the
+    /// enclosing `body` actually reads changes. `body` reads `tree`,
+    /// `scanning`, `mapStyle` and `hasShownTree` — not `viewRoot`, `selection`
+    /// or `treeRevision` — so navigating the map left this list showing the
+    /// previous folder: the breadcrumb said `… › GrandPerspective.app ›
+    /// Contents` while the list still held one `Contentts` row, and a
+    /// disclosure triangle there did nothing until a map click happened to
+    /// trigger `syncSelection()`.
+    ///
+    /// Reading these here makes the list depend on them, so every zoom,
+    /// selection and in-place removal redraws it. `viewRoot` is the folder the
+    /// list should be rooted at; `treeRevision` changes when the tree was
+    /// edited in place.
+    let viewRoot: Int
+    let selection: Int?
+    let revision: Int
+
     /// An NSObject so the outline hashes and compares items by pointer: as a
     /// plain Swift class every lookup went through the Swift runtime's
     /// conformance checks, a third of expanding a 100k-item folder.
@@ -705,13 +731,17 @@ struct OutlinePanel: NSViewRepresentable {
         var model: ScanModel?
         var tree: Tree?
         var viewRoot = -1
+        /// The `treeRevision` these rows were built from: an in-place removal
+        /// keeps the same `Tree` object, so identity alone cannot tell this
+        /// data source that any size changed.
+        var revision = -1
         var roots: [Item] = []
         weak var outline: NSOutlineView?
         private var iconCache: [String: NSImage] = [:]
 
         func rebuildIfNeeded() {
             guard let model, let t = model.tree else { return }
-            if t !== tree || model.viewRoot != viewRoot {
+            if t !== tree || model.viewRoot != viewRoot || model.treeRevision != revision {
                 let childIDs = t.children(model.viewRoot)
                 // Bound name comparisons for extremely wide directories.
                 let reuseRows = t !== tree && model.viewRoot == viewRoot
@@ -720,8 +750,17 @@ struct OutlinePanel: NSViewRepresentable {
                     && zip(roots, childIDs).allSatisfy { item, id in
                         item.canRebind(to: Int(id), in: t) && outline?.isItemExpanded(item) == false
                     }
+                // Rows are about to be thrown away, and AppKit keys expansion and
+                // selection to the Item objects being discarded. Remember what was
+                // open first, by NODE ID — an in-place removal keeps every other
+                // id stable, so the same id names the same folder afterwards.
+                // Without this, deleting one row collapsed every folder the user
+                // had opened and dropped the row they were on.
+                let openIDs = reuseRows ? [] : expandedIDs()
+                let selectedID = reuseRows ? nil : selectedItem?.id
                 tree = t
                 viewRoot = model.viewRoot
+                revision = model.treeRevision
                 let started = Date()
                 if reuseRows, let outline {
                     // A rescan often has the same top-level shape. Keep row
@@ -739,11 +778,86 @@ struct OutlinePanel: NSViewRepresentable {
                 } else {
                     roots = childIDs.map { Item(id: Int($0), tree: t) }
                     outline?.reloadData()
+                    // Put the user's own tree back exactly as they left it.
+                    // Rows stay COLLAPSED by default: entering a folder shows
+                    // that folder's direct children and nothing deeper, which is
+                    // what a file browser is for — the map is where depth is
+                    // read at a glance. An id that no longer has children simply
+                    // fails to expand, so a removed subtree needs no special
+                    // case here.
+                    restore(open: openIDs, selected: selectedID)
                 }
                 if ProcessInfo.processInfo.environment["BZ_TIMING"] != nil {
                     NSLog("BZ list reload: %.1f ms", -started.timeIntervalSinceNow * 1000)
                 }
             }
+        }
+
+        /// The node ids of every row currently expanded, outermost first.
+        ///
+        /// Recurses only into expanded rows, whose children AppKit has already
+        /// materialised, so the cost is bounded by what is actually open rather
+        /// than by the size of the tree.
+        private func expandedIDs() -> [Int] {
+            guard let outline else { return [] }
+            var open: [Int] = []
+            func walk(_ items: [Item]) {
+                for item in items where outline.isItemExpanded(item) {
+                    open.append(item.id)
+                    walk(item.children)
+                }
+            }
+            walk(roots)
+            return open
+        }
+
+        /// The item the outline currently has selected, if any.
+        ///
+        /// `row(forItem:)`/`item(atRow:)` is used rather than indexing `roots`,
+        /// because a selection is usually a child several levels deep inside an
+        /// expanded parent.
+        private var selectedItem: Item? {
+            guard let outline, outline.selectedRow >= 0 else { return nil }
+            return outline.item(atRow: outline.selectedRow) as? Item
+        }
+
+        /// Re-open each remembered id (parents before children) and restore the
+        /// selected row. Ids absent from the new tree are skipped, so this needs
+        /// no knowledge of what was removed.
+        private func restore(open: [Int], selected: Int?) {
+            guard let outline else { return }
+            let wanted = Set(open)
+            if !wanted.isEmpty {
+                func walk(_ items: [Item]) {
+                    for item in items where wanted.contains(item.id) {
+                        // Guard on real children: `expandItem` on a leaf would
+                        // draw an empty disclosure row.
+                        guard !item.tree.children(item.id).isEmpty else { continue }
+                        outline.expandItem(item)
+                        walk(item.children)
+                    }
+                }
+                walk(roots)
+            }
+            if let selected, let match = find(selected) {
+                let row = outline.row(forItem: match)
+                if row >= 0 {
+                    outline.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+                    outline.scrollRowToVisible(row)
+                }
+            }
+        }
+
+        /// The item for a node id, searching only the rows that exist.
+        private func find(_ id: Int) -> Item? {
+            func walk(_ items: [Item]) -> Item? {
+                for item in items {
+                    if item.id == id { return item }
+                    if let hit = walk(item.children) { return hit }
+                }
+                return nil
+            }
+            return walk(roots)
         }
 
         func icon(for name: String, isDir: Bool) -> NSImage {

@@ -24,6 +24,7 @@
 "Show directory list" = "Afficher la liste des dossiers";
 "Clean Up" = "Nettoyer";
 "Show folders that are safe to clean up" = "Afficher les dossiers qu'on peut supprimer sans risque";
+"Scan first — the Clean Up panel needs a finished scan" = "Scannez d'abord — le panneau Nettoyer attend une analyse terminée";
 "Pick a target and scan" = "Choisissez une cible et scannez";
 "%@ files · %@ folders · %@s" = "%@ fichiers · %@ dossiers · %@s";
 "%@ files · %@" = "%@ fichiers · %@";
@@ -142,9 +143,6 @@
 "Clean Up planner" = "Planificateur de nettoyage";
 "Scan when AppleTree opens" = "Scanner à l'ouverture d'AppleTree";
 "Scan the whole disk at launch. Turn off to pick a folder yourself first." = "Scanne tout le disque au lancement. Désactivez pour choisir d'abord un dossier vous-même.";
-"the custom provider you set in Model Providers" = "le fournisseur personnalisé défini dans Fournisseurs de modèles";
-"missing provider, back to the installed agent" = "fournisseur manquant, retour à l'agent installé";
-"the installed agent, Claude Code first" = "l'agent installé, Claude Code en premier";
 
 /* Setup offer: custom providers */
 "Or use any model — a self-hosted server, a relay, a gateway." = "Ou utilisez n'importe quel modèle — un serveur auto-hébergé, un relais, une passerelle.";
@@ -209,7 +207,6 @@
 "Question" = "Question";
 "Ask a question in the issue tracker" = "Poser une question dans le suivi des tickets";
 "Browse the source, releases and issues" = "Parcourir le code source, les versions et les tickets";
-"Open source on GitHub" = "Open source sur GitHub";
 "View license" = "Voir la licence";
 "AppleTree shows you what is filling your disk, and cleans up the folders tools rebuild on demand. Nothing is removed without your say-so." = "AppleTree vous montre ce qui remplit votre disque et nettoie les dossiers que les outils recréent à la demande. Rien n'est supprimé sans votre accord.";
 "Free for non-commercial use. Buy it on the App Store to use the app commercially." = "Gratuit pour un usage non commercial. Achetez-le sur l'App Store pour l'utiliser à des fins commerciales.";
@@ -219,7 +216,6 @@
 "Read the README" = "Lire le README";
 "AppleTree README" = "README d'AppleTree";
 "Read the documentation bundled with the app" = "Lire la documentation fournie avec l'application";
-"The README was not bundled with this build." = "Le README n'a pas été inclus dans cette version.";
 "brought to you by" = "présenté par";
 
 /* App Store link and the README viewer header. */

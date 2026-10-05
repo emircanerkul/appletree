@@ -72,14 +72,21 @@ class AgentCLITests(unittest.TestCase):
         candidates = self.wins("--limit", "100")["candidates"]
         kinds = {Path(c["path"]).relative_to(self.home).as_posix(): c["category"] for c in candidates}
         self.assertEqual(kinds, {
-            ".gradle": "tool_caches", ".npm": "tool_caches", ".cache": "tool_caches",
+            ".gradle": "tool_caches", ".npm": "tool_caches",
             "no-manifest/node_modules": "node_modules", "no-manifest/.venv": "python_environment",
             "python/venv": "python_environment", "rust/target": "rust_build", "web/.next": "next_build",
-            "Library/Developer/Xcode/DerivedData": "xcode_derived_data", "Library/Caches": "app_caches",
+            "Library/Developer/Xcode/DerivedData": "xcode_derived_data",
             "CoreSimulator/Caches": "app_caches", "iOS DeviceSupport": "device_support",
             "macOS DeviceSupport": "device_support", "watchOS DeviceSupport": "device_support",
             ".bun/install/cache": "bun_cache",
         })
+        # The home-level broad cache roots are deliberately NOT candidates: the
+        # guard refuses `~/.cache` and `~/Library/Caches` as "Too broad", so
+        # offering them would advertise a Move that always fails. Recognition
+        # must not nominate what authorization refuses. A *named* subfolder is
+        # still fair game, which is why the rows above survive.
+        self.assertNotIn(".cache", kinds)
+        self.assertNotIn("Library/Caches", kinds)
         self.assertTrue(all(c["requires_review"] for c in candidates))
         self.assertTrue(all(c["reason"] for c in candidates))
         self.assertEqual(self.run_cli("quick-wins")["options"]["min_bytes"], 50_000_000)
@@ -96,7 +103,10 @@ class AgentCLITests(unittest.TestCase):
         self.file("project/package.json")
         self.file("project/node_modules/inner/package.json")
         self.file("project/node_modules/inner/node_modules/file")
-        self.file(".cache/pip/file")
+        # A second, independent candidate. `~/.cache` would be the obvious
+        # partner but is now correctly not a candidate (too broad for the
+        # guard), so `.gradle` supplies the second row this test needs.
+        self.file(".gradle/gradle.properties")
         report = self.wins()
         self.assertEqual(len(report["candidates"]), 2)
         self.assertEqual(report["candidate_allocated_bytes"], sum(c["allocated_bytes"] for c in report["candidates"]))
@@ -154,12 +164,15 @@ class AgentCLITests(unittest.TestCase):
         self.assertEqual(report["report"]["candidates"][0]["path"], str(alias / ".npm"))
 
     def test_explicit_symlink_root_is_resolved(self):
-        self.file(".cache/pip/file")
+        # `.npm` rather than `.cache`: the home-level `~/.cache` is now
+        # deliberately not a candidate (too broad for the guard), so it could
+        # not distinguish "the symlink resolved" from "nothing matched".
+        self.file(".npm/npmrc")
         link = self.root / "home-link"
         link.symlink_to(self.home, target_is_directory=True)
         report = self.run_cli("quick-wins", "--root", str(link), "--min-bytes", "1")
         self.assertEqual(report["root"], str(self.home))
-        self.assertEqual(len(report["report"]["candidates"]), 1)
+        self.assertEqual([c["path"] for c in report["report"]["candidates"]], [str(self.home / ".npm")])
 
     def test_inventory_top_k_is_sorted_and_bounded(self):
         for i in range(200):
@@ -201,30 +214,33 @@ class AgentCLITests(unittest.TestCase):
     def test_partial_candidates_are_labeled_without_changing_panel_selection(self):
         if os.geteuid() == 0:
             self.skipTest("root bypasses fixture permission bits")
-        self.file(".cache/pip/visible")
-        denied = self.home / ".cache/pip/denied"
+        # `.npm` is a tool cache that is still a candidate; the home-level
+        # `~/.cache` is not any more (too broad for the guard), so it could not
+        # carry this test's "candidate with an unreadable child" fixture.
+        self.file(".npm/visible")
+        denied = self.home / ".npm/denied"
         denied.mkdir()
         denied.chmod(0)
         try:
             result = self.run_cli("quick-wins", "--min-bytes", "1")
             self.assertFalse(result["coverage"]["complete"])
-            self.assertEqual(result["report"]["candidates"][0]["path"], str(self.home / ".cache"))
+            self.assertEqual(result["report"]["candidates"][0]["path"], str(self.home / ".npm"))
             self.assertFalse(result["report"]["candidates"][0]["complete"])
             self.assertTrue(result["report"]["candidates"][0]["requires_review"])
-            directory = next(d for d in result["report"]["inventory"]["largest_directories"] if d["path"] == str(self.home / ".cache/pip"))
+            directory = next(d for d in result["report"]["inventory"]["largest_directories"] if d["path"] == str(self.home / ".npm"))
             self.assertFalse(directory["complete"])
         finally:
             denied.chmod(0o700)
 
     def test_inventory_includes_large_unclassified_and_sensitive_directories(self):
         self.file("Documents/archives/big-file", size=65536)
-        self.file(".cache/pip/file")
+        self.file(".npm/npmrc")
         scan = self.run_cli("scan", "--min-bytes", "1")["report"]
         self.assertEqual(scan["largest_directories"][0]["path"], str(self.home / "Documents"))
         self.assertIn(str(self.home / "Documents/archives"), [d["path"] for d in scan["largest_directories"]])
         wins = self.wins()
         self.assertEqual(wins["inventory"], scan)
-        self.assertEqual([c["path"] for c in wins["candidates"]], [str(self.home / ".cache")])
+        self.assertEqual([c["path"] for c in wins["candidates"]], [str(self.home / ".npm")])
 
     def test_inventory_is_returned_even_outside_home(self):
         outside = self.root / "outside"

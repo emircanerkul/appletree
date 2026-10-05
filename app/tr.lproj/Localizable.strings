@@ -24,6 +24,7 @@
 "Show directory list" = "Dizin listesini göster";
 "Clean Up" = "Temizle";
 "Show folders that are safe to clean up" = "Güvenle temizlenebilecek klasörleri göster";
+"Scan first — the Clean Up panel needs a finished scan" = "Önce tarayın — Temizle paneli için tamamlanmış bir tarama gerekir";
 "Pick a target and scan" = "Bir hedef seçin ve tarayın";
 "%@ files · %@ folders · %@s" = "%@ dosya · %@ klasör · %@s";
 "%@ files · %@" = "%@ dosya · %@";
@@ -142,9 +143,6 @@
 "Clean Up planner" = "Temizleme planlayıcısı";
 "Scan when AppleTree opens" = "Açılışta tara";
 "Scan the whole disk at launch. Turn off to pick a folder yourself first." = "Açılışta tüm diski tarar. Önce kendiniz bir klasör seçmek isterseniz kapatın.";
-"the custom provider you set in Model Providers" = "Model Sağlayıcılar'da ayarladığınız özel sağlayıcı";
-"missing provider, back to the installed agent" = "sağlayıcı eksik, kurulu ajan geri döndü";
-"the installed agent, Claude Code first" = "kurulu ajan, önce Claude Code";
 
 /* Setup offer: custom providers */
 "Or use any model — a self-hosted server, a relay, a gateway." = "Ya da herhangi bir model kullanın — kendi sunucunuz, bir aktarıcı, bir ağ geçidi.";
@@ -209,7 +207,6 @@
 "Question" = "Soru";
 "Ask a question in the issue tracker" = "Konu takipçisinde soru sorun";
 "Browse the source, releases and issues" = "Kaynak koduna, sürümlere ve konulara göz atın";
-"Open source on GitHub" = "GitHub'da açık kaynak";
 "View license" = "Lisansı görüntüle";
 "AppleTree shows you what is filling your disk, and cleans up the folders tools rebuild on demand. Nothing is removed without your say-so." = "AppleTree diskinizi neyin doldurduğunu gösterir ve araçların gerektiğinde yeniden oluşturduğu klasörleri temizler. Siz izin vermeden hiçbir şey silinmez.";
 "Free for non-commercial use. Buy it on the App Store to use the app commercially." = "Ticari olmayan kullanım ücretsizdir. Uygulamayı ticari olarak kullanmak için App Store'dan satın alın.";
@@ -219,7 +216,6 @@
 "Read the README" = "README'yi oku";
 "AppleTree README" = "AppleTree README";
 "Read the documentation bundled with the app" = "Uygulamayla birlikte gelen belgeleri okuyun";
-"The README was not bundled with this build." = "README bu derlemeye dahil edilmemiş.";
 "brought to you by" = "sunulmuştur";
 
 /* App Store link and the README viewer header. */

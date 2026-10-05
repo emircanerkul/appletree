@@ -185,6 +185,57 @@ if CleanupGuard.oneArgumentCommands.contains("xcrun simctl erase") {
     check("simctl erase one-arg passes", CleanupGuard.blockReason(command: "xcrun simctl erase iPhone") == nil)
 }
 
+// --- a single token must be DATA, not a flag or the tools' `all` keyword --------
+//
+// "One space-free token" was never enough. The token is handed to `zsh -c` and
+// interpreted by the tool, and Apple's own CLIs document meanings one token
+// reaches: `xcrun simctl help erase` says "simctl erase <device> | all" /
+// "Specifying all will erase all existing devices", and `xcrun simctl help
+// runtime` documents delete (…|--unusable|--outdated) plus an `all` alias. So
+// `simctl erase all` erases every simulator on the machine while the plan card
+// describes one device. A leading `-` is read as a flag, not an identifier.
+for cmd in ["xcrun simctl erase all",
+            "xcrun simctl runtime delete --unusable",
+            "xcrun simctl runtime delete --outdated",
+            "xcrun simctl erase --all",
+            "ollama rm --all"] {
+    check("destructive single token rejected: \(cmd)", CleanupGuard.blockReason(command: cmd) != nil,
+          CleanupGuard.blockReason(command: cmd) ?? "allowed!")
+}
+// Real identifiers are neither a flag nor `all`, so they must still pass.
+for cmd in ["ollama rm llama3",
+            "ollama rm gpt-oss:20b",
+            "xcrun simctl erase 1234ABCD-1234-1234-1234-123456789ABC",
+            "xcrun simctl runtime delete com.apple.CoreSimulator.SimRuntime.iOS-27-0"] {
+    check("real identifier still allowed: \(cmd)", CleanupGuard.blockReason(command: cmd) == nil,
+          CleanupGuard.blockReason(command: cmd) ?? "")
+}
+
+// --- shell glob/brace forms are metacharacters, not argument separation ---------
+//
+// `zsh -c` expands these before the tool sees the argument, so "no spaces" was
+// never a glob rule. Each of these reached the command line as a token.
+for cmd in ["ollama rm {x,y}", "ollama rm ?", "ollama rm [ab]", "xcrun simctl erase {a,b}"] {
+    check("glob form rejected: \(cmd)", CleanupGuard.blockReason(command: cmd) != nil,
+          CleanupGuard.blockReason(command: cmd) ?? "allowed!")
+}
+
+// --- recognition must never advertise what authorization refuses -----------------
+//
+// Rust's `cleanup::kind()` offers candidates; `blockReason(path:)` authorizes.
+// A folder offered but refused shows the user a Move that fails with "Too
+// broad". These two broad roots are refused by design and must never appear as
+// candidates — the Rust side narrows `kind()` to match (see the
+// `home_level_cache_roots_are_not_candidates` test in src/cleanup.rs).
+for broad in [home + "/Library/Caches", home + "/.cache"] {
+    check("broad cache root is refused: \(broad)", CleanupGuard.blockReason(path: broad) != nil,
+          CleanupGuard.blockReason(path: broad) ?? "allowed!")
+}
+// Their named subfolders are one owner's data and stay permitted.
+check("a named cache subfolder is permitted",
+      CleanupGuard.blockReason(path: home + "/Library/Caches/pip") == nil,
+      CleanupGuard.blockReason(path: home + "/Library/Caches/pip") ?? "")
+
 // --- recentlyUsed with injected windows ------------------------------------------
 // `within` is the date-injection point: cutoff = now - within.
 let nm = ws + "/node_modules"

@@ -22,8 +22,6 @@ nonisolated final class Tree: @unchecked Sendable {
     let childArr: UnsafePointer<UInt32>
     let nameOff: UnsafePointer<UInt32>
     let nameBlob: UnsafePointer<UInt8>
-    let cleanupCount: Int
-    let cleanupNodes: UnsafePointer<UInt32>
     let errors: UInt64
 
     init?(handle: OpaquePointer) {
@@ -38,7 +36,7 @@ nonisolated final class Tree: @unchecked Sendable {
               let childArr = bz_children(handle),
               let nameOff = bz_name_off(handle),
               let nameBlob = bz_name_blob(handle),
-              let cleanupNodes = bz_cleanup_nodes(handle)
+              bz_cleanup_nodes(handle) != nil
         else { return nil }
         self.handle = handle
         self.count = Int(n)
@@ -51,14 +49,37 @@ nonisolated final class Tree: @unchecked Sendable {
         self.childArr = childArr
         self.nameOff = nameOff
         self.nameBlob = nameBlob
-        self.cleanupCount = Int(bz_cleanup_count(handle))
-        self.cleanupNodes = cleanupNodes
         self.errors = bz_errors(handle)
+    }
+
+    // Clean Up's candidate list is NOT cached. `bz_remove_node` recomputes it
+    // (`Flat::refresh_cleanup`), which may reallocate that `Vec`, so a pointer
+    // captured here would dangle. Both are read live from the handle instead;
+    // the tree arrays above are safe to cache because `remove_node` never
+    // changes any `Vec`'s allocation.
+    var cleanupCount: Int { Int(bz_cleanup_count(handle)) }
+    func cleanupNode(_ index: Int) -> UInt32 {
+        guard let nodes = bz_cleanup_nodes(handle) else { return 0 }
+        return nodes[index]
     }
 
     deinit { bz_free(handle) }
 
     func isDir(_ i: Int) -> Bool { flags[i] & 1 != 0 }
+
+    /// Forget a node's subtree locally, because its path left the scan root.
+    ///
+    /// In place in the engine, so this `Tree`'s cached pointers stay valid and
+    /// no other node is renumbered — a rescan would do both wrong: it moves
+    /// every buffer and renumbers every id, discarding the zoom, the selection
+    /// and any open plan that names nodes.
+    ///
+    /// Returns whether the engine cut the link (false for the scan root, which
+    /// can never be a removal target).
+    @discardableResult
+    func removeNode(_ node: Int) -> Bool {
+        bz_remove_node(handle, UInt64(node)) == 1
+    }
 
     func cleanupDescription(_ index: Int) -> String {
         guard let label = bz_cleanup_description(handle, UInt64(index)) else { return "" }
@@ -72,7 +93,14 @@ nonisolated final class Tree: @unchecked Sendable {
         let root = self.path(0)
         var p = (path as NSString).standardizingPath
         // A whole-disk scan is rooted at the Data volume; /Users/… lives there.
-        if root == "/System/Volumes/Data", !p.hasPrefix(root + "/") { p = root + p }
+        // `p != root` is required, not incidental: without it a path equal to
+        // the root itself fails the `hasPrefix(root + "/")` test (the root has
+        // no trailing slash where the prefix does) and the prefix is prepended
+        // a second time, so the engine is asked for
+        // "/System/Volumes/Data/System/Volumes/Data" and the root's own node
+        // becomes unreachable. `src/ffi.rs` already resolves a path equal to
+        // the root, so this pre-check must not defeat it.
+        if root == "/System/Volumes/Data", p != root, !p.hasPrefix(root + "/") { p = root + p }
         let found = bz_node_at_path(handle, p)
         return found == UInt64.max ? nil : Int(found)
     }
@@ -99,6 +127,26 @@ nonisolated final class Tree: @unchecked Sendable {
             return rest.isEmpty ? "/" : rest
         }
         return p
+    }
+
+    /// Whether `node` still hangs off the root after an in-place removal.
+    ///
+    /// `removeNode` detaches a subtree by cutting one link, so a node inside it
+    /// still has its own arrays but no path from the root. Views and the model
+    /// must check this before trusting an id they were holding.
+    func isAttached(_ node: Int) -> Bool {
+        guard node >= 0, node < count else { return false }
+        if node == 0 { return true }
+        return ancestry(node).first == 0
+    }
+
+    /// The closest still-attached node at or above `node`, or 0.
+    func attachedAncestor(of node: Int) -> Int {
+        guard node > 0, node < count else { return 0 }
+        for candidate in ancestry(node).reversed() where isAttached(candidate) {
+            return candidate
+        }
+        return 0
     }
 
     /// Full path: root's name is the scanned path itself.
@@ -577,6 +625,45 @@ final class ScanModel {
     }
     /// A tree has been shown at least once, so the views exist (see ContentView).
     var hasShownTree = false
+
+    /// Bumped whenever the tree is edited IN PLACE.
+    ///
+    /// The views detect a *new* scan by object identity (`t !== tree`), which
+    /// an in-place edit cannot show them: `Tree` is the same object before and
+    /// after a removal. This is the signal they compare instead, so the
+    /// treemap, the rings and the outline all re-read the arrays they cached.
+    private(set) var treeRevision = 0
+
+    /// Forget a path's subtree locally, because it just left the scan root.
+    ///
+    /// Deliberately NOT a rescan. A rescan walks the whole disk again and
+    /// renumbers every node id (an id is an index into the flat arrays), which
+    /// throws away the zoom, the selection, the hover and any open plan that
+    /// names nodes — for one folder the user already knows has gone. The engine
+    /// edits its arrays in place instead, so every id keeps its meaning and
+    /// every total stays honest.
+    ///
+    /// The cleanup candidate list is rebuilt too, since a removed node can also
+    /// un-prune candidates beneath it.
+    @discardableResult
+    func forgetPath(_ path: String) -> Bool {
+        guard let tree, let node = tree.node(at: path), tree.removeNode(node) else {
+            // The path was not in this scan's tree (or it was the root): there
+            // is nothing to subtract, so leave the view exactly as it was.
+            return false
+        }
+        let name = tree.name(node)
+        cleanup = Cleanup.find(in: tree)
+        // A selection, hover or zoom root inside what just went would now point
+        // at a detached node; move the view to its nearest surviving ancestor.
+        if let sel = selection, !tree.isAttached(sel) { selection = nil }
+        if let hovered, !tree.isAttached(hovered) { self.hovered = nil }
+        if !tree.isAttached(viewRoot) { viewRoot = tree.attachedAncestor(of: viewRoot) }
+        treeRevision &+= 1
+        NSLog("[bz] forgot %@ (node %d) in place; tree now %llu nodes", name, node, UInt64(tree.count))
+        return true
+    }
+
     var viewRoot: Int = 0 {
         didSet {
             // A selection outside the folder on screen would read as over 100%.

@@ -47,7 +47,7 @@ SWIFT_FLAGS := -O -parse-as-library -swift-version 6 -default-isolation MainActo
                -framework DiskArbitration -framework IOKit
 
 .DEFAULT_GOAL := help
-.PHONY: help all build engine bundle deploy release test test-planner test-drawer test-links test-readme test-doclinks test-router test-privacy test-l10n test-rust icon clean
+.PHONY: help all build engine bundle open deploy release test test-planner test-drawer test-links test-readme test-doclinks test-router test-privacy test-l10n test-rust icon clean
 
 help:
 	@echo 'AppleTree targets:'
@@ -77,9 +77,41 @@ all: build
 
 # Last three macOS releases. Newer-only UI (Liquid Glass) is gated with
 # #available, so the compiler enforces that nothing newer slips in unguarded.
+#
+# MACOSX_DEPLOYMENT_TARGET only governs crates cargo actually compiles; it does
+# NOT retarget the prebuilt `std` a binary rustc ships with. Homebrew's rustc
+# builds std for the host OS, so its objects keep that OS as `minos` and the
+# final link warns "built for newer 'macOS' version than being linked". The
+# check below reads the archive itself, because the env var is not evidence of
+# what the objects declare; STRICT_DEPLOYMENT_TARGET=1 turns it into an error.
+#
+# A Homebrew std cannot be retargeted in place — the only fix is a toolchain
+# whose std was built for $(MIN_MACOS) (a rustup toolchain, not Homebrew's).
+#
+# Keep it to one otool pass: `otool -l` over the 9 MB archive takes ~16 ms, so
+# this stays in the noise of the build it follows.
 engine:
 	@echo '==> Rust engine'
 	MACOSX_DEPLOYMENT_TARGET=$(MIN_MACOS) $(CARGO) build --release
+	OTOOL=$$(otool -l target/release/libappletree.a 2>/dev/null || true); \
+	BAD=$$(printf '%s\n' "$$OTOOL" | awk -v want='$(MIN_MACOS)' '/^ *(minos|version) / { n=split(want,w,"."); split($$2,v,"."); if (v[1]+0 > w[1]+0 || (v[1]+0 == w[1]+0 && v[2]+0 > w[2]+0)) print $$2 }'); \
+	if [[ -n "$$BAD" ]]; then \
+	    N=$$(printf '%s\n' "$$BAD" | wc -l | tr -d ' '); \
+	    WORST=$$(printf '%s\n' "$$BAD" | awk '{split($$1,v,"."); k=v[1]*10000+v[2]; if (k>m) {m=k; w=$$1}} END {print w}'); \
+	    if [[ '$(STRICT_DEPLOYMENT_TARGET)' == 1 ]]; then \
+	        echo "ERROR: $$N object(s) in target/release/libappletree.a declare macOS $$WORST," >&2; \
+	        echo "       newer than the $(MIN_MACOS) this build declares." >&2; \
+	    else \
+	        echo "WARNING: $$N object(s) in target/release/libappletree.a were built for" >&2; \
+	        echo "         macOS $$WORST, newer than the $(MIN_MACOS) this build declares." >&2; \
+	    fi; \
+	    echo '         MACOSX_DEPLOYMENT_TARGET does not retarget a prebuilt std, so' >&2; \
+	    echo '         the app declares minos $(MIN_MACOS) but those objects may not' >&2; \
+	    echo "         load on the macOS $(MIN_MACOS) that LSMinimumSystemVersion promises." >&2; \
+	    echo '         Fix: build with a rustup toolchain whose std targets $(MIN_MACOS)' >&2; \
+	    echo '         instead of the Homebrew rustc (rustup install + rustup override).' >&2; \
+	    if [[ '$(STRICT_DEPLOYMENT_TARGET)' == 1 ]]; then exit 1; fi; \
+	fi
 
 # Probe the installed Swift for -default-isolation (Swift 6.1, Xcode 16.3+).
 SWIFT_PROBE := if ! echo 'func bzProbe() {}' | swiftc -swift-version 6 -default-isolation MainActor -typecheck - >/dev/null 2>&1; then echo 'error: the installed Swift predates 6.1 and cannot build the UI; default-MainActor isolation needs Xcode 16.3 or newer.' >&2; exit 1; fi
@@ -222,15 +254,32 @@ deploy: build
 # Authority lines.)
 #
 # Re-running over an existing (e.g. draft) release replaces its files.
-release: build
-	@test -n '$(V)' || { echo 'usage: make release V=0.1.0 [NOTES_FILE=path]' >&2; exit 1; }
+#
+# The V guard is its own recipe line ahead of the recursive build, so a mistyped
+# `make release` fails before any compiling or signing. It carries the `+` flag
+# so make still runs it under `-n` (recursive-make lines are skipped there),
+# which is what makes `make -n release` show the usage error and no build.
+#
+# notarytool submit exits 0 even for a REJECTED submission (it prints
+# "status: Invalid"), so the output is captured and required to read Accepted
+# before anything is stapled or published — otherwise a rejected build went on
+# to `gh release create` and printed `released`.
+release:
+	+@test -n '$(V)' || { echo 'usage: make release V=0.1.0 [NOTES_FILE=path]' >&2; exit 1; }
+	@$(MAKE) --no-print-directory build
 	@DEVID=$$(codesign -dvv '$(APP)' 2>&1 | awk -F= '/^Authority=Developer ID Application/ && !n++ {print $$2}'); \
 	RELNOTES=''; \
 	if [[ -n "$$DEVID" ]]; then \
 	    echo '==> Notarizing app'; \
 	    ZIP=$$(mktemp -d)/AppleTree.zip; \
 	    ditto -c -k --keepParent '$(APP)' "$$ZIP"; \
-	    xcrun notarytool submit "$$ZIP" --keychain-profile appletree-notary --wait; \
+	    OUT=$$(xcrun notarytool submit "$$ZIP" --keychain-profile appletree-notary --wait 2>&1) || { printf '%s\n' "$$OUT" >&2; echo 'ERROR: notarytool submit failed for the app.' >&2; exit 1; }; \
+	    printf '%s\n' "$$OUT"; \
+	    grep -qE '^ *status: Accepted$$' <<<"$$OUT" || { \
+	        echo 'ERROR: notarization of the app was not Accepted; refusing to staple or publish it.' >&2; \
+	        echo '       Inspect the rejection with: xcrun notarytool log <submission-id> --keychain-profile appletree-notary' >&2; \
+	        exit 1; \
+	    }; \
 	    xcrun stapler staple '$(APP)'; \
 	    rm -f "$$ZIP"; \
 	fi; \
@@ -243,7 +292,13 @@ release: build
 	if [[ -n "$$DEVID" ]]; then \
 	    echo '==> Notarizing dmg'; \
 	    codesign --force --timestamp --sign "$$DEVID" AppleTree.dmg; \
-	    xcrun notarytool submit AppleTree.dmg --keychain-profile appletree-notary --wait; \
+	    OUT=$$(xcrun notarytool submit AppleTree.dmg --keychain-profile appletree-notary --wait 2>&1) || { printf '%s\n' "$$OUT" >&2; echo 'ERROR: notarytool submit failed for the dmg.' >&2; exit 1; }; \
+	    printf '%s\n' "$$OUT"; \
+	    grep -qE '^ *status: Accepted$$' <<<"$$OUT" || { \
+	        echo 'ERROR: notarization of the dmg was not Accepted; refusing to staple or publish it.' >&2; \
+	        echo '       Inspect the rejection with: xcrun notarytool log <submission-id> --keychain-profile appletree-notary' >&2; \
+	        exit 1; \
+	    }; \
 	    xcrun stapler staple AppleTree.dmg; \
 	    spctl --assess --type open --context context:primary-signature -v AppleTree.dmg; \
 	    RELNOTES='Download AppleTree.dmg and drag it to Applications, then grant Full Disk Access when asked and relaunch.'; \

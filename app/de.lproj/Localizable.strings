@@ -24,6 +24,7 @@
 "Show directory list" = "Ordnerliste zeigen";
 "Clean Up" = "Bereinigen";
 "Show folders that are safe to clean up" = "Ordner zeigen, die sich sicher bereinigen lassen";
+"Scan first — the Clean Up panel needs a finished scan" = "Zuerst scannen — das Bereinigen-Panel braucht einen abgeschlossenen Scan";
 "Pick a target and scan" = "Ziel wählen und scannen";
 "%@ files · %@ folders · %@s" = "%@ Dateien · %@ Ordner · %@s";
 "%@ files · %@" = "%@ Dateien · %@";
@@ -142,9 +143,6 @@
 "Clean Up planner" = "Bereinigungsplaner";
 "Scan when AppleTree opens" = "Beim Öffnen scannen";
 "Scan the whole disk at launch. Turn off to pick a folder yourself first." = "Beim Start die ganze Festplatte scannen. Deaktivieren, um zuerst selbst einen Ordner zu wählen.";
-"the custom provider you set in Model Providers" = "der eigene Anbieter aus Modell-Anbieter";
-"missing provider, back to the installed agent" = "Anbieter fehlt, zurück zum installierten Agenten";
-"the installed agent, Claude Code first" = "der installierte Agent, zuerst Claude Code";
 
 /* Setup offer: custom providers */
 "Or use any model — a self-hosted server, a relay, a gateway." = "Oder ein beliebiges Modell — ein selbst gehosteter Server, ein Relay, ein Gateway.";
@@ -209,7 +207,6 @@
 "Question" = "Frage";
 "Ask a question in the issue tracker" = "Eine Frage im Issue-Tracker stellen";
 "Browse the source, releases and issues" = "Quellcode, Releases und Issues durchsuchen";
-"Open source on GitHub" = "Open Source auf GitHub";
 "View license" = "Lizenz ansehen";
 "AppleTree shows you what is filling your disk, and cleans up the folders tools rebuild on demand. Nothing is removed without your say-so." = "AppleTree zeigt Ihnen, was Ihre Festplatte füllt, und räumt Ordner auf, die Tools bei Bedarf neu erstellen. Ohne Ihre Zustimmung wird nichts entfernt.";
 "Free for non-commercial use. Buy it on the App Store to use the app commercially." = "Für nicht-kommerzielle Nutzung kostenlos. Für kommerzielle Nutzung im App Store kaufen.";
@@ -219,7 +216,6 @@
 "Read the README" = "README lesen";
 "AppleTree README" = "AppleTree-README";
 "Read the documentation bundled with the app" = "Die mit der App gelieferte Dokumentation lesen";
-"The README was not bundled with this build." = "Das README wurde nicht in dieses Build aufgenommen.";
 "brought to you by" = "bereitgestellt von";
 
 /* App Store link and the README viewer header. */

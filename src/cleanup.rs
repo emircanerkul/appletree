@@ -1,5 +1,12 @@
 //! The Clean Up panel's folder recognition, shared with the JSON CLI.
-//! These are name/structure heuristics, not authorization to delete anything.
+//!
+//! Rust owns RECOGNITION: what a folder is (name/structure heuristics).
+//! Swift's `CleanupGuard` owns AUTHORIZATION: whether it may be touched.
+//! Recognition must never nominate a folder authorization will refuse — a
+//! candidate the guard blocks shows the user a Move that fails with "Too
+//! broad", which is why the home-level `~/Library/Caches` and `~/.cache`
+//! roots are deliberately not nominated here (see `is_home_library`).
+//! These remain heuristics, not authorization to delete anything.
 use crate::{Tree, NO_PARENT};
 
 pub const MIN_BYTES: u64 = 50_000_000;
@@ -96,7 +103,92 @@ fn contains(t: &Tree, directory: u32, name: &str) -> bool {
             .any(|&i| t.name(i as usize) == name)
 }
 
+/// Parent index, or `None` at the scan root.
+fn parent_of(t: &Tree, i: u32) -> Option<u32> {
+    let p = t.parents[i as usize];
+    (p != NO_PARENT).then_some(p)
+}
+
+/// True when `dir` is a user's home directory as the tree sees it: either the
+/// scan root itself (scanning `~`) or `<root>/Users/<user>` (scanning the whole
+/// volume, where node 0 is the Data root).
+fn is_home_dir(t: &Tree, dir: u32) -> bool {
+    if dir == 0 {
+        return true;
+    }
+    parent_of(t, dir).is_some_and(|users| {
+        t.name(users as usize) == "Users" && t.parents[users as usize] == 0
+    })
+}
+
+/// The user's own `Library` — `~/Library`, or `<root>/Users/<user>/Library`.
+///
+/// This exists because `~/Library/Caches` is a *shared, app-wide* cache root:
+/// `CleanupGuard.tooBroad` refuses it as too broad, and only its named
+/// subfolders are fair game. Recognition must not advertise a folder that
+/// authorization will refuse, or the panel offers a Move that fails with
+/// "Too broad". Deeper `Library/Caches` directories belong to one app or
+/// simulator and stay nominated.
+fn is_home_library(t: &Tree, library: u32) -> bool {
+    parent_of(t, library).is_some_and(|home| is_home_dir(t, home))
+}
+
+/// True when a *named* cache directory is the home-level broad root the guard
+/// refuses: `~/.cache`. `.npm` and `.gradle` are per-tool and stay nominated.
+fn is_home_broad_cache(t: &Tree, i: u32) -> bool {
+    parent_of(t, i).is_some_and(|home| is_home_dir(t, home))
+}
+
+/// True when the node sits under an Apple-managed container prefix, mirroring
+/// `CleanupGuard.blockReason(path:)`'s "Managed by macOS" rule exactly.
+///
+/// That rule refuses a path containing any of:
+///   `/Library/Containers/com.apple.`
+///   `/Library/Caches/com.apple.`
+///   `/Library/Group Containers/group.com.apple.`
+///
+/// Apple's own app data will not move and macOS rebuilds it anyway. Those paths
+/// really do reach the heuristics — a simulator's `data/Containers/Shared/
+/// SystemGroup/systemgroup.com.apple.lsd.iconscache/Library/Caches` matches the
+/// `Caches`-under-`Library` rule — so without this check the engine advertises
+/// hundreds of folders the guard then blocks. Measured on a real home: 428 such
+/// nominees, 426 of them refused. Recognition must not nominate what
+/// authorization refuses (module doc), so the same three prefixes are tested
+/// here, component-wise, rather than a looser "any `com.apple.` ancestor"
+/// which would also suppress legitimate folders.
+fn is_apple_managed(t: &Tree, i: u32) -> bool {
+    // The marker sits at the node itself (a `Caches` dir) or an ancestor; walk
+    // up at most a bounded number of levels, stopping at the root.
+    let mut cur = i;
+    loop {
+        let name = t.name(cur as usize);
+        if let Some(parent) = parent_of(t, cur) {
+            let parent_name = t.name(parent as usize);
+            // <...>/Library/Containers/com.apple.… and <...>/Library/Caches/com.apple.…
+            if name.starts_with("com.apple.")
+                && (parent_name == "Containers" || parent_name == "Caches")
+                && parent_of(t, parent).is_some_and(|g| t.name(g as usize) == "Library")
+            {
+                return true;
+            }
+            // <...>/Library/Group Containers/group.com.apple.…
+            if name.starts_with("group.com.apple.")
+                && parent_name == "Group Containers"
+                && parent_of(t, parent).is_some_and(|g| t.name(g as usize) == "Library")
+            {
+                return true;
+            }
+            cur = parent;
+        } else {
+            return false;
+        }
+    }
+}
+
 fn kind(t: &Tree, i: u32) -> Option<Kind> {
+    if is_apple_managed(t, i) {
+        return None;
+    }
     let parent = t.parents[i as usize];
     let parent_name = if parent != NO_PARENT { t.name(parent as usize) } else { "" };
     // Marker lookups happen only for the named artifact, not every sibling.
@@ -110,10 +202,17 @@ fn kind(t: &Tree, i: u32) -> Option<Kind> {
         "iOS DeviceSupport" | "macOS DeviceSupport" | "watchOS DeviceSupport" => {
             Some(Kind::DeviceSupport)
         }
-        "Caches" if parent_name == "Library" || parent_name == "CoreSimulator" => {
+        // Not the home's own Library/Caches: that root is too broad (see
+        // `is_home_library`). A simulator's or an app's deeper Library/Caches is
+        // one owner's data and stays a candidate.
+        "Caches" if parent_name == "Library" && !is_home_library(t, parent) => {
             Some(Kind::AppCaches)
         }
-        ".cache" | ".npm" | ".gradle" => Some(Kind::ToolCaches),
+        "Caches" if parent_name == "CoreSimulator" => Some(Kind::AppCaches),
+        // `.cache` at the home root is too broad; a tool's own nested `.cache`
+        // (e.g. a project's) is not.
+        ".cache" if !is_home_broad_cache(t, i) => Some(Kind::ToolCaches),
+        ".npm" | ".gradle" => Some(Kind::ToolCaches),
         "cache"
             if parent_name == "install"
                 && t.parents[parent as usize] != NO_PARENT
@@ -262,10 +361,18 @@ mod tests {
                 "",
                 Some(Kind::DeviceSupport),
             ),
+            // The grandparent field is a `/`-separated chain under the scan
+            // root, so a row can express the home shape `<root>/Users/<user>`
+            // that the narrowing keys on. A `Caches` under a non-home `Library`
+            // (an app's or a simulator's) stays a candidate; the home-level
+            // `~/Library/Caches` is the too-broad root and is not one.
             ("Caches", "Library", "", "", "", Some(Kind::AppCaches)),
+            ("Caches", "Library", "Users/me", "", "", None),
             ("Caches", "CoreSimulator", "", "", "", Some(Kind::AppCaches)),
             ("Caches", "other", "", "", "", None),
             (".cache", "any", "", "", "", Some(Kind::ToolCaches)),
+            // `~/.cache` (a home-level `me`) does not.
+            (".cache", "me", "Users", "", "", None),
             (".npm", "any", "", "", "", Some(Kind::ToolCaches)),
             (".gradle", "any", "", "", "", Some(Kind::ToolCaches)),
             ("cache", "install", ".bun", "", "", Some(Kind::BunCache)),
@@ -276,8 +383,13 @@ mod tests {
         ];
         for (name, parent, grandparent, sibling, child, expected) in cases {
             let mut scan = Tree::default();
-            add(&mut scan, NO_PARENT, "/root", true, 0);
-            let gp = add(&mut scan, 0, grandparent, true, MIN_BYTES);
+            add(&mut scan, NO_PARENT, "/", true, 0);
+            // A bare "" keeps the legacy one-level grandparent; anything else is
+            // walked as a chain, so "Users/me" reaches the home directory.
+            let mut gp = 0;
+            for part in grandparent.split('/') {
+                gp = add(&mut scan, gp, part, true, MIN_BYTES);
+            }
             let p = add(&mut scan, gp, parent, true, MIN_BYTES);
             let i = add(&mut scan, p, name, true, MIN_BYTES);
             if !sibling.is_empty() {
@@ -296,6 +408,95 @@ mod tests {
                     .collect::<Vec<_>>()
             );
         }
+    }
+
+    #[test]
+    fn home_level_cache_roots_are_not_candidates() {
+        // ~/Library/Caches is a shared, app-wide cache root: CleanupGuard's
+        // `tooBroad` refuses it, and only its named subfolders go. Recognition
+        // must not offer a folder authorization will refuse, or the panel shows
+        // a Move that fails with "Too broad". Each case is its own tree so the
+        // sibling-contiguity rule `add` enforces holds (a parent's children are
+        // appended in one batch, as the walk does).
+        let chain = |names: &[&str], bytes: u64| {
+            let mut scan = Tree::default();
+            add(&mut scan, NO_PARENT, names[0], true, 0);
+            let mut parent = 0;
+            let mut last = 0;
+            for name in &names[1..] {
+                last = add(&mut scan, parent, name, true, bytes);
+                parent = last;
+            }
+            (link(scan), last)
+        };
+
+        // A home scan: the root IS the home, so ~/Library/Caches is the broad root.
+        let (scan, caches) = chain(&["/Users/me", "Library", "Caches"], MIN_BYTES);
+        assert_eq!(kind(&scan, caches), None, "~/Library/Caches is too broad to offer");
+        assert!(find(&scan, MIN_BYTES).is_empty(), "nothing to offer inside a home Library");
+
+        // A whole-volume scan: the home is /Users/<user>, still the same root.
+        let (scan, caches) = chain(&["/", "Users", "me", "Library", "Caches"], MIN_BYTES);
+        assert_eq!(kind(&scan, caches), None, "/Users/me/Library/Caches is the same broad root");
+
+        // A simulator's or an app's deeper Library/Caches is one owner's data and
+        // must stay a candidate — this is the real path the panel reports.
+        let (scan, caches) = chain(
+            &["/", "Device", "data", "Library", "Caches"],
+            MIN_BYTES,
+        );
+        assert_eq!(kind(&scan, caches), Some(Kind::AppCaches));
+
+        // `~/.cache` is the broad root; `.npm`/`.gradle` are per-tool and stay.
+        let (scan, dotcache) = chain(&["/Users/me", ".cache"], MIN_BYTES);
+        assert_eq!(kind(&scan, dotcache), None, "~/.cache is too broad to offer");
+        let (scan, dotcache) = chain(&["/Users/me", "proj", ".cache"], MIN_BYTES);
+        assert_eq!(kind(&scan, dotcache), Some(Kind::ToolCaches), "a nested .cache is not");
+        let (scan, npm) = chain(&["/Users/me", ".npm"], MIN_BYTES);
+        assert_eq!(kind(&scan, npm), Some(Kind::ToolCaches));
+        let (scan, gradle) = chain(&["/Users/me", ".gradle"], MIN_BYTES);
+        assert_eq!(kind(&scan, gradle), Some(Kind::ToolCaches));
+    }
+
+    #[test]
+    fn apple_managed_container_caches_are_not_candidates() {
+        // The guard refuses these as "Managed by macOS"; the `Caches`-under-
+        // `Library` rule would otherwise match them, so the engine used to
+        // advertise hundreds of folders the user could not act on (measured:
+        // 428 nominees, 426 refused, on a real home).
+        let chain = |names: &[&str]| {
+            let mut scan = Tree::default();
+            add(&mut scan, NO_PARENT, names[0], true, 0);
+            let mut parent = 0;
+            let mut last = 0;
+            for name in &names[1..] {
+                last = add(&mut scan, parent, name, true, MIN_BYTES);
+                parent = last;
+            }
+            (link(scan), last)
+        };
+
+        // The three prefixes the guard's "Managed by macOS" rule names.
+        for names in [
+            &["/", "Library", "Containers", "com.apple.Safari", "Data", "Library", "Caches"][..],
+            &["/", "Library", "Caches", "com.apple.example"][..],
+            &["/", "Library", "Group Containers", "group.com.apple.example", "Library", "Caches"][..],
+        ] {
+            let (scan, node) = chain(names);
+            assert_eq!(kind(&scan, node), None, "{names:?} is Apple-managed");
+        }
+
+        // A simulator's SystemGroup cache is NOT one of those three prefixes:
+        // the guard permits it, so recognition must keep nominating it.
+        let (scan, node) = chain(&[
+            "/", "Developer", "CoreSimulator", "Devices", "UUID", "data", "Containers", "Shared",
+            "SystemGroup", "systemgroup.com.apple.lsd.iconscache", "Library", "Caches",
+        ]);
+        assert_eq!(kind(&scan, node), Some(Kind::AppCaches));
+
+        // A non-Apple container cache under Library/Containers stays a candidate.
+        let (scan, node) = chain(&["/", "Library", "Containers", "com.example.app", "Data", "Library", "Caches"]);
+        assert_eq!(kind(&scan, node), Some(Kind::AppCaches));
     }
 
     #[test]

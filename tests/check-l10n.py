@@ -12,8 +12,21 @@ how the Settings tab labels stayed untranslated. References are collected from
 two kinds of surface: `String(localized:)` and the SwiftUI initialisers and
 modifiers whose first argument is a LocalizedStringKey when it is a literal —
 `Text("…")`, `Button("…")`, `.help("…")` and friends look the key up in the
-same tables. The opt-outs (`Text(verbatim:"…")`) never match, because the
-pattern requires the quote directly after the argument list opens.
+same tables.
+
+The literal does NOT have to sit directly after the call's `(`. A key chosen by
+a ternary or built by a concatenation is looked up just the same:
+
+    .help(ready ? "Show the panel" : "Scan first — the panel needs a scan")
+
+An earlier version of this checker required the quote immediately after the
+opening `(`, so that form was invisible and a key defined in no table was
+reported as fine. Each call's whole FIRST argument expression is scanned now,
+and every string literal in it is a candidate key. Later arguments are
+deliberately not scanned: they carry SF Symbol names, JSON keys and file paths
+that were never keys, and treating them as keys would fail on literals the app
+never localises. `Text(verbatim: "…")` is excluded, because it renders its
+literal in every locale.
 """
 import pathlib
 import re
@@ -22,13 +35,21 @@ import sys
 PAIR = re.compile(r'^\s*"((?:[^"\\]|\\.)*)"\s*=\s*"((?:[^"\\]|\\.)*)"\s*;', re.M)
 
 # Every surface that asks a .strings table for a key when its first argument
-# is a literal. `verbatim:` initializers cannot match: the quote must follow
-# the argument list immediately.
+# is a literal. Only the opening is matched; the argument expression itself is
+# walked by first_argument_keys, so a literal behind a ternary is still found.
 SURFACE = re.compile(
-    r'(?:String\(localized:'
+    r'(?:\bString\(localized:'
     r'|\b(?:Text|Button|Label|Toggle|TextField|SecureField|Picker)\('
-    r'|\.(?:confirmationDialog|alert|help)\()\s*"'
+    r'|\.(?:confirmationDialog|alert|help)\()'
 )
+
+# `Text(verbatim: "…")` and friends render the literal itself in every locale,
+# so their strings are not keys. Matched on the text just before the quote.
+VERBATIM = re.compile(r'verbatim\s*:\s*$')
+
+# Anything without a letter is not a translatable sentence: a bare `%@`, a
+# punctuation glyph (`•`) or a numeric format is spelled the same everywhere.
+LETTER = re.compile(r'[^\W\d_]', re.UNICODE)
 
 # Keys that are deliberately never translated: the app name, a placeholder
 # and a glyph carry no words, and SwiftUI renders the literal itself in every
@@ -144,18 +165,91 @@ def unescape_swift(literal: str) -> str:
     return "".join(out)
 
 
+def first_argument_keys(src: str, open_paren: int) -> list[str]:
+    """Every string literal in the first argument that starts at open_paren.
+
+    The argument is walked rather than pattern-matched, so the literal may be
+    behind a ternary, a `+`, or anything else. Scanning stops at the comma that
+    separates the first argument from the second, or at the call's own `)`.
+    A nested call is stepped over whole: `Text(String(format: "%.1f s", …))`
+    passes `"%.1f s"` to `String`, not to `Text`, so it is not a key — the
+    tables never contained it. Comments are skipped too, so a quote in one is
+    not mistaken for a literal.
+    """
+    keys: list[str] = []
+    i = open_paren + 1
+    while i < len(src):
+        c = src[i]
+        if c == "/" and src.startswith("//", i):
+            j = src.find("\n", i)
+            i = len(src) if j == -1 else j + 1
+            continue
+        if c == "/" and src.startswith("/*", i):
+            j = src.find("*/", i + 2)
+            i = len(src) if j == -1 else j + 2
+            continue
+        if c == ",":
+            break
+        if c == ")":
+            break
+        if c == "(":
+            i = end_of_parens(src, i)
+            continue
+        if c == '"':
+            quote = i
+            if src.startswith('"""', i):
+                end = src.find('"""', i + 3)
+                if end == -1:
+                    break
+                raw, i = src[i + 3:end], end + 3
+            else:
+                literal = read_string_literal(src, i)
+                if literal is None:
+                    i += 1
+                    continue
+                raw, i = literal
+            if VERBATIM.search(src[max(0, quote - 12):quote]):
+                continue
+            key = unescape_swift(interpolations_to_format(raw))
+            if key.strip() and key not in UNTRANSLATED and LETTER.search(key):
+                keys.append(key)
+            continue
+        i += 1
+    return keys
+
+
+def end_of_parens(src: str, open_paren: int) -> int:
+    """Index just past the `)` that closes the `(` at open_paren."""
+    depth, i = 0, open_paren
+    while i < len(src):
+        c = src[i]
+        if c == '"':
+            if src.startswith('"""', i):
+                end = src.find('"""', i + 3)
+                if end == -1:
+                    return len(src)
+                i = end + 3
+                continue
+            literal = read_string_literal(src, i)
+            i = literal[1] if literal else i + 1
+            continue
+        if c == "(":
+            depth += 1
+        elif c == ")":
+            depth -= 1
+            if depth == 0:
+                return i + 1
+        i += 1
+    return len(src)
+
+
 def referenced_keys(root: pathlib.Path) -> set[str]:
     """Keys the app asks a table for, from every localising surface."""
     keys: set[str] = set()
     for f in root.glob("app/*.swift"):
         src = f.read_text(encoding="utf-8")
         for m in SURFACE.finditer(src):
-            literal = read_string_literal(src, m.end() - 1)
-            if literal is None:
-                continue
-            key = unescape_swift(interpolations_to_format(literal[0]))
-            if key.strip() and key not in UNTRANSLATED:
-                keys.add(key)
+            keys.update(first_argument_keys(src, m.end() - 1))
     return keys
 
 

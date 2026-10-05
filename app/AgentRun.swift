@@ -39,7 +39,7 @@ final class PlanItem: Identifiable {
         var asked = spec.paths.map { ($0 as NSString).expandingTildeInPath }
         // A known tool cache named without its folder: use the standard one,
         // so its size is measured instead of guessed.
-        if spec.action == "command", asked.isEmpty {
+        if spec.action == .command, asked.isEmpty {
             let home = NSHomeDirectory()
             let known: [(String, String)] = [
                 ("uv cache", "\(home)/.cache/uv"), ("npm cache", "\(home)/.npm/_cacache"),
@@ -61,11 +61,11 @@ final class PlanItem: Identifiable {
         let plainCache = CleanupGuard.allowlistCommands.filter {
             $0.hasSuffix(" cache clean") || $0.hasSuffix(" cache purge") || $0.hasSuffix(" pm cache rm")
         }
-        let trashable = spec.action == "command" && !asked.isEmpty
+        let trashable = spec.action == .command && !asked.isEmpty
             && plainCache.contains { spec.command.hasPrefix($0) }
             && asked.allSatisfy { CleanupGuard.blockReason(path: $0) == nil && FileManager.default.fileExists(atPath: $0) }
         viaTrash = trashable
-        if spec.action == "command" && !trashable {
+        if spec.action == .command && !trashable {
             reason = CleanupGuard.blockReason(command: spec.command)
             // A tool cache whose folders are all gone has nothing left to clear.
             if reason == nil, !asked.isEmpty, asked.allSatisfy({ !FileManager.default.fileExists(atPath: $0) }) {
@@ -110,7 +110,7 @@ final class PlanItem: Identifiable {
         bytes = measured > 0 ? measured : UInt64(max(0, spec.bytes))
     }
 
-    var isCommand: Bool { spec.action == "command" && !viaTrash }
+    var isCommand: Bool { spec.action == .command && !viaTrash }
 }
 
 @Observable
@@ -438,11 +438,29 @@ final class AgentRun {
                 for item in work {
                     let paths = item.paths
                     let dryRun = dryRun
+                    // Re-check at action time, the way `runCommand` re-runs
+                    // `blockReason(command:)`: the plan was validated while
+                    // streaming, so an app that was closed then and is open
+                    // now must get its own folders back (S2, and the README's
+                    // "skipped until you quit them"). The verdict is read on
+                    // the main actor BEFORE the child task is spawned, because
+                    // `runningOwner` is @MainActor and the child runs off it.
+                    let owner = CleanupGuard.runningOwner(of: paths)
                     group.addTask {
                         // One outcome per source path: some of a card's folders
                         // can move while another is blocked. Keyed by source,
                         // never by the Trash URL the move returns.
-                        let outcomes = dryRun ? [] : await Self.trash(paths)
+                        let outcomes: [TrashOutcome]
+                        if let owner {
+                            // Same wording the plan-time gate uses; nothing is
+                            // handed to the trash owner at all.
+                            outcomes = paths.map {
+                                TrashOutcome(source: ($0 as NSString).standardizingPath, trashed: nil,
+                                             reason: String(localized: "Quit \(owner) to clean this"))
+                            }
+                        } else {
+                            outcomes = dryRun ? [] : await Self.trash(paths)
+                        }
                         await MainActor.run {
                             let moved = outcomes.compactMap(\.trashed)
                             let reason = outcomes.compactMap(\.reason).first
@@ -495,7 +513,12 @@ final class AgentRun {
                         } else if let command {
                             error = await Self.runCommand(command, path: env.path)
                         } else {
-                            await Self.remove(urls)
+                            // The irreversibility of this step is what makes the
+                            // report load-bearing: a `removefile` that failed
+                            // must reach `error`, or the card shows a green
+                            // check for data still on disk and the hero "space
+                            // freed" counts bytes that never left.
+                            error = await Self.remove(urls)
                         }
                         await MainActor.run {
                             item.trashed = []
@@ -526,8 +549,13 @@ final class AgentRun {
     }
 
     /// Moves paths to the Trash via the shared pathway in CleanupModel.swift.
+    ///
+    /// A planner nominated these, so the guard re-checks each one: the plan was
+    /// validated while streaming and the user may have launched an app or moved
+    /// a folder since (S2). The user's approval of the plan authorizes the
+    /// *plan*, not the guard's bypass.
     nonisolated static func trash(_ paths: [String]) async -> [TrashOutcome] {
-        await Trash.trash(paths)
+        await Trash.trash(paths, authority: .plannerPlan)
     }
 
     /// Four deletes at a time across the whole run: measured on APFS, 4
@@ -538,27 +566,49 @@ final class AgentRun {
                                                                attributes: .concurrent)
 
     /// Deletes folders for good, fast: each folder's children go through
-    /// removefile(3) on the shared slots, then the folder itself.
-    nonisolated static func remove(_ urls: [URL]) async {
-        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
+    /// removefile(3) on the shared slots, then the folder itself. Returns the
+    /// first failure, or nil when every path is gone.
+    ///
+    /// The return status of `removefile` used to be discarded, so this caller
+    /// marked the item `.done` and added its bytes to the freed total even
+    /// when nothing was deleted. `removefile` reports "less than 0 on error,
+    /// 0 on success" and does NOT set errno, so the status itself is the
+    /// message; a path that is already absent is not a failure (there is
+    /// nothing left to delete, and a retried item must not report one).
+    nonisolated static func remove(_ urls: [URL]) async -> String? {
+        await withCheckedContinuation { (done: CheckedContinuation<String?, Never>) in
             deleteQueue.async {
                 let group = DispatchGroup()
+                // First failure wins; several queue slots race to write it, so
+                // it carries its own lock (the `ErrTail` pattern) rather than
+                // relying on the queue being serial.
+                let failure = DeleteFailure()
                 for url in urls {
                     for kid in (try? FileManager.default.contentsOfDirectory(atPath: url.path)) ?? [] {
                         deleteSlots.wait()
                         group.enter()
                         deleteQueue.async {
-                            _ = removefile(url.appendingPathComponent(kid).path, nil, removefile_flags_t(REMOVEFILE_RECURSIVE))
+                            Self.deleteItem(url.appendingPathComponent(kid).path, failure: failure)
                             deleteSlots.signal()
                             group.leave()
                         }
                     }
                 }
                 group.wait()
-                for url in urls { _ = removefile(url.path, nil, removefile_flags_t(REMOVEFILE_RECURSIVE)) }
-                done.resume()
+                for url in urls { Self.deleteItem(url.path, failure: failure) }
+                done.resume(returning: failure.first)
             }
         }
+    }
+
+    /// One `removefile(3)` call, recording a real failure. `removefile`
+    /// reports less than 0 on error and does not set errno, so the status is
+    /// the message; a path that is already absent is not reported, because
+    /// there is nothing left to delete (and a retried item must not claim one).
+    nonisolated private static func deleteItem(_ path: String, failure: DeleteFailure) {
+        let status = removefile(path, nil, removefile_flags_t(REMOVEFILE_RECURSIVE))
+        guard status < 0, FileManager.default.fileExists(atPath: path) else { return }
+        failure.note(status, path)
     }
 
     /// Plain available space (statfs), exact to the block.
@@ -622,5 +672,21 @@ nonisolated final class ErrTail: @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }
         return text.split(separator: "\n").map(String.init)
             .last(where: { !$0.contains("rmcp::") && !$0.trimmingCharacters(in: .whitespaces).isEmpty }) ?? ""
+    }
+}
+
+/// The first failure from a parallel `removefile` sweep, kept behind a lock so
+/// the four delete slots can record one without a data race. `removefile` does
+/// not set errno, so the status is the whole story: path plus status.
+nonisolated final class DeleteFailure: @unchecked Sendable {
+    private let lock = NSLock()
+    private var message: String?
+    var first: String? {
+        lock.lock(); defer { lock.unlock() }
+        return message
+    }
+    func note(_ status: Int32, _ path: String) {
+        lock.lock(); defer { lock.unlock() }
+        if message == nil { message = "\(path): removefile failed (\(status))" }
     }
 }

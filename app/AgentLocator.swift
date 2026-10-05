@@ -3,6 +3,24 @@ import Foundation
 import Observation
 import SwiftUI
 
+/// A value behind a lock, so concurrent workers can contribute to one result
+/// without capturing a mutable `var` (which Swift 6 rejects). The reference is
+/// `let`, so the closure captures an immutable reference and only the guarded
+/// payload is mutated.
+nonisolated final class Locked<T>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: T
+
+    init(_ value: T) { stored = value }
+
+    func withLock<R>(_ body: (inout T) -> R) -> R {
+        lock.lock(); defer { lock.unlock() }
+        return body(&stored)
+    }
+
+    var value: T { lock.lock(); defer { lock.unlock() }; return stored }
+}
+
 nonisolated enum AgentLocator {
     nonisolated(unsafe) private static var qaFaked = false
 
@@ -48,14 +66,22 @@ nonisolated enum AgentLocator {
             return (kind, path)
         }
         // Both checks at once; each takes a fraction of a second.
-        var signedIn = [Bool](repeating: false, count: found.count)
-        let lock = NSLock()
+        //
+        // The results come back keyed by kind through a lock rather than written
+        // into a captured `var`: Swift 6 flags a captured mutable array and the
+        // captured `env` as concurrent access (#SendableClosureCaptures), and the
+        // lock alone does not make the capture legal — only the absence of a
+        // shared mutable capture does. `box` is a reference type, so the closure
+        // captures one immutable reference and the lock guards the write.
+        let box = Locked([AgentKind: Bool]())
+        let envPath = env.path
         DispatchQueue.concurrentPerform(iterations: found.count) { i in
-            let ok = isSignedIn(found[i].0, path: found[i].1, envPath: env.path)
-            lock.lock(); signedIn[i] = ok; lock.unlock()
+            let (kind, path) = found[i]
+            box.withLock { $0[kind] = isSignedIn(kind, path: path, envPath: envPath) }
         }
-        env.agents = found.enumerated().map { i, pair in
-            InstalledAgent(kind: pair.0, path: pair.1, signedIn: signedIn[i])
+        let signedIn = box.value
+        env.agents = found.map { kind, path in
+            InstalledAgent(kind: kind, path: path, signedIn: signedIn[kind] ?? false)
         }
         return env
     }

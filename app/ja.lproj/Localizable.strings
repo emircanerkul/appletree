@@ -24,6 +24,7 @@
 "Show directory list" = "フォルダリストを表示";
 "Clean Up" = "クリーンアップ";
 "Show folders that are safe to clean up" = "安全にクリーンアップできるフォルダを表示";
+"Scan first — the Clean Up panel needs a finished scan" = "先にスキャンしてください — クリーンアップパネルには完了したスキャンが必要です";
 "Pick a target and scan" = "対象を選んでスキャン";
 "%@ files · %@ folders · %@s" = "%@ ファイル · %@ フォルダ · %@秒";
 "%@ files · %@" = "%@ ファイル · %@";
@@ -142,9 +143,6 @@
 "Clean Up planner" = "クリーンアップのプランナー";
 "Scan when AppleTree opens" = "起動時にスキャン";
 "Scan the whole disk at launch. Turn off to pick a folder yourself first." = "起動時にディスク全体をスキャンします。オフにすると、まず自分でフォルダを選択できます。";
-"the custom provider you set in Model Providers" = "モデルプロバイダで設定したカスタムプロバイダ";
-"missing provider, back to the installed agent" = "プロバイダが見つからないため、インストール済みのエージェントに戻ります";
-"the installed agent, Claude Code first" = "インストール済みのエージェント（Claude Code を優先）";
 
 /* Setup offer: custom providers */
 "Or use any model — a self-hosted server, a relay, a gateway." = "または任意のモデルを使用 — セルフホストサーバー、リレー、ゲートウェイ。";
@@ -209,7 +207,6 @@
 "Question" = "質問";
 "Ask a question in the issue tracker" = "Issue トラッカーで質問する";
 "Browse the source, releases and issues" = "ソース、リリース、Issue を見る";
-"Open source on GitHub" = "GitHub でオープンソース";
 "View license" = "ライセンスを表示";
 "AppleTree shows you what is filling your disk, and cleans up the folders tools rebuild on demand. Nothing is removed without your say-so." = "AppleTree はディスクを圧迫しているものを示し、ツールが再生成するフォルダーを整理します。あなたの同意なく削除されることはありません。";
 "Free for non-commercial use. Buy it on the App Store to use the app commercially." = "非商用利用は無料。商用で利用するには App Store で購入してください。";
@@ -219,7 +216,6 @@
 "Read the README" = "README を読む";
 "AppleTree README" = "AppleTree README";
 "Read the documentation bundled with the app" = "アプリに同梱されたドキュメントを読む";
-"The README was not bundled with this build." = "このビルドには README が含まれていません。";
 "brought to you by" = "提供";
 
 /* App Store link and the README viewer header. */

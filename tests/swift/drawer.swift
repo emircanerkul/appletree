@@ -89,7 +89,12 @@ func run() async {
     check("fixture is permitted by the guard", CleanupGuard.blockReason(path: real) == nil,
           CleanupGuard.blockReason(path: real) ?? "")
 
-    let outcomes = await Trash.trash([real, absent])
+    // `.plannerPlan` is the authority whose guard re-check this suite is about:
+    // the fixture is deliberately inside a protected workspace so the guard has
+    // something to permit. `.userDirect` (the right-click menu, a ticked panel
+    // row) is authorized by the user's own click and is asserted separately at
+    // the bottom of this file.
+    let outcomes = await Trash.trash([real, absent], authority: .plannerPlan)
     check("one outcome per requested path", outcomes.count == 2, "got \(outcomes.count)")
 
     let bySource = Dictionary(outcomes.map { ($0.source, $0) }, uniquingKeysWith: { first, _ in first })
@@ -119,6 +124,37 @@ func run() async {
     // Put the fixture back so the test leaves no Trash entry behind.
     if let trashed = realOutcome?.trashed { try? fm.removeItem(at: trashed) }
     try? fm.removeItem(at: scratch)
+
+    // --- the two authorities: the guard bounds a PLANNER, not the user -------
+    //
+    // `CleanupGuard`'s rules ("inside your home folder", "never ~/Documents")
+    // belong to README "## AI cleanup": they bound what a *planner* may
+    // nominate, because a planner writes a plan from a scan summary and
+    // AppleTree then acts on paths the user never saw one by one. Applying them
+    // to the right-click menu was a real bug: it refused
+    // `/Applications/Java 8 Update 491.app` with "Outside your home folder",
+    // and refused every candidate of an `/Applications` scan, even though
+    // `/Applications` is one of the app's own scan targets and macOS lets you
+    // drag anything there to the Trash.
+    let outsideRoot = URL(fileURLWithPath: fm.temporaryDirectory.path)
+        .appendingPathComponent("drawer-authority-\(ProcessInfo.processInfo.processIdentifier)")
+    let outside = outsideRoot.appendingPathComponent("Some.app")
+    try? fm.createDirectory(at: outside, withIntermediateDirectories: true)
+    try? "x".write(to: outside.appendingPathComponent("f"), atomically: true, encoding: .utf8)
+
+    // The planner is still refused: the guard applies.
+    let planned = await Trash.trash([outside.path], authority: .plannerPlan)
+    check("a planner is still refused outside the home folder",
+          planned.first?.moved == false && planned.first?.reason != nil,
+          "reason=\(planned.first?.reason ?? "nil") — the planner guard was weakened")
+
+    // The user is not: their confirmed click is the authorization.
+    let direct = await Trash.trash([outside.path], authority: .userDirect)
+    check("a direct user action moves a folder outside the home folder",
+          direct.first?.moved == true,
+          "reason=\(direct.first?.reason ?? "nil") — the menu would refuse /Applications again")
+    if let trashed = direct.first?.trashed { try? fm.removeItem(at: trashed) }
+    try? fm.removeItem(at: outsideRoot)
 }
 
 @main

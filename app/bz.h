@@ -47,4 +47,15 @@ uint64_t bz_node_at_path(BzScan *h, const char *path);
 
 void bz_free(BzScan *h);
 
+// Drop `node`'s subtree from the finished tree, in place, after its path left
+// the scan root. Returns 1 on success; 0 for the root, an out-of-range index, a
+// node already removed, or a handle whose scan has not finished.
+//
+// No Vec is reallocated, so every pointer a bz_* getter returned stays valid,
+// and no node is renumbered, so ids the Swift side holds (zoom, selection,
+// hover, plan cards) keep naming the same folders. Clean Up's candidate list IS
+// recomputed and may be reallocated, so read it through bz_cleanup_nodes /
+// bz_cleanup_count rather than caching either.
+int bz_remove_node(BzScan *h, uint64_t node);
+
 #endif

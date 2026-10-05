@@ -25,6 +25,7 @@
 "Show directory list" = "Show directory list";
 "Clean Up" = "Clean Up";
 "Show folders that are safe to clean up" = "Show folders that are safe to clean up";
+"Scan first — the Clean Up panel needs a finished scan" = "Scan first — the Clean Up panel needs a finished scan";
 "Pick a target and scan" = "Pick a target and scan";
 "%@ files · %@ folders · %@s" = "%@ files · %@ folders · %@s";
 "%@ files · %@" = "%@ files · %@";
@@ -137,9 +138,6 @@
 "Clean Up planner" = "Clean Up planner";
 "Scan when AppleTree opens" = "Scan when AppleTree opens";
 "Scan the whole disk at launch. Turn off to pick a folder yourself first." = "Scan the whole disk at launch. Turn off to pick a folder yourself first.";
-"the custom provider you set in Model Providers" = "the custom provider you set in Model Providers";
-"missing provider, back to the installed agent" = "missing provider, back to the installed agent";
-"the installed agent, Claude Code first" = "the installed agent, Claude Code first";
 /* Setup offer: custom providers */
 "Or use any model — a self-hosted server, a relay, a gateway." = "Or use any model — a self-hosted server, a relay, a gateway.";
 "Add a model provider" = "Add a model provider";
@@ -203,7 +201,6 @@
 "Question" = "Question";
 "Ask a question in the issue tracker" = "Ask a question in the issue tracker";
 "Browse the source, releases and issues" = "Browse the source, releases and issues";
-"Open source on GitHub" = "Open source on GitHub";
 "View license" = "View license";
 "AppleTree shows you what is filling your disk, and cleans up the folders tools rebuild on demand. Nothing is removed without your say-so." = "AppleTree shows you what is filling your disk, and cleans up the folders tools rebuild on demand. Nothing is removed without your say-so.";
 "Free for non-commercial use. Buy it on the App Store to use the app commercially." = "Free for non-commercial use. Buy it on the App Store to use the app commercially.";
@@ -213,7 +210,6 @@
 "Read the README" = "Read the README";
 "AppleTree README" = "AppleTree README";
 "Read the documentation bundled with the app" = "Read the documentation bundled with the app";
-"The README was not bundled with this build." = "The README was not bundled with this build.";
 "brought to you by" = "brought to you by";
 
 /* App Store link and the README viewer header. */

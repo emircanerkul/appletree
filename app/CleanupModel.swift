@@ -18,7 +18,7 @@ nonisolated enum Cleanup {
     static func find(in tree: Tree) -> [CleanupItem] {
         let home = NSHomeDirectory()
         return (0..<tree.cleanupCount).map { index in
-            let node = Int(tree.cleanupNodes[index])
+            let node = Int(tree.cleanupNode(index))
             let path = tree.path(node)
             var display = tree.displayPath(node)
             if display.hasPrefix(home) { display = "~" + display.dropFirst(home.count) }
@@ -47,16 +47,39 @@ nonisolated struct TrashOutcome: Sendable, Equatable {
     var moved: Bool { trashed != nil }
 }
 
-/// The one trash pathway: re-checks the guard at action time — minutes can
-/// have passed since the plan was validated, so anything changed in between
-/// is not acted on (S2) — and judges symlinks by where they land (S3).
+/// The one trash pathway: moves each path and reports one outcome per path.
+///
+/// It carries the *authority* because two different things can decide a path
+/// may go, and only one of them is bounded by `CleanupGuard`:
+///
+/// - A **planner's plan**. `CleanupGuard` re-checks it at action time, since
+///   the plan was validated while streaming and minutes may have passed (S2).
+///   The guard's rules — inside `$HOME`, never `~/Documents`, never a git
+///   repository — are the ones under README "## AI cleanup": they bound what a
+///   *planner* may nominate.
+/// - **The person using the app.** The confirmation they just answered is the
+///   authorization, so the guard does not apply. Applying it here was a bug: it
+///   refused to trash `/Applications/Java 8 Update 491.app` with "Outside your
+///   home folder", even though the app's own built-in scan targets are mostly
+///   outside `$HOME` (`/Applications`, a whole drive) and macOS itself lets you
+///   drag any of them to the Trash. A disk-space tool that cannot empty
+///   `/Applications` is not doing its job.
 nonisolated enum Trash {
+    /// Who decided these paths may be moved to the Trash.
+    enum Authority: Sendable {
+        /// The user picked the path directly — the right-click menu, or a tick
+        /// in the Clean Up panel. Their confirmation authorizes it.
+        case userDirect
+        /// A planner nominated it. The guard re-checks every path.
+        case plannerPlan
+    }
+
     /// Move each path to the Trash, reporting one outcome per path.
     ///
     /// A path that is already gone reports "Already gone" rather than being
     /// skipped in silence: a row the user can still tick must never be a
     /// no-op with no explanation.
-    static func trash(_ paths: [String]) async -> [TrashOutcome] {
+    static func trash(_ paths: [String], authority: Authority) async -> [TrashOutcome] {
         await Task.detached(priority: .userInitiated) {
             paths.map { path in
                 let source = (path as NSString).standardizingPath
@@ -64,7 +87,7 @@ nonisolated enum Trash {
                     return TrashOutcome(source: source, trashed: nil,
                                         reason: String(localized: "Already gone"))
                 }
-                if let reason = CleanupGuard.blockReason(path: source) {
+                if authority == .plannerPlan, let reason = CleanupGuard.blockReason(path: source) {
                     return TrashOutcome(source: source, trashed: nil, reason: reason)
                 }
                 do {
@@ -97,7 +120,13 @@ final class CleanupTrashBatch {
         guard !running else { return nil }
         running = true
         return Task {
-            let outcomes = await Trash.trash(items.map(\.path))
+            // The user ticked these rows in the Clean Up panel themselves: the
+            // tick is the authorization, so the guard (a planner-policy bound)
+            // does not apply. Those rows come from the engine's own candidate
+            // list and can sit outside `$HOME` — a scan of `/Applications`
+            // yields `…/node_modules` inside app bundles — and the guard would
+            // refuse every one of them as "Outside your home folder".
+            let outcomes = await Trash.trash(items.map(\.path), authority: .userDirect)
             // Match by SOURCE path, the identity the caller passed in. Each
             // failure carries its own reason; the batch previously shared one
             // `error` string across every row, so one blocked folder made the

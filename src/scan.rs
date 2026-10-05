@@ -11,9 +11,7 @@ use std::sync::atomic::Ordering;
 use std::sync::Mutex;
 
 use crate::attrs::{i64_at, u32_at, u64_at, AttrList};
-use crate::{Progress, Tree, SF_DATALESS};
-#[cfg(test)]
-use crate::NO_PARENT;
+use crate::{Progress, Tree, NO_PARENT, SF_DATALESS};
 
 // ---- FFI: getattrlistbulk ----
 
@@ -320,8 +318,7 @@ pub(crate) fn child_path(dir: &CStr, name: &[u8]) -> Option<CString> {
     CString::new(p).ok()
 }
 
-pub(crate) fn walk<'s>(
-    scope: &rayon::Scope<'s>,
+pub(crate) fn walk<'s>(    scope: &rayon::Scope<'s>,
     shared: &'s Shared<'s>,
     path: CString,
     dir_idx: u32,
@@ -456,6 +453,90 @@ fn link(t: &mut Tree, runs: &[(u32, u32, u32)]) {
     }
 }
 
+/// `Tree::flags` bit 1: this node was removed from the tree by
+/// `remove_node`. Bit 0 stays `is_dir`.
+pub(crate) const REMOVED: u8 = 2;
+
+/// Remove a node and its subtree from the tree after its path left the scan
+/// root — the user moved it to the Trash.
+///
+/// In place, deliberately, for two reasons:
+///
+/// 1. **No `Vec` is reallocated**, so the raw pointers Swift cached in its
+///    `Tree` (see `app/Model.swift`) stay valid. Growing or shrinking a
+///    `Vec`'s length can move its buffer, which would dangle every view.
+/// 2. **No node is renumbered.** A node id is its index, so keeping the
+///    indices stable means the id that named a folder before still names the
+///    same folder after — the view's zoom, selection and hover survive. That
+///    is precisely what a rescan cannot offer.
+///
+/// Only the removed node's link is cut. Its descendants become unreachable
+/// because every consumer walks `children` from the root, and the subtree's
+/// figures are subtracted from each ancestor so every total stays honest.
+///
+/// Returns `false` for the root, an out-of-range index, or an already-removed
+/// node, so a second removal is a no-op rather than a double subtraction.
+///
+/// Accounting caveat: if the removed node was the path that *owned* a
+/// hard-linked inode's bytes (see `Arena::account_file`), the bytes are
+/// subtracted from the tree even though another name for the same inode may
+/// still sit inside the scan. Re-attributing them to that other name would
+/// need the `hardlinks` map, which lives in the walk's arena and not in the
+/// flat `Tree`; the totals therefore under-count by those bytes until the
+/// next scan. This is deliberate and bounded, not an oversight.
+pub(crate) fn remove_node(t: &mut Tree, node: usize) -> bool {
+    if node == 0 || node >= t.len() || t.flags[node] & REMOVED != 0 {
+        return false;
+    }
+    let parent = t.parents[node];
+    if parent == NO_PARENT {
+        return false;
+    }
+    let parent = parent as usize;
+
+    // Read the subtree's figures before touching anything.
+    let (da, dl, df) = (
+        t.alloc[node],
+        t.logical[node],
+        if t.is_dir(node) { t.n_files[node] } else { 1 },
+    );
+
+    // Cut the link inside the parent's run. `Vec::remove` shifts the tail left
+    // in place without reallocating, so the child array's address is stable.
+    let (start, end) = (t.child_off[parent] as usize, t.child_off[parent + 1] as usize);
+    let Some(pos) = t.children[start..end].iter().position(|&c| c as usize == node) else {
+        return false;
+    };
+    t.children.remove(start + pos);
+    // `child_off` is a prefix sum over node order, so every offset from the
+    // parent's own end onward loses the one child just removed.
+    for off in t.child_off[parent + 1..].iter_mut() {
+        *off -= 1;
+    }
+
+    // Subtract the subtree from every ancestor, root included.
+    let mut cur = parent;
+    loop {
+        t.alloc[cur] = t.alloc[cur].saturating_sub(da);
+        t.logical[cur] = t.logical[cur].saturating_sub(dl);
+        t.n_files[cur] = t.n_files[cur].saturating_sub(df);
+        let p = t.parents[cur];
+        if p == NO_PARENT {
+            break;
+        }
+        cur = p as usize;
+    }
+
+    // Detach and zero the node itself, so anything that still holds its id
+    // reads "nothing here" instead of a stale size.
+    t.flags[node] |= REMOVED;
+    t.parents[node] = NO_PARENT;
+    t.alloc[node] = 0;
+    t.logical[node] = 0;
+    t.n_files[node] = 0;
+    true
+}
+
 /// Hand-built trees for tests.
 #[cfg(test)]
 impl Tree {
@@ -548,6 +629,69 @@ mod tests {
         assert_eq!(&names[entries[2].name_end as usize..], "linked-é".as_bytes());
         assert_eq!(entries[3].hardlink, Some((17, 123456)));
         assert_eq!((entries[3].size, entries[3].alloc), (12345, 16384));
+    }
+
+    #[test]
+    fn remove_node_detaches_in_place_without_renumbering() {
+        // The layout invariant `remove_node` relies on: every directory's
+        // children form ONE contiguous run of indices, because the walk appends
+        // a directory's entries in a single batch. So the root's children go
+        // first (a, b), then each child's own children — NOT depth-first.
+        let mut t = Tree::with_root("/root");
+        let a = t.push("a", 0, 0, 0, true);
+        let b = t.push("b", 0, 0, 0, true);
+        let a1 = t.push("a-child", a, 900, 1000, false);
+        let b1 = t.push("b-child", b, 700, 800, false);
+        t.complete = vec![true; t.len()];
+        finish(&mut t);
+
+        // Totals before: a=1000 + b=800.
+        assert_eq!(t.alloc[0], 1800);
+        assert_eq!(t.n_files[0], 2);
+        assert_eq!(t.kids(0).len(), 2);
+
+        assert!(remove_node(&mut t, a as usize));
+
+        // The removed node is detached and zeroed.
+        assert!(t.flags[a as usize] & REMOVED != 0);
+        assert_eq!(t.parents[a as usize], NO_PARENT);
+        assert_eq!(t.alloc[a as usize], 0);
+
+        // Every ancestor total is honest: only b's 800 remains.
+        assert_eq!(t.alloc[0], 800, "the removed subtree's bytes are subtracted");
+        assert_eq!(t.n_files[0], 1);
+        // b keeps its own figures and its own index — nothing was renumbered.
+        assert_eq!(t.alloc[b as usize], 800);
+        assert_eq!(t.alloc[b1 as usize], 800);
+        assert_eq!(t.parents[b1 as usize], b);
+        // The removed child keeps its index too (so any held id still resolves),
+        // it is simply unreachable from the root.
+        assert_eq!(t.parents[a1 as usize], a);
+        assert_eq!(t.alloc[a1 as usize], 1000);
+
+        // The root's child list lost exactly `a`, and `b` is still reachable.
+        assert_eq!(t.kids(0), &[b], "only the removed node was unlinked");
+        // A detached node keeps its OWN child run: it is unreachable from the
+        // root, which is what detaches it, so nothing walks into it. Its own
+        // subtree stays intact for anything that still holds an id into it.
+        assert_eq!(t.kids(a as usize), &[a1]);
+        // b's own child list is intact: the offsets after the cut still point
+        // at its run.
+        assert_eq!(t.kids(b as usize), &[b1]);
+
+        // Idempotent: a second removal is a no-op, not a double subtraction.
+        assert!(!remove_node(&mut t, a as usize));
+        assert_eq!(t.alloc[0], 800);
+
+        // The root can never be removed.
+        assert!(!remove_node(&mut t, 0));
+        assert_eq!(t.alloc[0], 800);
+
+        // Removing b too empties the root honestly.
+        assert!(remove_node(&mut t, b as usize));
+        assert_eq!(t.alloc[0], 0);
+        assert_eq!(t.n_files[0], 0);
+        assert_eq!(t.kids(0), &[] as &[u32]);
     }
 
     /// Every child is listed once, under its parent, after it.

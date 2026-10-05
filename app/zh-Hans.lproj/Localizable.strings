@@ -24,6 +24,7 @@
 "Show directory list" = "显示文件夹列表";
 "Clean Up" = "清理";
 "Show folders that are safe to clean up" = "显示可安全清理的文件夹";
+"Scan first — the Clean Up panel needs a finished scan" = "请先扫描 — 清理面板需要一次完成的扫描";
 "Pick a target and scan" = "选择目标并扫描";
 "%@ files · %@ folders · %@s" = "%@ 个文件 · %@ 个文件夹 · %@ 秒";
 "%@ files · %@" = "%@ 个文件 · %@";
@@ -142,9 +143,6 @@
 "Clean Up planner" = "清理规划器";
 "Scan when AppleTree opens" = "启动时扫描";
 "Scan the whole disk at launch. Turn off to pick a folder yourself first." = "启动时扫描整个磁盘。关闭后可先自行选择文件夹。";
-"the custom provider you set in Model Providers" = "您在模型提供商中设置的自定义提供商";
-"missing provider, back to the installed agent" = "提供商缺失，回到已安装的代理";
-"the installed agent, Claude Code first" = "已安装的代理，优先 Claude Code";
 
 /* Setup offer: custom providers */
 "Or use any model — a self-hosted server, a relay, a gateway." = "或使用任意模型——自托管服务器、中继或网关。";
@@ -209,7 +207,6 @@
 "Question" = "提问";
 "Ask a question in the issue tracker" = "在议题跟踪器中提问";
 "Browse the source, releases and issues" = "浏览源码、发行版和议题";
-"Open source on GitHub" = "在 GitHub 上开源";
 "View license" = "查看许可证";
 "AppleTree shows you what is filling your disk, and cleans up the folders tools rebuild on demand. Nothing is removed without your say-so." = "AppleTree 显示磁盘空间被什么占用，并清理工具按需重建的文件夹。未经你同意不会删除任何内容。";
 "Free for non-commercial use. Buy it on the App Store to use the app commercially." = "非商业用途免费。如需商业使用，请在 App Store 购买。";
@@ -219,7 +216,6 @@
 "Read the README" = "阅读 README";
 "AppleTree README" = "AppleTree README";
 "Read the documentation bundled with the app" = "阅读应用自带的文档";
-"The README was not bundled with this build." = "此版本未包含 README。";
 "brought to you by" = "由以下团队呈现";
 
 /* App Store link and the README viewer header. */

@@ -25,14 +25,34 @@ struct Flat {
 }
 
 fn with_cleanup(tree: Tree) -> Flat {
-    let candidates = cleanup::find(&tree, cleanup::MIN_BYTES);
-    Flat {
-        cleanup_nodes: candidates.iter().map(|c| c.node).collect(),
-        cleanup_descriptions: candidates
-            .iter()
-            .map(|c| CString::new(c.kind.description()).expect("static cleanup label has no NUL"))
-            .collect(),
+    let mut flat = Flat {
         tree,
+        cleanup_nodes: Vec::new(),
+        cleanup_descriptions: Vec::new(),
+    };
+    flat.refresh_cleanup();
+    flat
+}
+
+impl Flat {
+    /// Recompute Clean Up's candidate list from the current tree.
+    ///
+    /// Needed after `bz_remove_node`: the list holds node ids and the sizes it
+    /// was built from are now stale, and removing a *recognized* folder can
+    /// also un-prune candidates beneath it (`cleanup::find` never descends
+    /// into one). This may reallocate `cleanup_nodes`, which is why the Swift
+    /// side re-reads `bz_cleanup_nodes` on every access instead of caching the
+    /// pointer.
+    fn refresh_cleanup(&mut self) {
+        let candidates = cleanup::find(&self.tree, cleanup::MIN_BYTES);
+        self.cleanup_nodes.clear();
+        self.cleanup_nodes.extend(candidates.iter().map(|c| c.node));
+        self.cleanup_descriptions.clear();
+        self.cleanup_descriptions.extend(
+            candidates
+                .iter()
+                .map(|c| CString::new(c.kind.description()).expect("static cleanup label has no NUL")),
+        );
     }
 }
 
@@ -205,6 +225,31 @@ pub extern "C" fn bz_cleanup_allowlist_count() -> u64 {
 pub extern "C" fn bz_errors(h: *mut BzScan) -> u64 {
     let h = unsafe { &*h };
     h.flat.as_ref().map_or(0, |f| f.tree.errors)
+}
+
+/// Drop a node's subtree from the finished tree, in place, after its path left
+/// the scan root. Returns 1 on success, 0 for the root, an out-of-range index,
+/// a node already removed, or a handle whose scan has not finished.
+///
+/// No `Vec` is reallocated, so the pointers earlier `bz_*` getters returned
+/// stay valid, and no node is renumbered, so ids the Swift side holds (zoom,
+/// selection, hover, plan cards) keep naming the same folders. Clean Up's
+/// candidate list is recomputed because its sizes and membership both change.
+///
+/// # Safety
+/// `h` must be a live scan handle from `bz_scan_start`, with no concurrent
+/// access while this runs.
+#[no_mangle]
+pub unsafe extern "C" fn bz_remove_node(h: *mut BzScan, node: u64) -> c_int {
+    let h = unsafe { &mut *h };
+    let Some(flat) = h.flat.as_mut() else {
+        return 0;
+    };
+    let removed = scan::remove_node(&mut flat.tree, node as usize);
+    if removed {
+        flat.refresh_cleanup();
+    }
+    removed as c_int
 }
 
 /// Resolve an absolute path (already normalized and scan-root-prefixed by the
