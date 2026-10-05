@@ -96,6 +96,36 @@ enum PrivacyTests {
         check("the policy has no leaked markup",
               !shown.contains("<p align") && !shown.contains("<br>"))
 
+        // --- Every wiki URL is plain ASCII and internally consistent ---------
+        // The "Published at" line is what App Store Connect is given, and the
+        // links between pages have to agree with it. The live wiki page was
+        // created with U+2010 HYPHEN in its filename — visually identical to
+        // ASCII `-`, a different URL — so /wiki/Privacy-Policy 302-redirected
+        // to the wiki home and the policy was unreachable from every link
+        // pointing at it, including the one in this file.
+        //
+        // Wiki page names come from the file name in the wiki repo, so the
+        // guard is: no non-ASCII anywhere in a wiki URL, and no hyphen other
+        // than U+002D.
+        let wikiURLs = ["Home", "Privacy-Policy", "Support"]
+        for page in wikiURLs {
+            let url = "https://github.com/emircanerkul/appletree/wiki/\(page)"
+            check("\(page) has an all-ASCII URL",
+                  url.allSatisfy { $0.isASCII },
+                  "a non-ASCII character in a wiki page name breaks every link to it")
+        }
+        check("no U+2010 hyphen hides in a wiki link",
+              !shown.contains("\u{2010}") && !policy.contains("wiki/Privacy\u{2010}Policy"),
+              "U+2010 looks like '-' but resolves to a different page")
+
+        // The published URL must name the same page the other links use.
+        check("the Published-at URL uses the ASCII page name",
+              policy.contains("wiki/Privacy-Policy"),
+              "App Store Connect is given this exact URL")
+        check("the Published-at URL is not the wiki home",
+              !policy.contains("Published at:** https://github.com/emircanerkul/appletree/wiki\n"),
+              "a URL that redirects to Home is not a privacy policy URL")
+
         // A scheme-less link can only be safe if it names a bundled document.
         let schemeLess = ["privacy-policy", "privacy", "Privacy-Policy", "privacy-policy.md"]
         for target in schemeLess {
