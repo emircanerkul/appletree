@@ -113,6 +113,17 @@ enum LinkTests {
               repo?.url.absoluteString == "https://github.com/emircanerkul/appletree",
               repo?.url.absoluteString ?? "missing")
 
+        // The erklab mark in About links to the maker's site. It is not a Help
+        // menu row, so it is asserted against AppLinks directly.
+        check("the erklab link is https on erklab.com",
+              AppLinks.erklab.scheme == "https" && AppLinks.erklab.host == "erklab.com",
+              AppLinks.erklab.absoluteString)
+        // Two-letter hosts are easy to typo, and a wrong one would 404 silently
+        // from a button that looks correct.
+        check("the erklab link is the bare host, not www",
+              AppLinks.erklab.host == "erklab.com",
+              AppLinks.erklab.absoluteString)
+
         // The About panel's version comes from the bundle, never a constant. A
         // test binary has no version key, so this asserts the reader is wired to
         // the bundle rather than to a literal — the real app's value is checked

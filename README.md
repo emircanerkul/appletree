@@ -13,12 +13,14 @@
       <p><sub>Free for non-commercial use. <strong>Buying it on the App Store is what grants commercial use</strong> — the source itself stays non-commercial. See <a href="#license">License</a>.</sub></p>
     </td>
     <td width="20%" align="center" valign="middle">
-      <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="assets/erklab-logo-white.svg">
-        <img src="assets/erklab-logo.svg" width="132" alt="erklab">
-      </picture>
+      <a href="https://erklab.com">
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="assets/erklab-logo-white.svg">
+          <img src="assets/erklab-logo.svg" width="132" alt="erklab">
+        </picture>
+      </a>
       <br>
-      <sub>brought to you by erklab</sub>
+      <sub>brought to you by <a href="https://erklab.com">erklab</a></sub>
     </td>
   </tr>
 </table>

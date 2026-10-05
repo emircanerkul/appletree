@@ -19,6 +19,8 @@ nonisolated enum AppLinks {
     /// App Store Connect's own distribution URL is a signed-in dashboard, so it
     /// is deliberately not used here: it would send every user to a login wall.
     static let appStore = URL(string: "https://apps.apple.com/app/id6819034229")!
+    /// The maker's site, opened by the erklab mark in About.
+    static let erklab = URL(string: "https://erklab.com")!
 
     static func open(_ url: URL) { NSWorkspace.shared.open(url) }
 }
@@ -175,27 +177,44 @@ private struct AboutView: View {
     }
 }
 
-/// The erklab wordmark, drawn from the SVG the app bundles.
+/// The erklab wordmark, drawn from the SVG the app bundles, and a link to the
+/// maker's site.
 ///
 /// Shipped as SVG rather than a raster because AppKit renders it natively
 /// (`_NSSVGImageRep`, macOS 13+), so one file serves every scale and there is no
 /// bitmap that can go soft on a Retina display. Template rendering lets macOS
 /// tint it for the current appearance — white on this app's dark panel — instead
 /// of shipping a second file per theme.
+///
+/// A `Button` rather than a tap gesture, so the mark is keyboard-reachable and
+/// reads as a link to VoiceOver; `.plain` keeps it looking like a wordmark
+/// rather than a button. The pointing-hand cursor is what tells a mouse user it
+/// can be clicked at all — a bare logo does not advertise that.
 private struct ErklabLogo: View {
     let height: CGFloat
 
     var body: some View {
-        if let image = NSImage(named: "erklab-logo") ?? Bundle.main.image(forResource: "erklab-logo") {
-            Image(nsImage: image)
-                .renderingMode(.template)
-                .resizable()
-                .scaledToFit()
-                .frame(height: height)
-                .foregroundStyle(.secondary)
-                // The brand name is a proper noun: it is not translated, and it
-                // is not a key in any table.
-                .accessibilityLabel(Text(verbatim: "erklab"))
+        Button {
+            AppLinks.open(AppLinks.erklab)
+        } label: {
+            if let image = NSImage(named: "erklab-logo") ?? Bundle.main.image(forResource: "erklab-logo") {
+                Image(nsImage: image)
+                    .renderingMode(.template)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(height: height)
+                    .foregroundStyle(.secondary)
+            }
         }
+        .buttonStyle(.plain)
+        .onHover { inside in
+            if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+        }
+        .help(Text(verbatim: "erklab.com"))
+        // The brand name is a proper noun: it is not translated, and it is not a
+        // key in any table. Naming the destination is the useful label.
+        .accessibilityLabel(Text(verbatim: "erklab"))
+        .accessibilityHint(Text(verbatim: "Opens erklab.com"))
+        .accessibilityAddTraits(.isLink)
     }
 }
