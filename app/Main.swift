@@ -47,6 +47,12 @@ struct AppleTreeApp: App {
                     .helpText(String(localized: "Read the documentation bundled with the app"))
                 Button(String(localized: "AppleTree License")) { DocumentWindow.show(.license) }
                     .helpText(String(localized: "Read the license bundled with the app"))
+                // Guideline 5.1.1(i): the privacy policy must be reachable *in
+                // the app*, not only in App Store Connect metadata. Bundled, so
+                // it opens with no browser and no network — the same way the
+                // README and license do.
+                Button(String(localized: "AppleTree Privacy Policy")) { DocumentWindow.show(.privacy) }
+                    .helpText(String(localized: "Read the privacy policy bundled with the app"))
                 Divider()
                 ForEach(AppLinkItem.all) { item in
                     Button(item.title) { AppLinks.open(item.url) }

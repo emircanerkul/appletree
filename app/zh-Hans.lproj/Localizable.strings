@@ -232,3 +232,14 @@
 "AppleTree License" = "AppleTree 许可证";
 "Read the license bundled with the app" = "阅读应用自带的许可证";
 "This document was not bundled with this build." = "此版本未包含该文档。";
+
+/* Bundled privacy policy viewer, and the AI data-sharing disclosure.
+   Guideline 5.1.1(i) wants the policy reachable in-app; 5.1.2(i) wants
+   explicit permission, naming the destination, before any scan summary is
+   sent to a third party. */
+"AppleTree Privacy Policy" = "AppleTree 隐私政策";
+"Read the privacy policy bundled with the app" = "阅读随应用附带的隐私政策";
+"Privacy Policy" = "隐私政策";
+"Send a summary of this scan to %@?" = "将此扫描的摘要发送给 %@？";
+"Send and clean up" = "发送并清理";
+"AppleTree will send %@ the paths, names, sizes and dates of the largest items in this scan — folder and file names, but never the contents of your files. They leave your Mac and are handled under that provider's own terms. Sending it is what lets a planner suggest what to remove." = "AppleTree 会将本次扫描中最大项目的路径、名称、大小和日期发送给 %@ —— 仅包含文件夹和文件名称，绝不包含文件内容。这些数据将离开您的 Mac，并受该提供商自身条款的约束。只有发送后，规划器才能建议可以删除哪些内容。";

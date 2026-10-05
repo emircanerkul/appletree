@@ -53,6 +53,9 @@ nonisolated enum DocLink {
         switch name.lowercased() {
         case "license", "license.md", "license.txt": return .license
         case "readme", "readme.md": return .readme
+        // The privacy policy ships in the bundle too, so App Store Guideline
+        // 5.1.1(i) — a policy reachable in-app — is satisfied with no network.
+        case "privacy", "privacy.md", "privacy-policy", "privacy-policy.md": return .privacy
         default: return nil
         }
     }
@@ -102,6 +105,7 @@ nonisolated enum DocLink {
 nonisolated enum BundledDocRef {
     case readme
     case license
+    case privacy
 }
 
 /// The README, bundled into the app.

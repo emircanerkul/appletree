@@ -9,19 +9,37 @@ import SwiftUI
 /// A text document that ships inside the app, so reading it needs no browser and
 /// no network.
 ///
-/// Both the README and the LICENSE are read this way. They used to open
-/// github.com in the user's browser, which is wrong twice over: it needs the
-/// internet to read documentation that ships with the app, and it sends the
-/// reader out of the app to a page laid out by GitHub rather than by us.
+/// The README, the LICENSE and the privacy policy are all read this way. They
+/// used to open github.com in the user's browser, which is wrong twice over: it
+/// needs the internet to read documentation that ships with the app, and it
+/// sends the reader out of the app to a page laid out by GitHub rather than by
+/// us.
 nonisolated enum BundledDoc: String, CaseIterable {
     case readme
     case license
+    case privacy
 
     /// Resource name in the app bundle.
     var resource: String {
         switch self {
         case .readme: return "README"
         case .license: return "LICENSE"
+        case .privacy: return "PrivacyPolicy"
+        }
+    }
+
+    /// File extension, when the bundle stores one.
+    ///
+    /// The README and the privacy policy ship as `.md`; the LICENSE has none.
+    /// This is a per-document fact rather than a comparison against `README`,
+    /// which is what it used to be — that form silently failed for every later
+    /// markdown document, so the privacy policy opened to "This document was
+    /// not bundled with this build." while sitting in Resources under a name
+    /// the lookup never tried.
+    var fileExtension: String? {
+        switch self {
+        case .readme, .privacy: return "md"
+        case .license: return nil
         }
     }
 
@@ -30,13 +48,14 @@ nonisolated enum BundledDoc: String, CaseIterable {
         switch self {
         case .readme: return String(localized: "AppleTree README")
         case .license: return String(localized: "AppleTree License")
+        case .privacy: return String(localized: "AppleTree Privacy Policy")
         }
     }
 
     /// The file's text, or `nil` when the resource was left out of the build —
     /// which the viewer reports rather than showing an empty window.
     var text: String? {
-        guard let url = Bundle.main.url(forResource: resource, withExtension: resource == "README" ? "md" : nil)
+        guard let url = Bundle.main.url(forResource: resource, withExtension: fileExtension)
                 ?? Bundle.main.url(forResource: resource, withExtension: nil) else { return nil }
         return try? String(contentsOf: url, encoding: .utf8)
     }
@@ -44,12 +63,14 @@ nonisolated enum BundledDoc: String, CaseIterable {
     /// The markdown as it should be shown.
     ///
     /// The README is trimmed of the blocks written for GitHub's renderer (see
-    /// `Readme.forDisplay`). The LICENSE is plain text with no markdown, so it is
-    /// shown verbatim: trimming it could silently drop a clause.
+    /// `Readme.forDisplay`). The privacy policy is markdown with tables, so it
+    /// goes through the same trim — it contains no HTML, so nothing is removed.
+    /// The LICENSE is plain text with no markdown, so it is shown verbatim:
+    /// trimming it could silently drop a clause.
     var displayText: String? {
         guard let raw = text else { return nil }
         switch self {
-        case .readme: return Readme.forDisplay(raw)
+        case .readme, .privacy: return Readme.forDisplay(raw)
         case .license: return raw
         }
     }
@@ -169,6 +190,7 @@ private struct DocumentView: View {
                 switch ref {
                 case .license: DocumentWindow.show(.license)
                 case .readme: DocumentWindow.show(.readme)
+                case .privacy: DocumentWindow.show(.privacy)
                 }
                 return .handled
             }

@@ -292,6 +292,31 @@ final class ScanModel {
     var agentEnv = AgentEnvironment()
     /// The agent cleanup on screen, if any.
     var agentRun: AgentRun?
+    /// A cleanup the user asked for, held until they acknowledge what is about
+    /// to be sent off this Mac.
+    ///
+    /// App Store Guideline 5.1.2(i) requires explicit permission before personal
+    /// data is shared with a third party "including with third-party AI". Before
+    /// this, clicking "Clean up" *was* the consent: the scan summary left for
+    /// Anthropic, OpenAI or the user's own endpoint with nothing having named
+    /// the destination or described the payload.
+    ///
+    /// Nothing starts while this is non-nil. Every entry point — the panel's
+    /// primary button, its planner menu, Settings' start, a restart, and the
+    /// install-and-run path — funnels through `startAgent`/`startProvider`, and
+    /// both refuse to run until `grantCleanupConsent()` is called. Gating the
+    /// buttons instead would leave the other three paths open.
+    var pendingConsent = false
+    /// Who the held-back run would send to, so the dialog can name the
+    /// destination. Guideline 5.1.2(i) is about *explicit permission*, and a
+    /// dialog that does not say where the data goes cannot give it.
+    var pendingConsentDestination = ""
+    /// What a held-back start should do once consent is given. Set alongside
+    /// `pendingConsent`, read once, then cleared.
+    private var consentResume: (() -> Void)?
+    /// Whether the user has ever granted this, so the dialog is a one-time
+    /// decision rather than a toll gate on every cleanup.
+    private static let consentKey = "bz.cleanupConsent"
     /// An agent being installed or signed in from the panel.
     var agentSetup: AgentSetup?
     /// The first scan after launch opens the Clean Up panel once.
@@ -382,6 +407,10 @@ final class ScanModel {
 
     func startProvider(_ provider: LLMProvider) {
         guard canStartCleanup, let tree else { return }
+        guard consentsToSending() else {
+            askForConsent(destination: provider.displayName) { [weak self] in self?.startProvider(provider) }
+            return
+        }
         UserDefaults.standard.set("provider:\(provider.id)", forKey: "bz.engine")
         agentRun?.cancel()
         let run = AgentRun(agent: nil, env: agentEnv, tree: tree, scanRoot: scanRoot,
@@ -394,6 +423,10 @@ final class ScanModel {
 
     func startAgent(_ agent: InstalledAgent) {
         guard canStartCleanup, let tree else { return }
+        guard consentsToSending() else {
+            askForConsent(destination: agent.kind.name) { [weak self] in self?.startAgent(agent) }
+            return
+        }
         UserDefaults.standard.set(agent.kind.rawValue, forKey: "bz.engine")
         UserDefaults.standard.set(agent.kind.rawValue, forKey: "bz.agent")
         agentRun?.cancel()
@@ -402,6 +435,37 @@ final class ScanModel {
             self.startScan()
         }
         withAnimation(.snappy) { agentRun = run }
+    }
+
+    /// Whether the user has already agreed to send a scan summary to a planner.
+    ///
+    /// Stored, not per-session: the disclosure describes an ongoing behaviour,
+    /// and re-asking on every cleanup would train the user to click through it.
+    private func consentsToSending() -> Bool {
+        UserDefaults.standard.bool(forKey: Self.consentKey)
+    }
+
+    /// Hold a start until the disclosure is acknowledged.
+    private func askForConsent(destination: String, resume: @escaping () -> Void) {
+        pendingConsentDestination = destination
+        consentResume = resume
+        pendingConsent = true
+    }
+
+    /// The user acknowledged the disclosure: remember it and run what was held.
+    func grantCleanupConsent() {
+        UserDefaults.standard.set(true, forKey: Self.consentKey)
+        pendingConsent = false
+        let resume = consentResume
+        consentResume = nil
+        resume?()
+    }
+
+    /// The user declined: drop the held start and leave the app untouched.
+    func declineCleanupConsent() {
+        pendingConsent = false
+        pendingConsentDestination = ""
+        consentResume = nil
     }
 
     /// Whether the Clean Up drawer can be opened.

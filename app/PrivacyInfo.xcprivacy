@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  AppleTree privacy manifest.
+
+	  The declared API categories below are the ones the SHIPPED BINARY actually
+	  links, confirmed by `nm -u` over build/AppleTree.app/Contents/MacOS/AppleTree:
+	  getattrlist, getattrlistbulk, stat, fstat, fstatat, lstat (file timestamps);
+	  statfs (disk space); NSUserDefaults. Two categories are deliberately absent
+	  because no symbol for them exists: SystemBootTime (no mach_absolute_time or
+	  systemUptime) and ActiveKeyboards.
+	-->
+	<key>NSPrivacyTracking</key>
+	<false/>
+
+	<key>NSPrivacyTrackingDomains</key>
+	<array/>
+
+	<!--
+	  Nothing is collected by the developer. AppleTree has no accounts,
+	  analytics, crash reporting or servers of its own; everything it stores is
+	  local to the user's Mac. See the privacy policy for the detail.
+	-->
+	<key>NSPrivacyCollectedDataTypes</key>
+	<array/>
+
+	<key>NSPrivacyAccessedAPITypes</key>
+	<array>
+		<!--
+		  3B52.1, not DDA9.1. Both describe file-timestamp access, but DDA9.1
+		  ("display timestamps to the person") forbids sending anything derived
+		  off-device, and AppleTree does: an AI cleanup sends Xcode simulator
+		  last-used dates and Codex session dates in the scan summary, and those
+		  are derived from file timestamps. 3B52.1 covers metadata of files the
+		  user specifically granted access to — the folder they chose to scan, or
+		  the whole disk they granted Full Disk Access for — and carries no
+		  off-device restriction. DDA9.1 would be a false declaration.
+		-->
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>3B52.1</string>
+			</array>
+		</dict>
+
+		<!--
+		  85F4.1: disk space is shown to the user — the free-space block and the
+		  "space returned" figure after a cleanup. It is never sent off-device:
+		  the AI scan summary contains paths, sizes and dates but no free-space
+		  or capacity figure, so this reason is accurate.
+		-->
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryDiskSpace</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>85F4.1</string>
+			</array>
+		</dict>
+
+		<!--
+		  CA92.1: preferences are read and written only in AppleTree's own
+		  domain (com.erklab.apps.appletree). Nothing is read from another app
+		  and nothing is written where another app can read it.
+		-->
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>CA92.1</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

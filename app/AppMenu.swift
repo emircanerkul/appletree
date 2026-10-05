@@ -139,11 +139,16 @@ private struct AboutView: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             VStack(spacing: 6) {
-                // Both documents open in-app: they ship with the app, so reading
+                // These documents open in-app: they ship with the app, so reading
                 // them must not need a browser or the internet.
                 Button(String(localized: "Read the README")) { DocumentWindow.show(.readme) }
                     .buttonStyle(.borderedProminent)
                 HStack(spacing: 14) {
+                    // Guideline 5.1.1(i) asks for the privacy policy to be in the
+                    // app in an easily accessible manner, and About is the first
+                    // place a reviewer or a user looks.
+                    Button(String(localized: "Privacy Policy")) { DocumentWindow.show(.privacy) }
+                        .buttonStyle(.link)
                     Button(String(localized: "View license")) { DocumentWindow.show(.license) }
                         .buttonStyle(.link)
                     Button(String(localized: "AppleTree on GitHub")) { AppLinks.open(AppLinks.repo) }

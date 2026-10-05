@@ -232,3 +232,14 @@
 "AppleTree License" = "Licence d'AppleTree";
 "Read the license bundled with the app" = "Lire la licence fournie avec l'application";
 "This document was not bundled with this build." = "Ce document n'a pas été inclus dans cette version.";
+
+/* Bundled privacy policy viewer, and the AI data-sharing disclosure.
+   Guideline 5.1.1(i) wants the policy reachable in-app; 5.1.2(i) wants
+   explicit permission, naming the destination, before any scan summary is
+   sent to a third party. */
+"AppleTree Privacy Policy" = "Politique de confidentialité d'AppleTree";
+"Read the privacy policy bundled with the app" = "Lire la politique de confidentialité fournie avec l'app";
+"Privacy Policy" = "Politique de confidentialité";
+"Send a summary of this scan to %@?" = "Envoyer un résumé de cette analyse à %@ ?";
+"Send and clean up" = "Envoyer et nettoyer";
+"AppleTree will send %@ the paths, names, sizes and dates of the largest items in this scan — folder and file names, but never the contents of your files. They leave your Mac and are handled under that provider's own terms. Sending it is what lets a planner suggest what to remove." = "AppleTree enverra à %@ les chemins, noms, tailles et dates des éléments les plus volumineux de cette analyse — des noms de dossiers et de fichiers, mais jamais le contenu de vos fichiers. Ces données quittent votre Mac et relèvent des conditions propres à ce fournisseur. C'est ce qui permet à un planificateur de proposer quoi supprimer.";

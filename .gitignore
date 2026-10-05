@@ -10,11 +10,15 @@ __pycache__/
 # Local Aegis method-pack workspace: kept on disk for the owner, never
 # committed. Its history was removed from this repository in full.
 /docs/aegis/
-# Under docs/, only benchmarks/ and screenshots/ are tracked. Everything else
-# (local aegis workspace, app-store metadata, OS junk) stays ignored.
+# Under docs/, only benchmarks/, screenshots/ and wiki/ are tracked. Everything
+# else (local aegis workspace, app-store metadata, OS junk) stays ignored.
 /docs/*
 !/docs/benchmarks/
 !/docs/screenshots/
+# wiki/ holds the privacy policy the app BUNDLES: the `bundle` target copies
+# docs/wiki/Privacy-Policy.md into Contents/Resources, so a fresh clone needs
+# it or `make bundle` fails outright. app-store-metadata.md stays local.
+!/docs/wiki/
 # The committed captures are the tuned .webp files; the .png originals that
 # store-screenshots.py writes are local scratch and never committed.
 /docs/screenshots/*.png

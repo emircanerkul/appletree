@@ -63,6 +63,23 @@ struct CleanupPanel: View {
         } message: {
             Text(signOutMessage)
         }
+        // App Store Guideline 5.1.2(i): explicit permission before personal data
+        // goes to a third party, "including with third-party AI". The disclosure
+        // names the destination and describes the payload, and no cleanup starts
+        // until the user answers. Declining leaves the app fully usable.
+        .confirmationDialog(
+            String(localized: "Send a summary of this scan to \(model.pendingConsentDestination)?"),
+            isPresented: Binding(
+                get: { model.pendingConsent },
+                set: { if !$0 { model.declineCleanupConsent() } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button(String(localized: "Send and clean up")) { model.grantCleanupConsent() }
+            Button("Cancel", role: .cancel) { model.declineCleanupConsent() }
+        } message: {
+            Text("AppleTree will send \(model.pendingConsentDestination) the paths, names, sizes and dates of the largest items in this scan — folder and file names, but never the contents of your files. They leave your Mac and are handled under that provider's own terms. Sending it is what lets a planner suggest what to remove.")
+        }
         // A real binding, not `.constant(...)`: the constant form only ever
         // dismissed because the OK action happened to clear the array first,
         // leaving a permanently-true presentation behind it.

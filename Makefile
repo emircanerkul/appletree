@@ -47,7 +47,7 @@ SWIFT_FLAGS := -O -parse-as-library -swift-version 6 -default-isolation MainActo
                -framework DiskArbitration -framework IOKit
 
 .DEFAULT_GOAL := help
-.PHONY: help all build engine bundle deploy release test test-planner test-drawer test-links test-readme test-doclinks test-router test-l10n test-rust icon clean
+.PHONY: help all build engine bundle deploy release test test-planner test-drawer test-links test-readme test-doclinks test-router test-privacy test-l10n test-rust icon clean
 
 help:
 	@echo 'AppleTree targets:'
@@ -62,6 +62,7 @@ help:
 	@echo '  make test-readme        bundled README parses into renderable blocks'
 	@echo '  make test-doclinks      document links resolve (no scheme-less paths)'
 	@echo '  make test-router        Add-a-provider opens Model Providers + its form'
+	@echo '  make test-privacy       policy reachable in-app + privacy manifest complete'
 	@echo '  make test-l10n          every .strings table has the same keys, no duplicates'
 	@echo '  make test-rust          cargo test --release'
 	@echo '  make engine             cargo build --release only'
@@ -151,9 +152,19 @@ bundle: engine
 	cp README.md '$(APP)/Contents/Resources/README.md'
 	# Same for the license: About's "View license" reads it in-app.
 	cp LICENSE '$(APP)/Contents/Resources/LICENSE'
+	# And the privacy policy: Guideline 5.1.1(i) wants it reachable in the app,
+	# so About and Help both open this bundled copy rather than a URL.
+	cp docs/wiki/Privacy-Policy.md '$(APP)/Contents/Resources/PrivacyPolicy.md'
 	# erklab wordmark, as SVG. AppKit renders SVG natively (macOS 13+), so one
 	# file serves every scale; the template rendering tints it per appearance.
 	cp assets/erklab-logo.svg '$(APP)/Contents/Resources/erklab-logo.svg'
+	# Privacy manifest. Required for submission: App Store Connect refuses an
+	# upload whose binary links required-reason APIs without declaring them
+	# (ITMS-91053). It goes in Resources, NOT the bundle root — codesign refuses
+	# to seal an unsigned bundle-root item ("code object is not signed at all /
+	# In subcomponent: .../Contents/PrivacyInfo.xcprivacy"), and real macOS apps
+	# such as GarageBand carry theirs in Contents/Resources.
+	cp app/PrivacyInfo.xcprivacy '$(APP)/Contents/Resources/PrivacyInfo.xcprivacy'
 	if [[ -f '$(SIGN_KC)' && -f '$(SIGN_PASS)' ]]; then \
 	    security unlock-keychain -p "$$(<$(SIGN_PASS))" '$(SIGN_KC)'; \
 	fi
@@ -265,7 +276,7 @@ test-rust:
 # bz_cleanup_allowlist FFI (fail-closed).
 # The .strings check runs first: it is instant, and a table that drifted is a
 # bug the Swift tests cannot see, so there is no reason to compile first.
-test: engine test-l10n test-drawer test-links test-readme test-doclinks test-router
+test: engine test-l10n test-drawer test-links test-readme test-doclinks test-router test-privacy
 	@mkdir -p .build
 	swiftc tests/swift/main.swift app/CleanupGuard.swift \
 	    -import-objc-header app/bz.h \
@@ -326,6 +337,17 @@ test-doclinks:
 	    -parse-as-library -swift-version 6 -default-isolation MainActor \
 	    -target arm64-apple-macos$(MIN_MACOS) \
 	    -o .build/doclink-tests
+
+# Privacy compliance: the policy must be reachable in the app (5.1.1(i)), the
+# AI disclosure must name the destination (5.1.2(i)), and the manifest must
+# declare exactly the required-reason APIs the binary links (ITMS-91053).
+test-privacy:
+	@mkdir -p .build
+	swiftc tests/swift/privacy.swift app/ReadmeMarkdown.swift \
+	    -parse-as-library -swift-version 6 -default-isolation MainActor \
+	    -target arm64-apple-macos$(MIN_MACOS) \
+	    -o .build/privacy-tests
+	.build/privacy-tests
 
 # The Settings handoff: "Add a model provider" must select the Model Providers
 # pane AND raise the add form, including when the click arrives before Settings

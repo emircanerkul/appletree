@@ -226,3 +226,14 @@
 "AppleTree License" = "AppleTree License";
 "Read the license bundled with the app" = "Read the license bundled with the app";
 "This document was not bundled with this build." = "This document was not bundled with this build.";
+
+/* Bundled privacy policy viewer, and the AI data-sharing disclosure.
+   Guideline 5.1.1(i) wants the policy reachable in-app; 5.1.2(i) wants
+   explicit permission, naming the destination, before any scan summary is
+   sent to a third party. */
+"AppleTree Privacy Policy" = "AppleTree Privacy Policy";
+"Read the privacy policy bundled with the app" = "Read the privacy policy bundled with the app";
+"Privacy Policy" = "Privacy Policy";
+"Send a summary of this scan to %@?" = "Send a summary of this scan to %@?";
+"Send and clean up" = "Send and clean up";
+"AppleTree will send %@ the paths, names, sizes and dates of the largest items in this scan — folder and file names, but never the contents of your files. They leave your Mac and are handled under that provider's own terms. Sending it is what lets a planner suggest what to remove." = "AppleTree will send %@ the paths, names, sizes and dates of the largest items in this scan — folder and file names, but never the contents of your files. They leave your Mac and are handled under that provider's own terms. Sending it is what lets a planner suggest what to remove.";
