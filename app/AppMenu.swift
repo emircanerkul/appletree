@@ -15,6 +15,10 @@ nonisolated enum AppLinks {
     static let newIssue = URL(string: "https://github.com/emircanerkul/appletree/issues/new/choose")!
     static let security = URL(string: "https://github.com/emircanerkul/appletree/security/policy")!
     static let license = URL(string: "https://github.com/emircanerkul/appletree/blob/main/LICENSE")!
+    /// The public App Store listing — the page a buyer can actually open.
+    /// App Store Connect's own distribution URL is a signed-in dashboard, so it
+    /// is deliberately not used here: it would send every user to a login wall.
+    static let appStore = URL(string: "https://apps.apple.com/app/id6819034229")!
 
     static func open(_ url: URL) { NSWorkspace.shared.open(url) }
 }
@@ -35,6 +39,9 @@ nonisolated struct AppLinkItem: Identifiable, Sendable {
     /// Discussions: Discussions is not enabled on this repository, so a link
     /// there would 404 for everyone who clicked it.
     static let all: [AppLinkItem] = [
+        AppLinkItem(id: "appstore", title: String(localized: "Get AppleTree on the Mac App Store"),
+                    detail: String(localized: "Buying it is what grants commercial use"),
+                    url: AppLinks.appStore),
         AppLinkItem(id: "bug", title: String(localized: "Bug Report"),
                     detail: String(localized: "Report a bug in AppleTree"),
                     url: AppLinks.newIssue),
@@ -130,10 +137,16 @@ private struct AboutView: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             VStack(spacing: 6) {
-                Button(String(localized: "Open source on GitHub")) { AppLinks.open(AppLinks.repo) }
+                // Both documents open in-app: they ship with the app, so reading
+                // them must not need a browser or the internet.
+                Button(String(localized: "Read the README")) { DocumentWindow.show(.readme) }
                     .buttonStyle(.borderedProminent)
-                Button(String(localized: "View license")) { AppLinks.open(AppLinks.license) }
-                    .buttonStyle(.link)
+                HStack(spacing: 14) {
+                    Button(String(localized: "View license")) { DocumentWindow.show(.license) }
+                        .buttonStyle(.link)
+                    Button(String(localized: "AppleTree on GitHub")) { AppLinks.open(AppLinks.repo) }
+                        .buttonStyle(.link)
+                }
             }
 
             // Precise on purpose: the commercial grant covers running a
@@ -148,8 +161,41 @@ private struct AboutView: View {
                 .font(.caption)
                 .foregroundStyle(.tertiary)
                 .padding(.top, 2)
+
+            VStack(spacing: 3) {
+                Text("brought to you by")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                ErklabLogo(height: 22)
+            }
+            .padding(.top, 6)
         }
         .padding(24)
         .frame(width: 420)
+    }
+}
+
+/// The erklab wordmark, drawn from the SVG the app bundles.
+///
+/// Shipped as SVG rather than a raster because AppKit renders it natively
+/// (`_NSSVGImageRep`, macOS 13+), so one file serves every scale and there is no
+/// bitmap that can go soft on a Retina display. Template rendering lets macOS
+/// tint it for the current appearance — white on this app's dark panel — instead
+/// of shipping a second file per theme.
+private struct ErklabLogo: View {
+    let height: CGFloat
+
+    var body: some View {
+        if let image = NSImage(named: "erklab-logo") ?? Bundle.main.image(forResource: "erklab-logo") {
+            Image(nsImage: image)
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .frame(height: height)
+                .foregroundStyle(.secondary)
+                // The brand name is a proper noun: it is not translated, and it
+                // is not a key in any table.
+                .accessibilityLabel(Text(verbatim: "erklab"))
+        }
     }
 }

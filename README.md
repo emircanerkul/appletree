@@ -1,18 +1,33 @@
-<img src="assets/icon.png" width="128" alt="AppleTree icon">
-
-# AppleTree
-
-A fast, native disk-space treemap for macOS, in the spirit of WizTree. Scan a
-disk, see exactly what is consuming it, and reclaim the space — without handing
-your file list to anyone.
+<table>
+  <tr>
+    <td width="20%" align="center" valign="middle">
+      <img src="assets/icon.png" width="112" alt="AppleTree icon">
+    </td>
+    <td width="60%" align="center" valign="middle">
+      <h1>AppleTree</h1>
+      <p><strong>A fast, native disk-space treemap for macOS</strong>, in the spirit of WizTree.<br>
+      Scan a disk, see exactly what is consuming it, and reclaim the space —<br>
+      without handing your file list to anyone.</p>
+      <p>Requires Apple Silicon and macOS 14 or later.</p>
+      <p><a href="https://apps.apple.com/app/id6819034229"><strong>▶︎ Get AppleTree on the Mac App Store</strong></a></p>
+      <p><sub>Free for non-commercial use. <strong>Buying it on the App Store is what grants commercial use</strong> — the source itself stays non-commercial. See <a href="#license">License</a>.</sub></p>
+    </td>
+    <td width="20%" align="center" valign="middle">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="assets/erklab-logo-white.svg">
+        <img src="assets/erklab-logo.svg" width="132" alt="erklab">
+      </picture>
+      <br>
+      <sub>brought to you by erklab</sub>
+    </td>
+  </tr>
+</table>
 
 <p align="center">
   <video src="https://github.com/user-attachments/assets/2b2eda2e-cfae-471b-b993-17f463eaa76c" width="90%" controls>
     Your browser does not support embedded video.
   </video>
 </p>
-
-Requires Apple Silicon and macOS 14 or later.
 
 ## Features
 
@@ -308,10 +323,11 @@ is MIT, and work on top of that snapshot is CC BY-NC-SA 4.0. Non-commercial use
 is free under those terms.
 
 **Commercial use of the compiled app is granted by purchase.** Buying AppleTree
-on the Mac App Store lets that purchaser use their copy commercially, on their
-own devices. That grant is personal to the purchase: it does not cover the
-source code, redistribution, reselling, or bundling AppleTree into another
-product. The source stays CC BY-NC-SA 4.0 without exception, for everyone.
+on the [Mac App Store](https://apps.apple.com/app/id6819034229) lets that
+purchaser use their copy commercially, on their own devices. That grant is
+personal to the purchase: it does not cover the source code, redistribution,
+reselling, or bundling AppleTree into another product. The source stays
+CC BY-NC-SA 4.0 without exception, for everyone.
 
 For anything wider than one buyer running their own purchased copy, ask about a
 separate licence at licensing@appletree.apps.erklab.com. See [LICENSE](LICENSE)

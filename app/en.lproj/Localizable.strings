@@ -208,3 +208,21 @@
 "AppleTree shows you what is filling your disk, and cleans up the folders tools rebuild on demand. Nothing is removed without your say-so." = "AppleTree shows you what is filling your disk, and cleans up the folders tools rebuild on demand. Nothing is removed without your say-so.";
 "Free for non-commercial use. Buy it on the App Store to use the app commercially." = "Free for non-commercial use. Buy it on the App Store to use the app commercially.";
 "© 2026 Emircan ERKUL" = "© 2026 Emircan ERKUL";
+
+/* README viewer and erklab credit. */
+"Read the README" = "Read the README";
+"AppleTree README" = "AppleTree README";
+"Read the documentation bundled with the app" = "Read the documentation bundled with the app";
+"The README was not bundled with this build." = "The README was not bundled with this build.";
+"brought to you by" = "brought to you by";
+
+/* App Store link and the README viewer header. */
+"Get it on the Mac App Store" = "Get it on the Mac App Store";
+"Get AppleTree on the Mac App Store" = "Get AppleTree on the Mac App Store";
+"Buying it is what grants commercial use" = "Buying it is what grants commercial use";
+"A fast, native disk-space treemap for macOS." = "A fast, native disk-space treemap for macOS.";
+
+/* Bundled LICENSE viewer. */
+"AppleTree License" = "AppleTree License";
+"Read the license bundled with the app" = "Read the license bundled with the app";
+"This document was not bundled with this build." = "This document was not bundled with this build.";

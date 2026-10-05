@@ -214,3 +214,21 @@
 "AppleTree shows you what is filling your disk, and cleans up the folders tools rebuild on demand. Nothing is removed without your say-so." = "AppleTree diskinizi neyin doldurduğunu gösterir ve araçların gerektiğinde yeniden oluşturduğu klasörleri temizler. Siz izin vermeden hiçbir şey silinmez.";
 "Free for non-commercial use. Buy it on the App Store to use the app commercially." = "Ticari olmayan kullanım ücretsizdir. Uygulamayı ticari olarak kullanmak için App Store'dan satın alın.";
 "© 2026 Emircan ERKUL" = "© 2026 Emircan ERKUL";
+
+/* README viewer and erklab credit. */
+"Read the README" = "README'yi oku";
+"AppleTree README" = "AppleTree README";
+"Read the documentation bundled with the app" = "Uygulamayla birlikte gelen belgeleri okuyun";
+"The README was not bundled with this build." = "README bu derlemeye dahil edilmemiş.";
+"brought to you by" = "sunulmuştur";
+
+/* App Store link and the README viewer header. */
+"Get it on the Mac App Store" = "Mac App Store'dan edinin";
+"Get AppleTree on the Mac App Store" = "AppleTree'yi Mac App Store'dan edinin";
+"Buying it is what grants commercial use" = "Ticari kullanım hakkı satın alma ile verilir";
+"A fast, native disk-space treemap for macOS." = "macOS için hızlı, yerel bir disk alanı haritası.";
+
+/* Bundled LICENSE viewer. */
+"AppleTree License" = "AppleTree Lisansı";
+"Read the license bundled with the app" = "Uygulamayla gelen lisansı okuyun";
+"This document was not bundled with this build." = "Bu belge bu derlemeye dahil edilmemiş.";

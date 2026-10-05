@@ -36,9 +36,15 @@ struct AppleTreeApp: App {
             // AppKit's Help menu normally points at a help book; with none,
             // macOS greys it out with "Help isn't available for AppleTree".
             // AppleTree has no manual to write — it is one window and a button
-            // — so the menu carries the places a user actually needs instead:
-            // the bug form, security, feature requests, questions, and source.
+            // — so the menu opens the project's own README (bundled, so it needs
+            // no network) and then the places a user actually needs: the bug
+            // form, security, feature requests, questions, and source.
             CommandGroup(replacing: .help) {
+                Button(String(localized: "AppleTree README")) { DocumentWindow.show(.readme) }
+                    .helpText(String(localized: "Read the documentation bundled with the app"))
+                Button(String(localized: "AppleTree License")) { DocumentWindow.show(.license) }
+                    .helpText(String(localized: "Read the license bundled with the app"))
+                Divider()
                 ForEach(AppLinkItem.all) { item in
                     Button(item.title) { AppLinks.open(item.url) }
                         .helpText(item.detail)

@@ -34,8 +34,9 @@ enum LinkTests {
     static func main() {
         let items = AppLinkItem.all
 
-        // The Help menu lists the destinations the tracker offers, plus the repo.
-        check("Help menu has five rows", items.count == 5, "got \(items.count)")
+        // The Help menu lists the App Store listing, the destinations the
+        // tracker offers, and the repo.
+        check("Help menu has six rows", items.count == 6, "got \(items.count)")
 
         // One row per destination, no duplicates: a copy-paste slip that left two
         // rows pointing at the same page would otherwise ship silently.
@@ -44,15 +45,32 @@ enum LinkTests {
         let urls = items.map(\.url.absoluteString)
         check("row urls are unique", Set(urls).count == urls.count, "\(urls)")
 
-        // Every row must be a GitHub link on this project, and https.
+        // Every row is https, and points at either this project on GitHub or the
+        // public App Store listing. Nothing else may appear in the menu.
         for item in items {
+            let onGitHub = item.url.host == "github.com"
+                && item.url.path.hasPrefix("/emircanerkul/appletree")
+            let onAppStore = item.url.host == "apps.apple.com"
             check("\(item.id) links to the project on https",
-                  item.url.scheme == "https"
-                  && item.url.host == "github.com"
-                  && item.url.path.hasPrefix("/emircanerkul/appletree"),
+                  item.url.scheme == "https" && (onGitHub || onAppStore),
                   item.url.absoluteString)
             check("\(item.id) has a title", !item.title.isEmpty)
             check("\(item.id) has a detail line", !item.detail.isEmpty)
+        }
+
+        // The App Store row must open the PUBLIC listing, never App Store
+        // Connect: the Connect distribution URL is a signed-in dashboard
+        // (verified: it redirects to a login wall), so it would dead-end every
+        // buyer who clicked it.
+        let appStore = items.first { $0.id == "appstore" }
+        check("the App Store row exists", appStore != nil)
+        check("the App Store row uses the public listing",
+              appStore?.url.host == "apps.apple.com",
+              appStore?.url.absoluteString ?? "missing")
+        for item in items {
+            check("\(item.id) never points at App Store Connect",
+                  item.url.host != "appstoreconnect.apple.com",
+                  item.url.absoluteString)
         }
 
         // The specific regression: Discussions is disabled, so NO row may point

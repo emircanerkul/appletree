@@ -214,3 +214,21 @@
 "AppleTree shows you what is filling your disk, and cleans up the folders tools rebuild on demand. Nothing is removed without your say-so." = "AppleTree はディスクを圧迫しているものを示し、ツールが再生成するフォルダーを整理します。あなたの同意なく削除されることはありません。";
 "Free for non-commercial use. Buy it on the App Store to use the app commercially." = "非商用利用は無料。商用で利用するには App Store で購入してください。";
 "© 2026 Emircan ERKUL" = "© 2026 Emircan ERKUL";
+
+/* README viewer and erklab credit. */
+"Read the README" = "README を読む";
+"AppleTree README" = "AppleTree README";
+"Read the documentation bundled with the app" = "アプリに同梱されたドキュメントを読む";
+"The README was not bundled with this build." = "このビルドには README が含まれていません。";
+"brought to you by" = "提供";
+
+/* App Store link and the README viewer header. */
+"Get it on the Mac App Store" = "Mac App Store で入手";
+"Get AppleTree on the Mac App Store" = "AppleTree を Mac App Store で入手";
+"Buying it is what grants commercial use" = "購入することが商用利用の許諾となります";
+"A fast, native disk-space treemap for macOS." = "macOS 向けの高速でネイティブなディスク容量ツリーマップ。";
+
+/* Bundled LICENSE viewer. */
+"AppleTree License" = "AppleTree ライセンス";
+"Read the license bundled with the app" = "アプリに同梱されたライセンスを読む";
+"This document was not bundled with this build." = "このドキュメントはこのビルドに含まれていません。";

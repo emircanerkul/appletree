@@ -47,7 +47,7 @@ SWIFT_FLAGS := -O -parse-as-library -swift-version 6 -default-isolation MainActo
                -framework DiskArbitration -framework IOKit
 
 .DEFAULT_GOAL := help
-.PHONY: help all build engine bundle deploy release test test-planner test-drawer test-links test-l10n test-rust icon clean
+.PHONY: help all build engine bundle deploy release test test-planner test-drawer test-links test-readme test-l10n test-rust icon clean
 
 help:
 	@echo 'AppleTree targets:'
@@ -59,6 +59,7 @@ help:
 	@echo '  make test-planner       planner catalog, preference and sign-out tests'
 	@echo '  make test-drawer        right-drawer trash outcome and plan-group tests'
 	@echo '  make test-links         Help-menu and About link destinations'
+	@echo '  make test-readme        bundled README parses into renderable blocks'
 	@echo '  make test-l10n          every .strings table has the same keys, no duplicates'
 	@echo '  make test-rust          cargo test --release'
 	@echo '  make engine             cargo build --release only'
@@ -143,6 +144,14 @@ bundle: engine
 	    --output-partial-info-plist $$(pwd)/build/icon-partial.plist >/dev/null
 	# Classic .lproj Localizable.strings tables (swiftc, no Xcode build system).
 	for lproj in app/*.lproj; do cp -R "$$lproj" '$(APP)/Contents/Resources/'; done
+	# The README ships inside the app: Help → AppleTree README reads it with no
+	# browser and no network, so it cannot be fetched from GitHub at view time.
+	cp README.md '$(APP)/Contents/Resources/README.md'
+	# Same for the license: About's "View license" reads it in-app.
+	cp LICENSE '$(APP)/Contents/Resources/LICENSE'
+	# erklab wordmark, as SVG. AppKit renders SVG natively (macOS 13+), so one
+	# file serves every scale; the template rendering tints it per appearance.
+	cp assets/erklab-logo.svg '$(APP)/Contents/Resources/erklab-logo.svg'
 	if [[ -f '$(SIGN_KC)' && -f '$(SIGN_PASS)' ]]; then \
 	    security unlock-keychain -p "$$(<$(SIGN_PASS))" '$(SIGN_KC)'; \
 	fi
@@ -254,7 +263,7 @@ test-rust:
 # bz_cleanup_allowlist FFI (fail-closed).
 # The .strings check runs first: it is instant, and a table that drifted is a
 # bug the Swift tests cannot see, so there is no reason to compile first.
-test: engine test-l10n test-drawer test-links
+test: engine test-l10n test-drawer test-links test-readme
 	@mkdir -p .build
 	swiftc tests/swift/main.swift app/CleanupGuard.swift \
 	    -import-objc-header app/bz.h \
@@ -287,12 +296,24 @@ test-drawer: engine
 # which this repository does not enable: a 404 for every reporter.
 test-links:
 	@mkdir -p .build
-	swiftc tests/swift/links.swift app/AppMenu.swift \
+	swiftc tests/swift/links.swift app/AppMenu.swift app/DocumentView.swift app/ReadmeMarkdown.swift \
 	    -parse-as-library -swift-version 6 -default-isolation MainActor \
 	    -target arm64-apple-macos$(MIN_MACOS) \
 	    -framework AppKit \
 	    -o .build/link-tests
 	.build/link-tests
+
+# README viewer: the bundled markdown must parse into real blocks (headings,
+# code fences, list items) with no HTML header leaking through as literal text.
+# Compiles only ReadmeMarkdown.swift on purpose — the parsing is deliberately
+# free of SwiftUI so it can be tested without linking a view framework.
+test-readme:
+	@mkdir -p .build
+	swiftc tests/swift/readme.swift app/ReadmeMarkdown.swift \
+	    -parse-as-library -swift-version 6 -default-isolation MainActor \
+	    -target arm64-apple-macos$(MIN_MACOS) \
+	    -o .build/readme-tests
+	.build/readme-tests
 
 # Planner catalog and sign-out tests. Real shipping sources, no stubs, so this
 # fails if the catalog rule, the preference resolution both surfaces share, or
