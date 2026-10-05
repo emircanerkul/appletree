@@ -155,6 +155,27 @@ private struct DocumentView: View {
         }
         .background(Color(nsColor: .textBackgroundColor))
         .preferredColorScheme(.dark)
+        // Every link click comes through here.
+        //
+        // Without this, SwiftUI hands a scheme-less link (`LICENSE`,
+        // `.github/SECURITY.md`) straight to macOS, which treats it as a
+        // filesystem path and fails with "The application can't be opened.
+        // (-50)". Returning `.handled` for everything the app can resolve keeps
+        // that from ever reaching the system.
+        .environment(\.openURL, OpenURLAction { url in
+            // A document the app already ships opens in-app, offline — the whole
+            // point of bundling it.
+            if let ref = DocLink.bundledDocument(for: url.absoluteString) {
+                switch ref {
+                case .license: DocumentWindow.show(.license)
+                case .readme: DocumentWindow.show(.readme)
+                }
+                return .handled
+            }
+            guard let target = DocLink.resolve(url) else { return .handled }
+            AppLinks.open(target)
+            return .handled
+        })
     }
 
     /// The app's own header, standing in for the HTML table at the top of the

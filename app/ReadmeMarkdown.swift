@@ -33,6 +33,77 @@ nonisolated struct ReadmeBlock: Identifiable {
     let role: BlockRole
 }
 
+/// Where a markdown link in a bundled document should actually go.
+///
+/// Markdown links are written relative to the repository — `LICENSE`,
+/// `.github/SECURITY.md`, `docs/benchmarks/BENCHMARKS.md` — and Foundation
+/// hands those through with `scheme == nil`. SwiftUI then passes the bare
+/// string to macOS, which treats it as a filesystem path, fails to open it, and
+/// raises "The application can't be opened. (-50)". That is what clicking
+/// `SECURITY.md` or `LICENSE` in the README did.
+///
+/// So a link with no scheme is never opened as-is. It is either satisfied
+/// in-app (a document that ships in the bundle) or resolved against the
+/// repository on GitHub, which is where a relative link in a README means to
+/// point.
+nonisolated enum DocLink {
+    /// A scheme-less link that names a file the app already bundles.
+    static func bundledDocument(for target: String) -> BundledDocRef? {
+        let name = target.trimmingCharacters(in: CharacterSet(charactersIn: "./"))
+        switch name.lowercased() {
+        case "license", "license.md", "license.txt": return .license
+        case "readme", "readme.md": return .readme
+        default: return nil
+        }
+    }
+
+    /// Resolve any link to something worth opening, or `nil` to ignore it.
+    ///
+    /// - `#anchor` links are in-page: the app has no anchor scrolling, so they
+    ///   are dropped rather than opened (a bare `#license` as a path fails the
+    ///   same way a bare `LICENSE` does).
+    /// - `mailto:`, `https:` and any other real scheme are left alone.
+    /// - Everything else becomes a GitHub blob or tree URL.
+    static func resolve(_ url: URL) -> URL? {
+        if url.scheme != nil {
+            // A pure fragment has no host worth opening on its own.
+            if url.absoluteString.hasPrefix("#") { return nil }
+            return url
+        }
+        let target = url.absoluteString
+        if target.hasPrefix("#") { return nil }
+        // Already absolute but unschemed (rare); nothing sensible to do.
+        if target.isEmpty { return nil }
+        return repoURL(for: target)
+    }
+
+    /// A repository path turned into a browsable GitHub URL.
+    ///
+    /// A trailing slash means a directory, so it goes to the tree view; a file
+    /// goes to the blob view. Both resolve on the default branch, which GitHub
+    /// redirects to the real default even when it is not `main`.
+    private static func repoURL(for target: String) -> URL? {
+        let repo = "https://github.com/emircanerkul/appletree"
+        let isDirectory = target.hasSuffix("/")
+        let cleaned = target.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard !cleaned.isEmpty else { return URL(string: repo) }
+        let kind = isDirectory ? "tree" : "blob"
+        // Percent-encode each path segment: the README links contain none today,
+        // but a future `docs/my notes.md` must not produce a broken URL.
+        let encoded = cleaned.split(separator: "/")
+            .map { $0.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? String($0) }
+            .joined(separator: "/")
+        return URL(string: "\(repo)/\(kind)/main/\(encoded)")
+    }
+}
+
+/// Documents the app bundles, named here so the link resolver does not have to
+/// import the SwiftUI view layer to talk about them.
+nonisolated enum BundledDocRef {
+    case readme
+    case license
+}
+
 /// The README, bundled into the app.
 nonisolated enum Readme {
     /// The bundled file. `nil` only when the resource was left out of the build,

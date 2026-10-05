@@ -47,7 +47,7 @@ SWIFT_FLAGS := -O -parse-as-library -swift-version 6 -default-isolation MainActo
                -framework DiskArbitration -framework IOKit
 
 .DEFAULT_GOAL := help
-.PHONY: help all build engine bundle deploy release test test-planner test-drawer test-links test-readme test-l10n test-rust icon clean
+.PHONY: help all build engine bundle deploy release test test-planner test-drawer test-links test-readme test-doclinks test-l10n test-rust icon clean
 
 help:
 	@echo 'AppleTree targets:'
@@ -60,6 +60,7 @@ help:
 	@echo '  make test-drawer        right-drawer trash outcome and plan-group tests'
 	@echo '  make test-links         Help-menu and About link destinations'
 	@echo '  make test-readme        bundled README parses into renderable blocks'
+	@echo '  make test-doclinks      document links resolve (no scheme-less paths)'
 	@echo '  make test-l10n          every .strings table has the same keys, no duplicates'
 	@echo '  make test-rust          cargo test --release'
 	@echo '  make engine             cargo build --release only'
@@ -263,7 +264,7 @@ test-rust:
 # bz_cleanup_allowlist FFI (fail-closed).
 # The .strings check runs first: it is instant, and a table that drifted is a
 # bug the Swift tests cannot see, so there is no reason to compile first.
-test: engine test-l10n test-drawer test-links test-readme
+test: engine test-l10n test-drawer test-links test-readme test-doclinks
 	@mkdir -p .build
 	swiftc tests/swift/main.swift app/CleanupGuard.swift \
 	    -import-objc-header app/bz.h \
@@ -313,6 +314,18 @@ test-readme:
 	    -parse-as-library -swift-version 6 -default-isolation MainActor \
 	    -target arm64-apple-macos$(MIN_MACOS) \
 	    -o .build/readme-tests
+
+# Document links: every relative link in the bundled README/LICENSE must resolve
+# to something openable. A scheme-less link reaches macOS as a filesystem path
+# and fails with "The application can't be opened. (-50)", which is what made
+# clicking SECURITY.md or LICENSE in the README break.
+test-doclinks:
+	@mkdir -p .build
+	swiftc tests/swift/doclinks.swift app/ReadmeMarkdown.swift \
+	    -parse-as-library -swift-version 6 -default-isolation MainActor \
+	    -target arm64-apple-macos$(MIN_MACOS) \
+	    -o .build/doclink-tests
+	.build/doclink-tests
 	.build/readme-tests
 
 # Planner catalog and sign-out tests. Real shipping sources, no stubs, so this
