@@ -98,7 +98,7 @@ final class PlanItem: Identifiable {
         }
         paths = kept.isEmpty ? asked : kept
         blocked = reason
-        selected = reason == nil && spec.group == "safe"
+        selected = reason == nil && spec.group == .safe
         note = recent > 0 && !kept.isEmpty
             ? "Keeps \(recent) project\(recent == 1 ? "" : "s") you used in the last 2 days" : nil
 
@@ -135,6 +135,9 @@ final class AgentRun {
     private(set) var items: [PlanItem] = []
     private(set) var startedAt = Date()
     private(set) var planSeconds: Double?
+    /// The card the run is working on right now, so the panel can mark it.
+    /// Written by the two cleaning phases; read by `PlanCard` for its brighter
+    /// fill and accent ring.
     private(set) var current: UUID?
 
     private var process: Process?
@@ -326,11 +329,7 @@ final class AgentRun {
             withAnimation(.snappy) { items.append(PlanItem(spec: spec, tree: tree)) }
         case .plan(let summary, let specs):
             self.summary = summary
-            // The final JSON is authoritative; keep the cards already shown
-            // (and their checkboxes) when they match.
-            if specs.map(\.title) != items.map(\.spec.title) {
-                withAnimation(.snappy) { items = specs.map { PlanItem(spec: $0, tree: tree) } }
-            }
+            adopt(specs)
             finishPlanning()
         case .failed(let message):
             NSLog("[bz] provider \(name) failed: \(message)")
@@ -349,17 +348,38 @@ final class AgentRun {
             withAnimation(.snappy) { items = [] }
         case .plan(let summary, let specs):
             self.summary = summary
-            // The final JSON is authoritative; keep the cards already shown
-            // (and their checkboxes) when they match.
-            if specs.map(\.title) != items.map(\.spec.title) {
-                withAnimation(.snappy) { items = specs.map { PlanItem(spec: $0, tree: tree) } }
-            }
+            adopt(specs)
             finishPlanning()
         case .failed(let message):
             // A CLI run that dies after streaming cards still finishes
             // planning with what arrived; a provider whose JSON never
             // decoded strictly gets the same grace.
             if !items.isEmpty { finishPlanning() } else { phase = .failed(message) }
+        }
+    }
+
+    /// Make the final plan authoritative while preserving the ticks a user
+    /// already made on cards it agrees with.
+    ///
+    /// The old form compared `specs.map(\.title)` — only the titles. Titles are
+    /// model-chosen and the schema does not make them unique, so two cards
+    /// legitimately called "node_modules" kept the *streamed* card's paths,
+    /// bytes and group, and the panel then showed and acted on partial figures
+    /// instead of the plan's. Comparing the whole spec is what makes "agrees
+    /// with" mean the card really is the same item.
+    private func adopt(_ specs: [PlanItemSpec]) {
+        guard specs.map(\.self) != items.map(\.spec) else { return }
+        // Reuse a card only when the spec matches at the same position AND the
+        // user's tick still applies, so a rebuilt plan cannot silently inherit
+        // a selection made for a different item.
+        let previous = items
+        withAnimation(.snappy) {
+            items = specs.enumerated().map { index, spec in
+                guard previous.indices.contains(index), previous[index].spec == spec else {
+                    return PlanItem(spec: spec, tree: tree)
+                }
+                return previous[index]
+            }
         }
     }
 
@@ -389,6 +409,19 @@ final class AgentRun {
     /// Demo recordings only: walk through both steps without touching disk.
     private let dryRun = ProcessInfo.processInfo.environment["BZ_DEMO_DRYRUN"] != nil
 
+    /// Whether this run is still working. Terminal phases have stopped and keep
+    /// their result on screen until the user closes the panel.
+    var isActive: Bool {
+        switch phase {
+        case .thinking, .planned, .trashing, .staged, .deleting: return true
+        case .done, .failed: return false
+        }
+    }
+
+    /// Whether this run touches nothing. Read by the panel's QA auto-approve
+    /// hook, which must never drive a real irreversible delete.
+    var isDryRun: Bool { dryRun }
+
     /// Step one: move the chosen folders to the Trash. Nothing is deleted.
     func moveToTrash() {
         guard phase == .planned else { return }
@@ -396,6 +429,9 @@ final class AgentRun {
         for item in items where !(item.selected && item.blocked == nil) { item.status = .skipped }
         let work = targets.filter { !$0.isCommand }
         for item in work { item.status = .running }
+        // All of them are in flight at once, so the marked card is the first
+        // one still working; the status glyphs carry the rest.
+        current = work.first?.id
         Task {
             // Moving to the Trash is a rename; all of them at once, off the main thread.
             await withTaskGroup(of: Void.self) { group in
@@ -403,15 +439,32 @@ final class AgentRun {
                     let paths = item.paths
                     let dryRun = dryRun
                     group.addTask {
-                        let result = dryRun ? (moved: [URL](), error: String?.none) : await Self.trash(paths)
+                        // One outcome per source path: some of a card's folders
+                        // can move while another is blocked. Keyed by source,
+                        // never by the Trash URL the move returns.
+                        let outcomes = dryRun ? [] : await Self.trash(paths)
                         await MainActor.run {
-                            item.trashed = result.moved
-                            item.trashedBytes = dryRun || !result.moved.isEmpty ? item.bytes : 0
-                            withAnimation(.snappy) { item.status = result.error.map { .failed($0) } ?? .inTrash }
+                            let moved = outcomes.compactMap(\.trashed)
+                            let reason = outcomes.compactMap(\.reason).first
+                            item.trashed = moved
+                            item.trashedBytes = dryRun || !moved.isEmpty ? item.bytes : 0
+                            // A reason with nothing moved is a failed card; a
+                            // partial move is still in the Trash, so the
+                            // folders that did move stay deletable. The
+                            // remainder is reported, not silently dropped.
+                            if let reason, moved.isEmpty {
+                                item.status = .failed(reason)
+                            } else {
+                                if let reason {
+                                    NSLog("[bz] \(item.spec.title): moved \(moved.count) of \(paths.count) (\(reason))")
+                                }
+                                item.status = .inTrash
+                            }
                         }
                     }
                 }
             }
+            current = nil
             withAnimation(.snappy) { phase = .staged }
         }
     }
@@ -424,6 +477,7 @@ final class AgentRun {
         phase = .deleting
         let work = targets.filter { $0.status == .inTrash || ($0.isCommand && $0.status == .waiting) }
         for item in work { item.status = .running }
+        current = work.first?.id
         let before = Self.freeBytes()
         Task {
             await withTaskGroup(of: Void.self) { group in
@@ -465,13 +519,14 @@ final class AgentRun {
                 }
                 reclaimed = last > before ? last - before : 0
             }
+            current = nil
             withAnimation(.snappy) { phase = .done }
             if !dryRun { onFinish() }
         }
     }
 
     /// Moves paths to the Trash via the shared pathway in CleanupModel.swift.
-    nonisolated static func trash(_ paths: [String]) async -> (moved: [URL], error: String?) {
+    nonisolated static func trash(_ paths: [String]) async -> [TrashOutcome] {
         await Trash.trash(paths)
     }
 

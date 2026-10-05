@@ -358,8 +358,30 @@ final class ScanModel {
         if found != drives { drives = found }
     }
 
+    /// Whether a *user-initiated* scan may start right now.
+    ///
+    /// A plan belongs to the scan that produced it — its cards carry node IDs
+    /// and sizes from that tree, and a new walk renumbers the nodes and
+    /// re-measures the sizes. Replacing the tree while a cleanup is still
+    /// working would leave the panel reporting figures from a scan the user has
+    /// moved past, and would swallow the run's own post-clean rescan (whose
+    /// callback skips while a scan is in flight). This gates the scan controls
+    /// only; `startScan` stays open because that callback goes through it.
+    ///
+    /// A finished run does not block a rescan: it has stopped touching the tree
+    /// and shows a result that is explicitly historical.
+    var canScan: Bool { !scanning && !cleanupTrash.running && !(agentRun?.isActive ?? false) }
+
+    /// Whether a cleanup may start right now.
+    ///
+    /// ONE rule for both entry kinds. `startProvider` previously checked only
+    /// `!scanning` while `startAgent` also checked `!cleanupTrash.running`, so
+    /// whether a second run was refused depended on which planner the user
+    /// picked — a divergence with no reason behind it.
+    private var canStartCleanup: Bool { tree != nil && !scanning && !cleanupTrash.running }
+
     func startProvider(_ provider: LLMProvider) {
-        guard let tree, !scanning else { return }
+        guard canStartCleanup, let tree else { return }
         UserDefaults.standard.set("provider:\(provider.id)", forKey: "bz.engine")
         agentRun?.cancel()
         let run = AgentRun(agent: nil, env: agentEnv, tree: tree, scanRoot: scanRoot,
@@ -371,7 +393,7 @@ final class ScanModel {
     }
 
     func startAgent(_ agent: InstalledAgent) {
-        guard let tree, !scanning, !cleanupTrash.running else { return }
+        guard canStartCleanup, let tree else { return }
         UserDefaults.standard.set(agent.kind.rawValue, forKey: "bz.engine")
         UserDefaults.standard.set(agent.kind.rawValue, forKey: "bz.agent")
         agentRun?.cancel()

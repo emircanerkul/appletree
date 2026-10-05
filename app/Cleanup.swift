@@ -5,12 +5,26 @@ import SwiftUI
 /// agent cleanup is on screen, the whole panel is that run.
 struct CleanupPanel: View {
     let model: ScanModel
-    @State private var picked: Set<Int> = []
+    /// Ticked rows, keyed by PATH.
+    ///
+    /// This was a `Set<Int>` of node IDs, which a rescan invalidates: node IDs
+    /// are slots in one scan's arrays (see `Cleanup.find`), and the engine
+    /// renumbers them on every walk, so ticks silently vanished or — worse —
+    /// re-bound to a folder the user never picked, which is the folder the
+    /// Move button then acted on. Paths are the identity this file's own
+    /// convention already uses for anything that outlives one scan.
+    @State private var picked: Set<String> = []
     @State private var confirming = false
     /// The agent a sign-out was confirmed for, or nil.
     @State private var signingOut: AgentKind?
 
-    private var pickedItems: [CleanupItem] { model.cleanup.filter { picked.contains($0.id) } }
+    /// The single source of truth for what Move acts on: the ticks that still
+    /// resolve against the CURRENT scan. Every other read of the selection —
+    /// the label, the byte total, the enabled state, the dialog — derives from
+    /// this, so the count a user is shown is always the count that moves.
+    private var pickedItems: [CleanupItem] {
+        model.cleanup.filter { picked.contains($0.path) }
+    }
     private var pickedBytes: UInt64 { pickedItems.reduce(0) { $0 + $1.bytes } }
     private var totalBytes: UInt64 { model.cleanup.reduce(0) { $0 + $1.bytes } }
 
@@ -27,7 +41,7 @@ struct CleanupPanel: View {
                     .transition(.opacity)
             }
         }
-        .confirmationDialog(picked.count == 1 ? "Move 1 folder to the Trash?" : "Move \(String(picked.count)) folders to the Trash?", isPresented: $confirming) {
+        .confirmationDialog(pickedItems.count == 1 ? "Move 1 folder to the Trash?" : "Move \(String(pickedItems.count)) folders to the Trash?", isPresented: $confirming) {
             Button("Move to Trash (\(Fmt.size(pickedBytes)))", role: .destructive) { trashPicked() }
             Button("Cancel", role: .cancel) {}
         } message: {
@@ -46,7 +60,13 @@ struct CleanupPanel: View {
         } message: {
             Text(signOutMessage)
         }
-        .alert("Some folders couldn't be moved", isPresented: .constant(!model.cleanupTrash.failures.isEmpty)) {
+        // A real binding, not `.constant(...)`: the constant form only ever
+        // dismissed because the OK action happened to clear the array first,
+        // leaving a permanently-true presentation behind it.
+        .alert("Some folders couldn't be moved", isPresented: Binding(
+            get: { !model.cleanupTrash.failures.isEmpty },
+            set: { if !$0 { model.cleanupTrash.clearFailures() } }
+        )) {
             Button("OK") { model.cleanupTrash.clearFailures() }
         } message: {
             Text(model.cleanupTrash.failures.joined(separator: "\n"))
@@ -86,8 +106,8 @@ struct CleanupPanel: View {
             List(model.cleanup) { item in
                 HStack(alignment: .top, spacing: 8) {
                     Toggle("", isOn: Binding(
-                        get: { picked.contains(item.id) },
-                        set: { on in if on { picked.insert(item.id) } else { picked.remove(item.id) } }
+                        get: { picked.contains(item.path) },
+                        set: { on in if on { picked.insert(item.path) } else { picked.remove(item.path) } }
                     ))
                     .labelsHidden()
                     .toggleStyle(.checkbox)
@@ -123,13 +143,15 @@ struct CleanupPanel: View {
                 Button {
                     confirming = true
                 } label: {
-                    Text(picked.isEmpty ? "Select folders to clean up"
-                         : "Move \(String(picked.count)) to Trash · \(Fmt.size(pickedBytes))")
+                    // Count and bytes both come from the resolved rows, so the
+                    // number shown is exactly the number that moves.
+                    Text(pickedItems.isEmpty ? "Select folders to clean up"
+                         : "Move \(String(pickedItems.count)) to Trash · \(Fmt.size(pickedBytes))")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.large)
-                .disabled(picked.isEmpty || model.scanning || model.cleanupTrash.running)
+                .disabled(pickedItems.isEmpty || model.scanning || model.cleanupTrash.running)
             }
             .padding(12)
         }
@@ -333,8 +355,13 @@ struct CleanupPanel: View {
     }
 
     private func trashPicked() {
-        model.cleanupTrash.start(pickedItems) { _ in
-            picked = []
+        // Capture what the user is actually acting on before the batch runs;
+        // `pickedItems` is re-derived from the current scan on every read.
+        let acting = pickedItems
+        model.cleanupTrash.start(acting) { _ in
+            // Drop only the ticks that were just handled. Clearing everything
+            // would also discard a tick the user added while the batch ran.
+            picked.subtract(acting.map(\.path))
             // The batch clears its busy state before this final rescan.
             model.startScan()
         }
@@ -356,8 +383,13 @@ private struct AgentRunView: View {
     /// localized section headings correctly (see `section`).
     @Environment(\.locale) private var locale
 
-    private var safe: [PlanItem] { run.items.filter { $0.spec.group != "ask" } }
-    private var ask: [PlanItem] { run.items.filter { $0.spec.group == "ask" } }
+    /// The two sections, classified once from the single vocabulary type
+    /// rather than two opposite string tests, so a card cannot be rendered in
+    /// one section while its tick was decided by the other. The predicates are
+    /// exhaustive over `PlanGroup`, which makes the old third state — a value
+    /// that matched neither test — unrepresentable.
+    private var safe: [PlanItem] { run.items.filter { $0.spec.group == .safe } }
+    private var ask: [PlanItem] { run.items.filter { $0.spec.group == .ask } }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -407,12 +439,24 @@ private struct AgentRunView: View {
             footer
                 .padding(14)
         }
-        // QA and demos only: BZ_AUTOFREE=<seconds> approves the plan after a pause.
+        // QA and demos only: BZ_AUTOFREE=<seconds> approves the plan after a
+        // pause, and BZ_DEMO_DRYRUN makes it touch nothing.
+        //
+        // The pairing is required, not incidental: this hook fires
+        // `deleteForGood`, whose real path calls removefile(REMOVEFILE_RECURSIVE)
+        // — irreversible, not the Trash — with no user click and no way to
+        // cancel. Gating it on the dry run keeps the demo convenience while
+        // making an accidental real deletion from an environment variable
+        // unrepresentable.
         .onChange(of: run.phase) {
-            guard run.phase == .planned || run.phase == .staged,
+            guard run.isDryRun,
+                  run.phase == .planned || run.phase == .staged,
                   let delay = ProcessInfo.processInfo.environment["BZ_AUTOFREE"].flatMap(Double.init) else { return }
             Task {
                 try? await Task.sleep(for: .seconds(delay))
+                // The run may have been cancelled or replaced during the pause;
+                // acting on a stale phase would move a run nobody is watching.
+                guard !Task.isCancelled, model.agentRun === run else { return }
                 if run.phase == .planned { run.moveToTrash() } else { run.deleteForGood(env: model.agentEnv) }
             }
         }
@@ -489,6 +533,9 @@ private struct AgentRunView: View {
     private var finishedLine: String {
         let failed = run.items.filter { if case .failed = $0.status { true } else { false } }.count
         if failed > 0 { return failed == 1 ? String(localized: "One item couldn't be cleaned.") : String(localized: "\(String(failed)) items couldn't be cleaned.") }
+        // A dry run synthesizes `freed` but skips the rescan, so claiming the
+        // map is up to date would be false — the folders are all still there.
+        if run.isDryRun { return String(localized: "Nothing needed doing.") }
         return run.freed > 0 ? String(localized: "Rescanned. The map is up to date.") : String(localized: "Nothing needed doing.")
     }
 
@@ -682,7 +729,13 @@ private struct PlanCard: View {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .strokeBorder(Color.accentColor.opacity(current ? 0.8 : 0), lineWidth: 1)
         )
-        .opacity(item.blocked != nil || (!editable && !item.selected && item.status == .waiting) ? 0.5 : 1)
+        // Dim what AppleTree will not touch: a blocked card always, and once
+        // the plan is locked in, the cards the user left out. The previous
+        // second term required `status == .waiting`, but the only exit from
+        // `.planned` that keeps cards on screen rewrites every unselected item
+        // to `.skipped` on the same turn — so no render ever observed that
+        // state and unselected cards stayed as prominent as the chosen ones.
+        .opacity(item.blocked != nil || (!editable && !item.selected) ? 0.5 : 1)
         .contentShape(Rectangle())
         .onTapGesture {
             if editable, item.blocked == nil { item.selected.toggle() }

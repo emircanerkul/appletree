@@ -128,6 +128,12 @@ struct ContentView: View {
     /// A narrower target (Home, Applications, a drive) raises no such prompts,
     /// so it starts immediately even without the grant.
     private func requestScan(path: String? = nil) {
+        // A plan belongs to the scan it came from, so no user-initiated scan
+        // may replace that tree while a run is on screen. Enforced here, at the
+        // one path every button and menu item passes through, rather than
+        // repeated on each control — the last-added control is the one that
+        // would otherwise forget it.
+        guard model.canScan else { return }
         let target = path ?? model.scanRoot
         guard target == ScanTargets.macintoshHD.path, !FDA.isActive() else {
             model.startScan(path: path)
@@ -244,7 +250,7 @@ struct ContentView: View {
             } label: {
                 Label("Scan", systemImage: "folder")
             }
-            .disabled(model.scanning || model.cleanupTrash.running)
+            .disabled(!model.canScan)
             .help("Choose what to scan")
 
             Button {
@@ -252,7 +258,7 @@ struct ContentView: View {
             } label: {
                 Label("Rescan", systemImage: "arrow.clockwise")
             }
-            .disabled(model.scanning || model.cleanupTrash.running)
+            .disabled(!model.canScan)
             .help("Rescan")
         }
 

@@ -6,10 +6,41 @@ import Foundation
 
 // MARK: - The plan
 
-nonisolated struct PlanItemSpec: Decodable, Sendable {
+/// How much judgement a plan item needs. ONE type owns the vocabulary the
+/// schema declares, so the section a card appears in and whether it starts
+/// ticked cannot be derived two different ways.
+///
+/// The two previously used opposing tests — `group != "ask"` for the section
+/// and `group == "safe"` for the tick — so any value that was neither exact
+/// literal (a capitalized "Safe", a stray "unsafe") landed under the
+/// reassuring "Safe to remove" heading while staying unselected. The array is
+/// what the model must answer in, but only the CLI agents enforce it: a custom
+/// provider gets `response_format: json_object` and no enum, so a near-miss is
+/// reachable in practice.
+nonisolated enum PlanGroup: String, Decodable, Sendable, Equatable {
+    /// Rebuilt or re-downloaded automatically; AppleTree may tick it.
+    case safe
+    /// The user decides; never ticked on the planner's word.
+    case ask
+
+    /// Trim surrounding whitespace, then require the documented literal.
+    ///
+    /// Deliberately NOT case-folded: only the two words the schema names are
+    /// recognized, because the two outcomes are not symmetric. Mistaking a
+    /// value for `safe` auto-ticks it, and a ticked card is one click from the
+    /// Trash; mistaking it for `ask` merely asks the user. An unknown value
+    /// therefore fails to `ask`, where the user still sees the card and can
+    /// tick it themselves.
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = PlanGroup(rawValue: raw.trimmingCharacters(in: .whitespacesAndNewlines)) ?? .ask
+    }
+}
+
+nonisolated struct PlanItemSpec: Decodable, Sendable, Equatable {
     let title: String
     let detail: String
-    let group: String
+    let group: PlanGroup
     let bytes: Int64
     let paths: [String]
     let action: String

@@ -28,28 +28,55 @@ nonisolated enum Cleanup {
     }
 }
 
+/// What became of ONE source path handed to `Trash.trash`.
+///
+/// The result is keyed by the *source* path because that is the identity both
+/// callers already hold. `trashItem(at:resultingItemURL:)` reports the item's
+/// location **inside the Trash**, so a caller that compared those URLs back
+/// against its own source paths had two disjoint sets and could never see a
+/// success — every folder was reported as failed, including the ones already in
+/// the Trash.
+nonisolated struct TrashOutcome: Sendable, Equatable {
+    /// The path as the caller passed it, standardized for matching.
+    let source: String
+    /// Where it now sits inside the Trash, for the two-step delete.
+    let trashed: URL?
+    /// Why it was not moved, when it was not.
+    let reason: String?
+
+    var moved: Bool { trashed != nil }
+}
+
 /// The one trash pathway: re-checks the guard at action time — minutes can
 /// have passed since the plan was validated, so anything changed in between
 /// is not acted on (S2) — and judges symlinks by where they land (S3).
 nonisolated enum Trash {
-    static func trash(_ paths: [String]) async -> (moved: [URL], error: String?) {
+    /// Move each path to the Trash, reporting one outcome per path.
+    ///
+    /// A path that is already gone reports "Already gone" rather than being
+    /// skipped in silence: a row the user can still tick must never be a
+    /// no-op with no explanation.
+    static func trash(_ paths: [String]) async -> [TrashOutcome] {
         await Task.detached(priority: .userInitiated) {
-            var moved: [URL] = []
-            var error: String?
-            for path in paths where FileManager.default.fileExists(atPath: path) {
-                if let reason = CleanupGuard.blockReason(path: path) {
-                    error = error ?? reason
-                    continue
+            paths.map { path in
+                let source = (path as NSString).standardizingPath
+                guard FileManager.default.fileExists(atPath: source) else {
+                    return TrashOutcome(source: source, trashed: nil,
+                                        reason: String(localized: "Already gone"))
+                }
+                if let reason = CleanupGuard.blockReason(path: source) {
+                    return TrashOutcome(source: source, trashed: nil, reason: reason)
                 }
                 do {
                     var out: NSURL?
-                    try FileManager.default.trashItem(at: URL(fileURLWithPath: path), resultingItemURL: &out)
-                    if let out { moved.append(out as URL) }
+                    try FileManager.default.trashItem(at: URL(fileURLWithPath: source),
+                                                      resultingItemURL: &out)
+                    return TrashOutcome(source: source, trashed: out as URL?, reason: nil)
                 } catch let failure {
-                    error = error ?? failure.localizedDescription
+                    return TrashOutcome(source: source, trashed: nil,
+                                        reason: failure.localizedDescription)
                 }
             }
-            return (moved, error)
         }.value
     }
 }
@@ -70,16 +97,16 @@ final class CleanupTrashBatch {
         guard !running else { return nil }
         running = true
         return Task {
-            let result = await Trash.trash(items.map(\.path))
-            let failed: [String] = result.error.map { reason in
-                // Only paths that did not move report a failure; the guard's
-                // reason strings surface here exactly as they do for agent runs.
-                let movedSet = Set(result.moved.map { ($0.path as NSString).standardizingPath })
-                return items.compactMap { item in
-                    movedSet.contains((item.path as NSString).standardizingPath)
-                        ? nil : "\(item.display): \(reason)"
-                }
-            } ?? []
+            let outcomes = await Trash.trash(items.map(\.path))
+            // Match by SOURCE path, the identity the caller passed in. Each
+            // failure carries its own reason; the batch previously shared one
+            // `error` string across every row, so one blocked folder made the
+            // successful ones read as blocked too.
+            let bySource = Dictionary(outcomes.map { ($0.source, $0) }, uniquingKeysWith: { first, _ in first })
+            let failed: [String] = items.compactMap { item in
+                guard let reason = bySource[(item.path as NSString).standardizingPath]?.reason else { return nil }
+                return "\(item.display): \(reason)"
+            }
             failures.append(contentsOf: failed)
             running = false
             completion(failed)

@@ -47,7 +47,7 @@ SWIFT_FLAGS := -O -parse-as-library -swift-version 6 -default-isolation MainActo
                -framework DiskArbitration -framework IOKit
 
 .DEFAULT_GOAL := help
-.PHONY: help all build engine bundle deploy release test test-planner test-l10n test-rust icon clean
+.PHONY: help all build engine bundle deploy release test test-planner test-drawer test-l10n test-rust icon clean
 
 help:
 	@echo 'AppleTree targets:'
@@ -57,6 +57,7 @@ help:
 	@echo '                          optional NOTES_FILE=path/to/notes.md'
 	@echo '  make test               guard unit tests (Swift over the Rust staticlib)'
 	@echo '  make test-planner       planner catalog, preference and sign-out tests'
+	@echo '  make test-drawer        right-drawer trash outcome and plan-group tests'
 	@echo '  make test-l10n          every .strings table has the same keys, no duplicates'
 	@echo '  make test-rust          cargo test --release'
 	@echo '  make engine             cargo build --release only'
@@ -252,7 +253,7 @@ test-rust:
 # bz_cleanup_allowlist FFI (fail-closed).
 # The .strings check runs first: it is instant, and a table that drifted is a
 # bug the Swift tests cannot see, so there is no reason to compile first.
-test: engine test-l10n
+test: engine test-l10n test-drawer
 	@mkdir -p .build
 	swiftc tests/swift/main.swift app/CleanupGuard.swift \
 	    -import-objc-header app/bz.h \
@@ -261,6 +262,23 @@ test: engine test-l10n
 	    -L target/release -lappletree \
 	    -o .build/guard-tests
 	.build/guard-tests
+
+# Right-drawer regression net: the trash outcome vocabulary and the plan-group
+# classification. Compiled against the real shipping sources (the whole app
+# except Main.swift, whose @main the test binary supplies), so these fail if the
+# owner types drift. The fixture needs the real home directory and a guard that
+# permits it, hence no stubs.
+test-drawer: engine
+	@mkdir -p .build
+	swiftc tests/swift/drawer.swift $(filter-out app/Main.swift,$(wildcard app/*.swift)) \
+	    -import-objc-header app/bz.h \
+	    -parse-as-library \
+	    -swift-version 6 -default-isolation MainActor \
+	    -target arm64-apple-macos$(MIN_MACOS) \
+	    -L target/release -lappletree \
+	    -framework DiskArbitration -framework IOKit -framework Security \
+	    -o .build/drawer-tests
+	.build/drawer-tests
 
 # Planner catalog and sign-out tests. Real shipping sources, no stubs, so this
 # fails if the catalog rule, the preference resolution both surfaces share, or
