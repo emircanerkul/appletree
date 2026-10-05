@@ -107,6 +107,7 @@
 "Select Enclosing Folder" = "Kapsayan Klasörü Seç";
 "Back" = "Geri";
 "Forward" = "İleri";
+"Parent Folder" = "Üst Klasör";
 "Move to Trash" = "Çöp Kutusu'na Taşı";
 "Move “%@” to Trash?" = "“%@” Çöp Kutusu'na taşınsın mı?";
 

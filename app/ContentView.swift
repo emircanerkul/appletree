@@ -141,11 +141,16 @@ struct ContentView: View {
         TitleCrumbs(model: model)
     }
 
-    /// Back and forward through the folders visited.
+    /// Back, forward and up through the folders visited.
     ///
     /// Beside the title path, because that is the state they move through. They
     /// are the visible twin of ⌘[ and ⌘]: the buttons and the keyboard both
     /// call the same two model methods, so the pair cannot drift apart.
+    ///
+    /// Up sits last, right of the two arrows: back/forward retrace the trail
+    /// while up leaves the trail behind by climbing to the parent folder, and
+    /// the same control is a mouse middle click. It disables itself once the
+    /// scan root is on screen, so the control never fires into nothing.
     @ViewBuilder
     private var historyButtons: some View {
         Button {
@@ -163,6 +168,14 @@ struct ContentView: View {
         }
         .disabled(!model.canGoForward)
         .help("Forward")
+
+        Button {
+            model.goUp()
+        } label: {
+            Label("Parent Folder", systemImage: "arrow.up")
+        }
+        .disabled(!model.canGoUp)
+        .help("Parent Folder")
     }
 
     @ToolbarContentBuilder
@@ -945,13 +958,16 @@ private extension View {
     }
 }
 
-/// Mouse side buttons drive the folder trail.
+/// Mouse extra buttons drive the folder navigation.
 ///
-/// Button 3 is the "back" thumb button and button 4 the "forward" one on every
-/// mouse macOS treats this way (the same mapping Safari and Finder use). They
-/// arrive as left-side `otherMouseDown` events, so a local monitor sees them
-/// before any view does — which is the point: the pointer can be over the map,
-/// the rings, the list or the toolbar, and the gesture has to work from all of
+/// `NSEvent.buttonNumber` is zero-indexed: 0 is the left button, 1 the right,
+/// 2 the middle (wheel) click, then 3 and 4 the "back" and "forward" thumb
+/// buttons on every mouse macOS treats this way (the same mapping Safari and
+/// Finder use). The wheel click goes up to the parent folder, pairing with the
+/// Parent Folder toolbar button; the thumb pair stays back/forward. They arrive
+/// as left-side `otherMouseDown` events, so a local monitor sees them before
+/// any view does — which is the point: the pointer can be over the map, the
+/// rings, the list or the toolbar, and the gesture has to work from all of
 /// them.
 ///
 /// A monitor is the right owner rather than an override on each view: the app
@@ -993,10 +1009,11 @@ private struct HistoryMouseButtons: NSViewRepresentable {
                 guard let self else { return event }
                 let moved: Bool
                 switch event.buttonNumber {
+                case 2: moved = model.goUp()
                 case 3: moved = model.goBack()
                 case 4: moved = model.goForward()
-                // Any other extra button (a middle click, a gaming button) is
-                // not a navigation gesture: pass it on untouched.
+                // Any other extra button (a gaming button) is not a navigation
+                // gesture: pass it on untouched.
                 default: return event
                 }
                 // Swallowed only when it did something, so a click that cannot

@@ -107,6 +107,7 @@
 "Select Enclosing Folder" = "Seleccionar carpeta contenedora";
 "Back" = "Atrás";
 "Forward" = "Adelante";
+"Parent Folder" = "Carpeta contenedora";
 "Move to Trash" = "Mover a la Papelera";
 "Move “%@” to Trash?" = "¿Mover «%@» a la Papelera?";
 

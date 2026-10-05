@@ -107,6 +107,7 @@
 "Select Enclosing Folder" = "选择所在文件夹";
 "Back" = "返回";
 "Forward" = "前进";
+"Parent Folder" = "上级文件夹";
 "Move to Trash" = "移到废纸篓";
 "Move “%@” to Trash?" = "将“%@”移到废纸篓？";
 

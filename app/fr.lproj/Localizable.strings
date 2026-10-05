@@ -107,6 +107,7 @@
 "Select Enclosing Folder" = "Sélectionner le dossier englobant";
 "Back" = "Retour";
 "Forward" = "Avancer";
+"Parent Folder" = "Dossier parent";
 "Move to Trash" = "Déplacer à la Corbeille";
 "Move “%@” to Trash?" = "Déplacer « %@ » à la Corbeille ?";
 

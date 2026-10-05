@@ -99,6 +99,12 @@ bundle: engine
 	    $(SWIFT_FLAGS) \
 	    -L target/release -lappletree \
 	    -o '$(APP)/Contents/MacOS/AppleTree'
+	# ATS: user-configured model providers are plain HTTP on the local
+	# machine or LAN (http://localhost:11434/v1, http://192.168.1.20:11434/v1).
+	# NSAllowsLocalNetworking is Apple's narrow key for local resources
+	# (unqualified domains, .local domains, IP addresses); public hosts stay
+	# HTTPS-only. NSAllowsArbitraryLoads is deliberately NOT set: it would
+	# disable ATS for every connection this app makes.
 	{ printf '%s\n' \
 	    '<?xml version="1.0" encoding="UTF-8"?>' \
 	    '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \
@@ -118,6 +124,10 @@ bundle: engine
 	    '    <key>NSHighResolutionCapable</key><true/>' \
 	    '    <key>NSHumanReadableCopyright</key><string>Emircan ERKUL</string>' \
 	    '    <key>CFBundleDevelopmentRegion</key><string>en</string>' \
+	    '    <key>NSAppTransportSecurity</key>' \
+	    '    <dict>' \
+	    '        <key>NSAllowsLocalNetworking</key><true/>' \
+	    '    </dict>' \
 	    '</dict>' \
 	    '</plist>'; } > '$(APP)/Contents/Info.plist'
 	echo -n 'APPL????' > '$(APP)/Contents/PkgInfo'

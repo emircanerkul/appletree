@@ -107,6 +107,7 @@
 "Select Enclosing Folder" = "親フォルダを選択";
 "Back" = "戻る";
 "Forward" = "進む";
+"Parent Folder" = "親フォルダ";
 "Move to Trash" = "ゴミ箱に移動";
 "Move “%@” to Trash?" = "「%@」をゴミ箱に移動しますか？";
 

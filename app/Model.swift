@@ -559,6 +559,28 @@ final class ScanModel {
         tree != nil && !scanning && trail.indices.contains(trailIndex + 1)
     }
 
+    /// Offer "up" only while the folder on screen still has an ancestor. The
+    /// scan root is node 0 and only `parents[0]` is the sentinel, so 0 is
+    /// exactly "no parent left" — and mid-scan the tree is gone, as with
+    /// back/forward.
+    var canGoUp: Bool { tree != nil && !scanning && viewRoot != 0 }
+
+    /// Show the folder that contains the one on screen.
+    ///
+    /// A deliberate change of folder, so it joins the trail through
+    /// `navigate` and back steps down into the folder just climbed out of.
+    /// One owner for the two "up" affordances that mean exactly this — the
+    /// Parent Folder toolbar button and the middle click — so they cannot
+    /// disagree. ⌘↑/Escape are deliberately not routed here: those climb out
+    /// of the *focus* and only zoom out when it is already the folder on
+    /// screen (`selectEnclosingFolder`), which is a different question.
+    @discardableResult
+    func goUp() -> Bool {
+        guard canGoUp, let tree else { return false }
+        navigate(to: Int(tree.parents[viewRoot]))
+        return true
+    }
+
     /// Step back to the folder visited before the current one.
     @discardableResult
     func goBack() -> Bool {

@@ -107,6 +107,7 @@
 "Select Enclosing Folder" = "Umschließenden Ordner auswählen";
 "Back" = "Zurück";
 "Forward" = "Vorwärts";
+"Parent Folder" = "Übergeordneter Ordner";
 "Move to Trash" = "In den Papierkorb legen";
 "Move “%@” to Trash?" = "„%@“ in den Papierkorb legen?";
 

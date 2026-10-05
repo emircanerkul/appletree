@@ -15,6 +15,9 @@ __pycache__/
 /docs/*
 !/docs/benchmarks/
 !/docs/screenshots/
+# The committed captures are the tuned .webp files; the .png originals that
+# store-screenshots.py writes are local scratch and never committed.
+/docs/screenshots/*.png
 # Video scratch dir: source recording copy, analysis frames, encode variants.
 # The demo itself is hosted on the GitHub CDN; nothing here is committed.
 /video_work/

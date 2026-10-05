@@ -104,6 +104,7 @@
 "Select Enclosing Folder" = "Select Enclosing Folder";
 "Back" = "Back";
 "Forward" = "Forward";
+"Parent Folder" = "Parent Folder";
 "Move to Trash" = "Move to Trash";
 "Move “%@” to Trash?" = "Move “%@” to Trash?";
 /* Settings */
