@@ -428,6 +428,10 @@ final class SunburstNSView: NSView {
             respectFlipped: true, hints: nil
         )
         guard let model, let tree = model.tree, let ctx = NSGraphicsContext.current?.cgContext else { return }
+        // Read the selection once per frame: it is a value snapshot, so a model
+        // change mid-draw cannot leave half the arcs stroked with the old set.
+        let picks = model.picks.members
+        let primaryPick = model.picks.primary
 
         if !highlights.isEmpty {
             if litSegments == nil {
@@ -462,13 +466,28 @@ final class SunburstNSView: NSView {
             ctx.strokePath()
         }
 
-        if let sel = model.selection,
-           let shown = tree.drawn(sel, isDrawn: { node in segments.contains { $0.node == node } }),
-           let i = segments.firstIndex(where: { $0.node == shown }) {
-            ctx.addPath(segmentPaths[i])
+        // Every picked arc, the primary stroked thicker. A node deeper than the
+        // rings lights the arc that holds it (`tree.drawn`), so a file selected
+        // in the list is still visible here.
+        if !picks.isEmpty {
             ctx.setStrokeColor(NSColor.controlAccentColor.cgColor)
-            ctx.setLineWidth(2)
-            ctx.strokePath()
+            let drawn = Dictionary(segments.indices.map { (segments[$0].node, $0) }) { a, _ in a }
+            // A picked folder lights its whole subtree, not just its own arc:
+            // that is what a Delete removes and what the byte total counts, so
+            // the picture agrees with the action. Without this, Cmd+A lit only
+            // the innermost ring and a selected parent looked like one arc while
+            // everything inside it was about to go.
+            for i in litSegmentsForSelection(tree: tree, drawn: drawn) {
+                // The primary is stroked thicker; a subtree lit BY the primary
+                // keeps the thicker weight too, so the lead item's reach reads
+                // as one shape rather than a thin fringe around a bold arc.
+                let node = segments[i].node
+                let isPrimary = node == primaryPick
+                    || (primaryPick.map { SelectionSet.contains($0, node, in: tree) } ?? false)
+                ctx.addPath(segmentPaths[i])
+                ctx.setLineWidth(isPrimary ? 2.5 : 1.5)
+                ctx.strokePath()
+            }
         }
 
         if hoveringCenter && model.viewRoot != 0 {
@@ -568,6 +587,25 @@ final class SunburstNSView: NSView {
     override func keyDown(with event: NSEvent) {
         let esc = event.keyCode == 53
         let cmdUp = event.modifierFlags.contains(.command) && event.keyCode == 126
+        // Delete removes the SELECTED node — Backspace or Forward Delete,
+        // Shift for the permanent one. The selection, not the hover: the rings
+        // track the pointer as it crosses an arc, and an irreversible action
+        // must name what the user committed to, not what the mouse is over.
+        if let kind = RemovalKeys.intent(for: event), let model, let tree = model.tree {
+            NodeActions.remove(nodes: model.pickedNodes, kind: kind, tree: tree, model: model)
+            return
+        }
+        // Cmd+A: everything this view draws, in ring order. The rings draw one
+        // ring's worth per depth, so "everything drawn" IS the level — the same
+        // definition the map and the list use (see `NodeOutlineView.keyDown`),
+        // which is what lets all three share one reduction.
+        if event.modifierFlags.contains(.command), event.keyCode == 0, let model {
+            let all = ringOrder()
+            guard !all.isEmpty else { return }
+            model.setSelection(all)
+            needsDisplay = true
+            return
+        }
         // Cmd-[ / Cmd-] walk the trail of folders visited, as in the treemap.
         // Every surface calls the same two model methods, so the pair cannot
         // mean something different depending on which view has the focus.
@@ -619,6 +657,29 @@ final class SunburstNSView: NSView {
         updateHover(at: convert(event.locationInWindow, from: nil))
     }
 
+    /// Hover the arc at `p`, exactly as `mouseMoved` does; returns the node now
+    /// hovered, or nil.
+    ///
+    /// Internal, like `TreemapNSView.hover(at:)`, so the arc geometry — and in
+    /// particular whether hover and click agree about a folder — is exercised
+    /// directly instead of through a synthesized event. A regression here is
+    /// invisible to a typecheck and needs no window on screen to reproduce.
+    @discardableResult
+    func hover(at point: CGPoint) -> Int? {
+        updateHover(at: point)
+        return model?.hovered
+    }
+
+    /// Drop the hover, so the next `hover(at:)` is a real transition.
+    ///
+    /// `updateHover` returns early when the segment is unchanged, so a probe
+    /// that cannot clear the state would measure a stale value.
+    func clearHover() {
+        hoveredSegment = nil
+        hoveringCenter = false
+        model?.hovered = nil
+    }
+
     /// After a zoom the arcs move under a still pointer.
     private func refreshHover() {
         guard let window else { return }
@@ -665,6 +726,42 @@ final class SunburstNSView: NSView {
 
     /// DaisyDisk clicks: a folder zooms in, the centre zooms back out, a
     /// file is selected.
+    /// The arcs to stroke for the current selection.
+    ///
+    /// The decision is `SelectionSet.litShapes` — one owner of "what a selection
+    /// lights" for every view — with this view's drawn arcs as the candidates.
+    /// A file deeper than the rings lights the arc that holds it, which is the
+    /// same rule the centre label uses.
+    private func litSegmentsForSelection(tree: Tree, drawn: [Int: Int]) -> [Int] {
+        let picks = model?.picks.members ?? []
+        guard !picks.isEmpty else { return [] }
+        // A pick deeper than the rings is attributed to the arc that holds it,
+        // so it competes as that arc rather than disappearing.
+        let attributed = picks.map { node in
+            tree.drawn(node, isDrawn: { drawn[$0] != nil }) ?? node
+        }
+        let lit = Set(SelectionSet.litShapes(picked: attributed,
+                                             candidates: Array(drawn.keys), in: tree))
+        return segments.indices.filter { lit.contains(segments[$0].node) }
+    }
+
+    /// Drawn nodes in the order the rings read: innermost ring first, and
+    /// clockwise within a ring. Shift+click needs a sequence the user can
+    /// predict, and this is the one the picture implies.
+    func ringOrder() -> [Int] {
+        // One arc per node, and the `node >= 0` filter drops the free-space arc.
+        // The dedupe is insurance: a node repeated here would make Shift+range
+        // select it twice and `set` would then pick an arbitrary instance.
+        var seen = Set<Int>()
+        return segments
+            .filter { $0.node >= 0 && seen.insert($0.node).inserted }
+            .sorted { a, b in
+                if a.ring != b.ring { return a.ring < b.ring }
+                return a.start < b.start
+            }
+            .map(\.node)
+    }
+
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
         // The second click of a double-click would land on the zoomed chart
@@ -672,20 +769,44 @@ final class SunburstNSView: NSView {
         guard event.clickCount == 1, let model, let tree = model.tree else { return }
         switch hit(convert(event.locationInWindow, from: nil)) {
         case .center:
+            // The centre is the zoom-out target; a modified click there is not a
+            // selection gesture, so it stays zoom-out.
             zoomOut()
         case let .segment(i):
             let node = segments[i].node
             guard node >= 0 else { return }
-            if tree.isDir(node) && !tree.children(node).isEmpty {
-                model.navigate(to: node)
-                relayoutIfNeeded()
-            } else {
-                model.selection = node
+            switch SelectionSet.ClickIntent(event) {
+            case .toggle:
+                model.toggleSelection(node)
                 needsDisplay = true
+            case .extend:
+                // ⇧ and ⌘⇧ extend to a FOLDER, the same rule as the map — and now
+                // the same CODE: `model.extendSelection` owns the folder
+                // normalisation, the view-root refusal, the ring-order range and
+                // the anchor that has no arc here. The copied tail this replaces
+                // is how the two views' behaviour drifted apart.
+                //
+                // The arc for the folder being viewed is the ring's own centre
+                // region, not a segment, so a click there never reaches this
+                // branch; the model refuses the view root regardless.
+                model.extendSelection(to: node, order: ringOrder())
+                needsDisplay = true
+            case .replace:
+                if tree.isDir(node) && !tree.children(node).isEmpty {
+                    model.navigate(to: node)
+                    relayoutIfNeeded()
+                } else {
+                    model.select(node)
+                    needsDisplay = true
+                }
             }
         case nil:
-            model.selection = nil
-            needsDisplay = true
+            // Empty space: a plain click clears; a modified one is additive and
+            // must not throw the selection away.
+            if SelectionSet.ClickIntent(event) == .replace {
+                model.select(nil)
+                needsDisplay = true
+            }
         }
     }
 
@@ -694,7 +815,12 @@ final class SunburstNSView: NSView {
               case let .segment(i) = hit(convert(event.locationInWindow, from: nil)),
               segments[i].node >= 0
         else { return }
-        model.selection = segments[i].node
+        // Right-clicking an arc inside the selection keeps the whole selection
+        // (the menu then acts on all of it); one outside focuses that arc first,
+        // so the menu and the highlight cannot disagree.
+        if !model.picks.covers(segments[i].node, in: tree) {
+            model.select(segments[i].node)
+        }
         needsDisplay = true
         NodeMenu.popUp(node: segments[i].node, tree: tree, model: model, with: event, for: self)
     }

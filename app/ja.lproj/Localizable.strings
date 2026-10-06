@@ -38,11 +38,23 @@
 /* Clean Up panel */
 "Move 1 folder to the Trash?" = "1個のフォルダをゴミ箱に移動しますか？";
 "Move %@ folders to the Trash?" = "%@個のフォルダをゴミ箱に移動しますか？";
+
+/* Multi-selection: a batch confirmation names how many ITEMS and what
+   they weigh. "items", not "folders": a selection mixes files and
+   folders, so the folder wording above would be wrong for three files. */
+"1 item" = "1 項目";
+"%@ items" = "%@ 項目";
+"Move %@ to the Trash?" = "%@をゴミ箱に移動しますか？";
+"%@ in %@. You can put them back until you empty the Trash." = "%@（%@）。ゴミ箱を空にするまで元に戻せます。";
+"Delete %@ permanently?" = "%@を完全に削除しますか？";
+"%@ in %@. This does not go to the Trash, and cannot be undone." = "%@（%@）。ゴミ箱には入らず、取り消せません。";
+"…and %@ more" = "…ほか %@ 件";
 "Move to Trash (%@)" = "ゴミ箱に移動（%@）";
 "Cancel" = "キャンセル";
 "You can put them back from the Trash until you empty it. The tools that made them rebuild them when needed." = "ゴミ箱を空にするまでなら、いつでも戻せます。作成元のツールが必要なときに再作成します。";
 "OK" = "OK";
 "Some folders couldn't be moved" = "一部のフォルダを移動できませんでした";
+"Some items couldn't be deleted" = "一部の項目を削除できませんでした";
 "Reclaimable" = "回収可能";
 "Nothing large to clean up" = "クリーンアップする大きなものはありません";
 "%@ in %@ folders" = "%@（%@個のフォルダ）";
@@ -61,7 +73,7 @@
 "Pick what to remove" = "削除するものを選択";
 "Move %@ to Trash" = "%@をゴミ箱へ移動";
 "Continue" = "続ける";
-"Delete %@ for good" = "%@を完全に削除";
+"Delete %@ permanently" = "%@を完全に削除";
 "Deletes only what this cleanup moved to the Trash, and clears the tool caches" = "このクリーンアップでゴミ箱に移動したものだけを削除し、ツールのキャッシュも消去します";
 "Keep in the Trash" = "ゴミ箱に残す";
 "Done" = "完了";
@@ -81,8 +93,8 @@
 "Reading your scan, nothing is touched" = "スキャンを読み取り中。何も変更されていません";
 "Writing the plan" = "プランを作成中";
 "Nothing is deleted yet" = "まだ何も削除されていません";
-"Put anything back from the Trash, or delete it for good. Tool caches are cleared then too." = "ゴミ箱から元に戻すか、完全に削除してください。その際ツールのキャッシュも消去されます。";
-"Put anything back from the Trash, or delete it for good." = "ゴミ箱から元に戻すか、完全に削除してください。";
+"Put anything back from the Trash, or delete it permanently. Tool caches are cleared then too." = "ゴミ箱から元に戻すか、完全に削除してください。その際ツールのキャッシュも消去されます。";
+"Put anything back from the Trash, or delete it permanently." = "ゴミ箱から元に戻すか、完全に削除してください。";
 "Only what this cleanup moved; the rest of your Trash stays" = "このクリーンアップで移動したものだけ。ゴミ箱の他の内容はそのまま残ります";
 "Nothing was changed." = "変更はありませんでした。";
 "ready to delete" = "削除待ち";
@@ -111,6 +123,16 @@
 "Parent Folder" = "親フォルダ";
 "Move to Trash" = "ゴミ箱に移動";
 "Move “%@” to Trash?" = "「%@」をゴミ箱に移動しますか？";
+
+/* 完全削除：コンテキストメニューの「完全に削除」の行、2 つの削除キーの
+   Shift 併用、そして代償を告げる確認です。「完全に削除」はメニューの行と
+   ダイアログのボタンという 2 か所で使う 1 つのキーです。行末に三点リーダー
+   は付けません。質問の下の確認文がダイアログが開くことをすでに告げており、
+   行そのものが操作として読めるためです。 */
+"Delete “%@” permanently?" = "「%@」を完全に削除しますか？";
+"It does not go to the Trash. This cannot be undone." = "ゴミ箱には入りません。この操作は取り消せません。";
+"Delete Permanently" = "完全に削除";
+"Cannot remove the scan root" = "スキャンのルートは削除できません";
 
 /* Settings */
 "Custom model providers" = "カスタムモデルプロバイダ";

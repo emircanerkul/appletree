@@ -71,7 +71,8 @@ final class TreemapNSView: NSView {
         // Everything redraws, so the overlay simply starts from the model
         // (a zoom clears the selection, a rescan the hover).
         hoveredNode = model.hovered
-        shown = Overlay(hovered: hoveredNode, label: hoveredLabel, selection: model.selection)
+        shown = Overlay(hovered: hoveredNode, label: hoveredLabel,
+                        picked: model.picks.members, primary: model.picks.primary)
         needsDisplay = true
     }
 
@@ -151,7 +152,13 @@ final class TreemapNSView: NSView {
     /// which invalidates exactly the areas that look different, so a
     /// partial redraw never mixes two states.
     private struct Overlay: Equatable {
-        var hovered: Int?, label: Int?, selection: Int?
+        var hovered: Int?, label: Int?
+        /// Every picked node, and which of them leads.
+        ///
+        /// A set rather than the one optional this used to be: the map rings
+        /// the whole selection, and the primary is stroked thicker so the item
+        /// the breadcrumbs describe is identifiable at a glance.
+        var picked: [Int] = [], primary: Int?
     }
     private var shown = Overlay()
     private var hoveredLabel: Int? = nil
@@ -163,7 +170,8 @@ final class TreemapNSView: NSView {
     /// and queue redraws of just what changed (returned for the bench).
     @discardableResult
     func syncOverlay() -> [CGRect] {
-        let now = Overlay(hovered: hoveredNode, label: hoveredLabel, selection: model?.selection)
+        let now = Overlay(hovered: hoveredNode, label: hoveredLabel,
+                          picked: model?.picks.members ?? [], primary: model?.picks.primary)
         guard now != shown else { return [] }
         let dirty = dirtyRects(from: shown, to: now)
         for r in dirty { setNeedsDisplay(r) }
@@ -189,9 +197,17 @@ final class TreemapNSView: NSView {
                 out.append(labels[i].strip.insetBy(dx: -1, dy: -1))
             }
         }
-        if a.selection != b.selection {
-            for s in [a.selection, b.selection] {
-                guard let s, let r = dirRect(s) else { continue }
+        if a.picked != b.picked || a.primary != b.primary {
+            // The SYMMETRIC DIFFERENCE, plus the two primaries: only nodes whose
+            // ring appearance actually changed are repainted, so adding one item
+            // to a 40-item selection redraws two rings rather than forty. The
+            // primaries are included unconditionally because a changed primary
+            // alters the thickness of a node that may be in both sets.
+            let before = Set(a.picked), after = Set(b.picked)
+            var changed = before.symmetricDifference(after)
+            for p in [a.primary, b.primary] { if let p { changed.insert(p) } }
+            for node in changed {
+                guard let r = dirRect(node) else { continue }
                 out += ring(r, outside: 1, inside: 3)
             }
         }
@@ -216,6 +232,10 @@ final class TreemapNSView: NSView {
     private var dirMemo: [Int: CGRect?] = [:]
     /// Built on the first hit test after a render, not on every resize.
     private var leafIndex: TMLeafIndex?
+    /// Folder lookup for points with no file tile under them, built lazily on
+    /// the first such test. Shares the grid idea with `leafIndex`; see
+    /// `TMDirIndex` for why both exist and why both callers use them.
+    private var dirIndex: TMDirIndex?
     /// Every directory rect keyed by node, built on the first rect lookup
     /// after a render. `Scan.dir` walked all rects per lookup, and hover and
     /// selection redraws ask for rects every frame — one O(dirs) build buys
@@ -228,7 +248,9 @@ final class TreemapNSView: NSView {
         leafMemo = nil
         dirMemo = [:]
         leafIndex = nil
+        dirIndex = nil
         dirRects = nil
+        frameBandsCache = nil
     }
 
     /// The hovered file's rect and its parent directory's, if on screen.
@@ -406,11 +428,25 @@ final class TreemapNSView: NSView {
                 }
             }
         }
-        if let sel = shown.selection, let r = dirRect(sel) {
+        // Every picked node, with the primary stroked thicker. Drawn after the
+        // dimming pass so a picked tile reads as chosen even while an agent plan
+        // highlights a different area.
+        //
+        // The selected node's OWN shape only. The rings light a folder's whole
+        // subtree because an arc is the folder and the things inside it are
+        // separate arcs further out; the map already draws a folder as a framed
+        // box holding its children, so outlining every nested rect as well
+        // buried the picture under one blue outline per tile. The box says
+        // "this folder and everything in it"; the rings need the extra pass
+        // because their geometry does not imply containment.
+        if !shown.picked.isEmpty {
             NSColor.controlAccentColor.setStroke()
-            let p = NSBezierPath(rect: r.insetBy(dx: 1, dy: 1))
-            p.lineWidth = 2
-            p.stroke()
+            for node in shown.picked {
+                guard let r = dirRect(node) else { continue }
+                let p = NSBezierPath(rect: r.insetBy(dx: 1, dy: 1))
+                p.lineWidth = node == shown.primary ? 2.5 : 1.5
+                p.stroke()
+            }
         }
     }
 
@@ -431,6 +467,31 @@ final class TreemapNSView: NSView {
     override func keyDown(with event: NSEvent) {
         let esc = event.keyCode == 53
         let cmdUp = event.modifierFlags.contains(.command) && event.keyCode == 126
+        // Delete removes the selected node — Backspace or Forward Delete,
+        // Shift for the permanent one. Before the arrow/Return handling so the
+        // keys cannot be swallowed by a branch below.
+        //
+        // The SELECTION, not the hover: the treemap sets `model.hovered` on
+        // every mouse move, so keying off the hover would make Delete name
+        // whatever the pointer happened to rest on — for an irreversible
+        // action that is the wrong item often enough to matter.
+        if let kind = RemovalKeys.intent(for: event), let model, let tree = model.tree {
+            NodeActions.remove(nodes: model.pickedNodes, kind: kind, tree: tree, model: model)
+            return
+        }
+        // Cmd+A: everything this view draws, in reading order so the primary is
+        // the visually last one. The map draws exactly one level, so "everything
+        // drawn" IS the level — never recursive, which would tick millions of
+        // nodes the user cannot see. That is the same definition the list and the
+        // rings use (see `NodeOutlineView.keyDown`), which is why the three can
+        // share one reduction and still each select what their own picture shows.
+        if event.modifierFlags.contains(.command), event.keyCode == 0, let model {
+            let all = readingOrder()
+            guard !all.isEmpty else { return }
+            model.setSelection(all)
+            syncOverlay()
+            return
+        }
         // Cmd-[ / Cmd-] walk the trail of folders visited. Handled here as well
         // as in the toolbar so the keys work whichever surface has the focus;
         // every surface calls the same two model methods.
@@ -567,7 +628,22 @@ final class TreemapNSView: NSView {
     /// The label halo is only dropped when it belongs to a different node:
     /// clicking a title strip keeps it (the pointer really is on that strip),
     /// while keyboard focus clears it, since there is no pointer there.
-    private func focus(_ node: Int, tree: Tree, model: ScanModel) {
+    /// `nil` clears the focus: clicking empty space means "nothing picked".
+    /// One owner for the focused node, so a clearing click and a picking click
+    /// cannot leave the overlay in different states.
+    private func focus(_ node: Int?, tree: Tree, model: ScanModel) {
+        guard let node else {
+            model.selection = nil
+            hoveredNode = nil
+            hoveredLabel = nil
+            toolTip = nil
+            syncOverlay()
+            return
+        }
+        focusNode(node, tree: tree, model: model)
+    }
+
+    private func focusNode(_ node: Int, tree: Tree, model: ScanModel) {
         model.hovered = node
         model.selection = node
         hoveredNode = node
@@ -609,19 +685,13 @@ final class TreemapNSView: NSView {
         return leafIndex!.hit(point, leaves: leaves)
     }
 
-    /// The deepest drawn folder containing `point`, or nil outside every one.
-    ///
-    /// Folders need this because a click target was missing: hit-testing only
-    /// ever looked at file tiles (`hit`), so a folder drawn as a solid region
-    /// — and every gap a folder leaves between its children — was dead to the
-    /// mouse. `rects` holds dirs in draw order and each child's rect sits
-    /// inside its parent's, so the last containing rect is a smallest match.
-    /// One pass per click, never per frame: hover keeps its leaf-only lookup.
-    private func dir(at point: CGPoint) -> Int? {
-        var found: Int?
-        for r in rects where r.rect.contains(point) { found = r.node }
-        return found
-    }
+    /// Superseded by `folder(at:)` and `TMDirIndex`, which answer the same
+    /// question from a grid cell instead of scanning every rect — and which the
+    /// HOVER path can therefore afford to call too. The comment this replaces
+    /// said "one pass per click, never per frame"; that was exactly why hover
+    /// could not use it, and why hover came to disagree with click about a
+    /// folder's own border. Retired rather than kept: two lookups answering one
+    /// question is how the two drifted apart in the first place.
 
     /// The folder whose separation frame is painted at `point`, if any.
     ///
@@ -653,7 +723,7 @@ final class TreemapNSView: NSView {
         // rect also contains the point.
         if let framed = frame(at: point) { return framed }
         if let leaf = hit(point) { return leaf.node }
-        return dir(at: point)
+        return folder(at: point)
     }
 
     override func mouseMoved(with event: NSEvent) {
@@ -664,8 +734,18 @@ final class TreemapNSView: NSView {
     func hover(at p: CGPoint) -> [CGRect] {
         let lab = Scan.hit(labelHits, p)
         hoveredLabel = lab
+        // One resolver, shared with `pick`: a point's node must not depend on
+        // which of the two asked. It used to be `lab ?? leaf?.node` — files only
+        // — on the premise that a directory's focus is already shown by its
+        // accent ring. That premise holds only for a folder wide enough to earn
+        // a title strip: a narrower one has no label, and its separation frame is
+        // the only pixel that is visibly the folder's, so hovering that border
+        // focused a file INSIDE it (or nothing at all, where no file sits under
+        // the frame) while clicking it selected the folder. ⌘↑ ("select the
+        // folder holding the focused item") then climbed from the wrong node on
+        // precisely the tile that has no other handle.
         let leaf = lab == nil ? hit(p) : nil
-        let node = lab ?? leaf?.node
+        let node = lab ?? resolve(p, leaf: leaf)
         if let leaf, leafMemo?.node != leaf.node {
             // Saves the lookup when drawing; the parent dir rect resolves
             // through the cached dirs map inside `dirRect`.
@@ -683,11 +763,81 @@ final class TreemapNSView: NSView {
         return syncOverlay()
     }
 
+    /// The node at `p` when no title strip covers it: the same answer `pick`
+    /// gives, because the two must not disagree.
+    ///
+    /// Order mirrors `pick` exactly — a folder's separation frame (painted over
+    /// the children), then the file tile, then the folder box underneath. The
+    /// frame is resolved through the leaf's ancestry (O(depth), so the
+    /// mouse-move path never scans every rect) and falls back to the indexed
+    /// folder lookup when no file sits under the point at all.
+    private func resolve(_ p: CGPoint, leaf: TMRect?) -> Int? {
+        guard let tree = model?.tree else { return leaf?.node }
+        if let leaf {
+            // The frame belongs to an ancestor of the tile under the pointer.
+            let bands = frameBands()
+            var framed: Int?
+            for candidate in tree.ancestry(leaf.node).dropLast() {
+                guard let band = bands[candidate], band > 0,
+                      let box = ensureDirRects()[candidate], box.contains(p)
+                else { continue }
+                if !box.insetBy(dx: band, dy: band).contains(p) { framed = candidate }
+            }
+            if let framed { return framed }
+            return leaf.node
+        }
+        // No file tile here: the point is on a folder's own border, or in the
+        // bare box of a folder whose children do not reach it.
+        return folder(at: p)
+    }
+
+    /// The deepest drawn folder containing `p`, via the grid index.
+    private func folder(at p: CGPoint) -> Int? {
+        if dirIndex == nil { dirIndex = TMDirIndex(rects: rects, size: lastSize) }
+        return dirIndex?.hit(p, rects: rects)?.node
+    }
+
+    /// Frame width per drawn folder, built once per render.
+    ///
+    /// `TMRect.band` is what `onFrame` reads, but a linear search of `rects` per
+    /// ancestor per mouse move is the scan this avoids. One dictionary built
+    /// alongside `dirRects` costs a single pass per layout change.
+    private var frameBandsCache: [Int: CGFloat]?
+    private func frameBands() -> [Int: CGFloat] {
+        if let frameBandsCache { return frameBandsCache }
+        var map: [Int: CGFloat] = [:]
+        map.reserveCapacity(rects.count)
+        for r in rects where r.isDir && r.band > 0 { map[r.node] = r.band }
+        frameBandsCache = map
+        return map
+    }
+
     override func mouseExited(with event: NSEvent) {
         model?.hovered = nil
         hoveredNode = nil
         hoveredLabel = nil
         syncOverlay()
+    }
+
+    /// Every node the map draws at the level on screen, in the order it reads.
+    ///
+    /// A thin call into `TreemapRenderer.readingOrder`, which OWNS this rule
+    /// because it is the code that decides what is drawn and at what depth. The
+    /// view used to rebuild the list here from `rects + leaves + labels`, and
+    /// because those arrays hold EVERY depth — `Layout.draw` recurses into a
+    /// folder too small for a title strip — a Shift+range built as a slice of
+    /// the result swept in grandchildren of a folder the user never pointed at.
+    /// Ask the renderer for the level, rather than approximating its geometry
+    /// from its output.
+    ///
+    /// No depth is passed in because the renderer's depth is already relative to
+    /// the view root: it draws that root at 0 and its children at 1, so the level
+    /// on screen is draw-depth 1 at every zoom.
+    func readingOrder() -> [Int] {
+        guard let model else { return [] }
+        return TreemapRenderer.readingOrder(
+            rects: rects, leaves: leaves, labels: labels, root: model.viewRoot
+        )
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -708,19 +858,67 @@ final class TreemapNSView: NSView {
             // Any tile is selectable, folders included: without this a folder
             // drawn as a solid block picked nothing, which also left "move to
             // the folder holding this" with no focus to climb from.
-            if let node = pick(at: p) {
-                focus(node, tree: tree, model: model)
-            } else {
-                model.selection = nil
-                syncOverlay()
+            guard let node = pick(at: p) else {
+                // Empty space: a plain click clears, but a modified click is an
+                // additive gesture and clearing on it would throw away the
+                // selection the user is in the middle of building.
+                if event.modifierFlags.intersection([.command, .shift]).isEmpty {
+                    focus(nil, tree: tree, model: model)
+                }
+                return
             }
+            switch SelectionSet.ClickIntent(event) {
+            case .toggle:
+                // ⌘+click: add, or remove when already picked. A hover is not
+                // moved here — the hover follows the pointer, and the selection
+                // is what the ring shows.
+                model.toggleSelection(node)
+            case .extend:
+                // ⇧+click, and ⌘⇧+click, extend the selection to a FOLDER.
+                //
+                // The range is expressed in folders, because a folder stands for
+                // everything inside it: shift-clicking a file means "extend to the
+                // folder holding it", which is what the selection can actually
+                // say. (A file's own tile cannot be a range endpoint — the
+                // antichain rule would drop it the moment its folder is included,
+                // so a file endpoint produced a range that silently collapsed.)
+                //
+                // A click that lands on a GAP resolves to the folder being viewed
+                // (the root). That is not a folder the user can select — it is the
+                // map itself — so the gesture does nothing rather than quietly
+                // selecting the scan root and replacing the anchor, which is what
+                // made shift+click "act weird": the next shift+click then ranged
+                // from the wrong place.
+                //
+                // The whole gesture is `model.extendSelection`, which owns the
+                // folder normalisation, the view-root refusal, the range and the
+                // off-map anchor. The tail used to be copied here and in the
+                // rings, which is how the two views drifted and how the off-map
+                // branch came to describe the opposite of what it did.
+                model.extendSelection(to: node, order: readingOrder())
+            case .replace:
+                focus(node, tree: tree, model: model)
+            }
+            syncOverlay()
         }
     }
 
     override func rightMouseDown(with event: NSEvent) {
+        window?.makeFirstResponder(self)
         let p = convert(event.locationInWindow, from: nil)
         guard let model, let tree = model.tree, let node = pick(at: p) else { return }
-        focus(node, tree: tree, model: model)
+        // Right-clicking a tile INSIDE the selection keeps the whole selection —
+        // the user sees several ringed and the menu is how they act on all of
+        // them, so replacing it with this one node would silently discard the
+        // rest before the menu even appeared. One outside is a deliberate change
+        // of target, so it focuses that node alone.
+        if !model.picks.covers(node, in: tree) {
+            focus(node, tree: tree, model: model)
+        } else {
+            // The hover still follows the pointer: only the selection is kept.
+            hoveredNode = node
+            model.hovered = node
+        }
         NodeMenu.popUp(node: node, tree: tree, model: model, with: event, for: self)
     }
 }
@@ -767,11 +965,284 @@ nonisolated private enum Scan {
     }
 }
 
+/// How a node is removed, once the user has asked for it.
+///
+/// One vocabulary for both routes — the context menu and the Delete keys — so a
+/// shortcut cannot mean something gentler or harsher than the menu row that
+/// names it. Trash is reversible and permanent deletion is not, which is the
+/// only difference that matters to `NodeActions.remove`.
+enum RemovalKind {
+    /// Move it to the Trash: the user can put it back until they empty it.
+    case trash
+    /// Delete it permanently: no Trash, no way back.
+    case permanent
+}
+
+/// The node actions the context menu and the Delete keys share.
+///
+/// The shortest path from a node menu row to the thing it does. The two views
+/// that catch the Delete keys and the menu that draws the rows both call this,
+/// so "Move to Trash" and Delete cannot drift apart, and the irreversible
+/// route cannot be reachable from one surface and not another.
+@MainActor
+enum NodeActions {
+    /// Ask, then remove every node in `nodes` — the whole gesture, not just the
+    /// confirmation.
+    ///
+    /// Callers pass the *selection*, never the hover. A hover is a passive
+    /// pointer state the user never committed to: acting on it means a stray
+    /// Delete while the mouse crosses the map names whatever happened to be
+    /// underneath, and one Enter on the confirmation deletes it. The model's
+    /// selection is the pick the user actually made — by click, by arrow key or
+    /// by a list row — so the confirmation always describes something the screen
+    /// already shows as chosen. An empty list does nothing.
+    ///
+    /// The paths are resolved and de-overlapped ONCE, before the dialog, so the
+    /// count and byte total the user is shown are exactly the set that is acted
+    /// on: recomputing them after the confirmation could describe a different
+    /// batch if the tree changed while the modal was up.
+    static func remove(nodes: [Int], kind: RemovalKind, tree: Tree, model: ScanModel) {
+        // Node 0 is the scan itself — the whole disk or the chosen folder. The
+        // engine refuses to detach it (nothing would be left to draw), so it is
+        // filtered out here rather than failing into the void. Every other node
+        // is dropped too when it is no longer attached: an in-place removal the
+        // view has not caught up with leaves ids naming a detached subtree.
+        let usable = nodes.filter { $0 != 0 && tree.isAttached($0) }
+        if nodes.contains(0) { inform(String(localized: "Cannot remove the scan root")) }
+        guard !usable.isEmpty else { return }
+
+        // Defensive: the invariant already guarantees no member contains
+        // another, so this is normally the identity. It is checked anyway
+        // because the cost of being wrong is not symmetric — a nested pair would
+        // move a folder and then report its child as a failure, having acted on
+        // a path that no longer exists.
+        let targets = SelectionSet.outermost(usable, in: tree)
+        let items = targets.map { (node: $0, path: tree.path($0), name: tree.name($0)) }
+        switch kind {
+        case .trash: confirmAndTrash(items, model: model)
+        case .permanent: confirmAndErase(items, model: model)
+        }
+    }
+
+    /// What a batch confirmation names: how many items, and what they weigh.
+    ///
+    /// The count is of ITEMS, not folders: a multi-selection mixes files and
+    /// folders, and "Move 3 folders to the Trash?" over three files would be
+    /// plainly wrong. The total is the tree's own allocated bytes for the picked
+    /// nodes — the same figure the map and the status bar show — so the dialog
+    /// cannot disagree with the screen.
+    private static func summary(_ items: [(node: Int, path: String, name: String)],
+                                tree: Tree) -> (count: String, bytes: UInt64) {
+        let total = items.reduce(UInt64(0)) { $0 + tree.alloc[$1.node] }
+        // `String(items.count)`, not the Int itself: an Int interpolation builds
+        // the key "%lld items", and the tables define "%@ items" — every
+        // translation silently fell back to English. A String interpolation
+        // produces "%@", which is the key that exists (and what the l10n checker
+        // verifies, since it normalises every interpolation to "%@").
+        let count = items.count == 1
+            ? String(localized: "1 item")
+            : String(localized: "\(String(items.count)) items")
+        return (count, total)
+    }
+
+    /// Move to the Trash, after a confirmation naming the whole batch.
+    ///
+    /// Through `Trash.trash`, the one trash owner, so every surface reports a
+    /// removal the same way. `.userDirect`, NOT the guard: the alert just
+    /// answered is the authorization. The guard's "inside your home folder"
+    /// rule belongs to README "## AI cleanup" — it bounds what a *planner* may
+    /// nominate, because a planner writes a plan from a scan summary and
+    /// AppleTree then acts on paths it never showed the user. Here the user
+    /// selected specific items — or pressed Delete on the selection — and named
+    /// them in this dialog, and the app's own scan targets are mostly outside
+    /// `$HOME` (`/Applications`, a whole drive). Running the planner's policy
+    /// here refused `/Applications/Java 8 Update 491.app` with "Outside your
+    /// home folder" — a disk-space tool that cannot empty /Applications is not
+    /// doing its job.
+    ///
+    /// What DOES still apply: a symlink is judged by where it lands (inside
+    /// `Trash.trash`), and every failure is reported rather than swallowed.
+    private static func confirmAndTrash(_ items: [(node: Int, path: String, name: String)],
+                                       model: ScanModel) {
+        guard let tree = model.tree else { return }
+        let (count, bytes) = summary(items, tree: tree)
+        let alert = NSAlert()
+        if items.count == 1 {
+            // One item keeps its exact name: "Move "Resources" to Trash?"
+            // describes the one thing the user picked better than a count.
+            alert.messageText = String(localized: "Move \u{201C}\(items[0].name)\u{201D} to Trash?")
+            alert.informativeText = items[0].path
+        } else {
+            alert.messageText = String(localized: "Move \(count) to the Trash?")
+            alert.informativeText = String(localized: "\(Fmt.size(bytes)) in \(count). You can put them back until you empty the Trash.")
+        }
+        alert.addButton(withTitle: String(localized: "Move to Trash"))
+        alert.addButton(withTitle: String(localized: "Cancel"))
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        let paths = items.map(\.path)
+        Task { @MainActor in
+            let outcomes = await Trash.trash(paths, authority: .userDirect)
+            // Forget in place rather than rescanning: the engine cuts each
+            // node's link where it sits, so every other id keeps its meaning and
+            // the zoom, the selection and the size totals stay consistent.
+            var failures: [String] = []
+            for outcome in outcomes {
+                if outcome.moved {
+                    model.forgetPath(outcome.source)
+                } else if outcome.reason == String(localized: "Already gone") {
+                    // Nothing left on disk, so nothing to report — but the node
+                    // still has to leave the map. Its path is gone, and the tree
+                    // was built from an earlier scan, so the map would otherwise
+                    // keep showing bytes that no longer exist and count them in
+                    // every total. Forgetting is what makes the picture match
+                    // the disk; there is no failure to name.
+                    model.forgetPath(outcome.source)
+                } else if let reason = outcome.reason {
+                    failures.append("\((outcome.source as NSString).lastPathComponent): \(reason)")
+                }
+            }
+            reportFailures(failures, title: String(localized: "Some folders couldn't be moved"))
+        }
+    }
+
+    /// Delete permanently, after a confirmation that says so.
+    ///
+    /// The alert carries its own verb ("Delete Permanently", never "OK"): an
+    /// irreversible step must not be confirmed by a button that reads as
+    /// agreement to something else.
+    private static func confirmAndErase(_ items: [(node: Int, path: String, name: String)],
+                                        model: ScanModel) {
+        guard let tree = model.tree else { return }
+        let (count, bytes) = summary(items, tree: tree)
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        if items.count == 1 {
+            alert.messageText = String(localized: "Delete \u{201C}\(items[0].name)\u{201D} permanently?")
+            alert.informativeText = String(localized: "It does not go to the Trash. This cannot be undone.")
+        } else {
+            alert.messageText = String(localized: "Delete \(count) permanently?")
+            alert.informativeText = String(localized: "\(Fmt.size(bytes)) in \(count). This does not go to the Trash, and cannot be undone.")
+        }
+        alert.addButton(withTitle: String(localized: "Delete Permanently"))
+        alert.addButton(withTitle: String(localized: "Cancel"))
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        let paths = items.map(\.path)
+        Task { @MainActor in
+            var failures: [String] = []
+            for path in paths {
+                if let failure = await Erase.erase(path) {
+                    failures.append("\((path as NSString).lastPathComponent): \(failure)")
+                } else {
+                    // Gone permanently, and forgotten the same in-place way as a
+                    // trash, so the map, the list and the totals agree at once.
+                    model.forgetPath(path)
+                }
+            }
+            // Its own title: nothing was "moved" on this route, and a failure
+            // notice that names the wrong gesture sends the user looking in the
+            // Trash for something that never went there.
+            reportFailures(failures, title: String(localized: "Some items couldn't be deleted"))
+        }
+    }
+
+    /// Show why a removal did not happen, listing every failure.
+    ///
+    /// One dialog for the batch, not one per item: a user who selected 30 files
+    /// and lost 3 to permissions needs the three named once, not 30 modals.
+    /// `title` is passed in because the two routes fail differently — a Trash
+    /// move that did not happen, a delete that did not.
+    private static func reportFailures(_ failures: [String], title: String) {
+        guard !failures.isEmpty else { return }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = title
+        // Bounded so a 500-item failure cannot produce a dialog taller than the
+        // screen; the count still tells the user the true scale.
+        let shown = failures.prefix(12).joined(separator: "\n")
+        alert.informativeText = failures.count > 12
+            ? shown + "\n" + String(localized: "…and \(String(failures.count - 12)) more")
+            : shown
+        alert.addButton(withTitle: String(localized: "OK"))
+        alert.runModal()
+    }
+
+    /// A warning the user has to acknowledge, with no path to lead with.
+    private static func inform(_ message: String) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = message
+        alert.addButton(withTitle: String(localized: "OK"))
+        alert.runModal()
+    }
+}
+
+/// The AppKit hook that reads a mouse click's modifiers into a `ClickIntent`.
+///
+/// Lives beside `RemovalKeys` rather than in `Selection.swift`, because that
+/// file imports only Foundation so the selection algebra stays testable without
+/// AppKit; this is the one place that must know about `NSEvent`. Both views call
+/// it, so a second reading of the same flags cannot reintroduce the precedence
+/// bug it exists to fix: the map and the rings used to test `.command` before
+/// `.shift`, which made ⌘⇧+click toggle the item under the pointer instead of
+/// extending a range to the folder holding it.
+extension SelectionSet.ClickIntent {
+    /// The selection gesture a click event asks for.
+    init(_ event: NSEvent) {
+        self.init(shift: event.modifierFlags.contains(.shift),
+                  command: event.modifierFlags.contains(.command))
+    }
+}
+
+/// The AppKit hook every surface that takes the Delete keys shares.
+///
+/// Delete and Backspace mean "remove what is selected", Shift with either means
+/// "delete it permanently". One owner decides that, because the two key codes and
+/// their shifted forms are easy to get subtly different in a second view: the
+/// list, the map and the rings must read the same keystroke the same way.
+enum RemovalKeys {
+    /// The key codes AppKit sends for the two delete keys every Mac keyboard
+    /// has: Backspace and Forward Delete.
+    private static let backspace: UInt16 = 51
+    private static let forwardDelete: UInt16 = 117
+
+    /// Only the modifiers that express a *held intent* are read; the rest are
+    /// hardware or keyboard state and must not veto the gesture:
+    ///
+    /// - `.function` is set for the arrow/function key row, and Forward Delete
+    ///   reports it. On every Mac laptop Fn+Backspace *is* Forward Delete, so
+    ///   refusing a flagged event would break the only way to reach that key
+    ///   without a full-size keyboard.
+    /// - `.numericPad` is set by the numeric keypad, which is not a modifier a
+    ///   user means to combine here.
+    /// - `.capsLock` is a sticky state: Delete must go on working while Caps
+    ///   Lock is on, exactly as every other shortcut does.
+    private static let intent: NSEvent.ModifierFlags = [.shift, .command, .option, .control]
+
+    /// The removal the event asks for, or nil when it is not a delete key or a
+    /// modifier that means something else is in play.
+    ///
+    /// Deliberately strict about the modifiers it does read: the set must be
+    /// *exactly* Shift or nothing at all. Option-Delete on macOS deletes the
+    /// word behind the caret and Command-Delete deletes a line, so treating any
+    /// delete key with "Shift somewhere in the flags" as a removal would turn an
+    /// editing gesture into an irreversible delete.
+    static func intent(for event: NSEvent) -> RemovalKind? {
+        guard event.keyCode == backspace || event.keyCode == forwardDelete else { return nil }
+        switch event.modifierFlags.intersection(intent) {
+        case []: return .trash
+        case [.shift]: return .permanent
+        default: return nil
+        }
+    }
+}
+
 /// Right-click menu for a file or folder, shared by the treemap, the rings
 /// and the directory list.
 ///
 /// Actions go through the node, not a copied path: "select the enclosing
-/// folder" and the Trash confirmation both need the scan model, and every
+/// folder" and both removal confirmations need the scan model, and every
 /// surface that shows a node must offer the same menu (a right-click that
 /// works in the map but not in the list reads as a bug).
 final class NodeMenu: NSObject {
@@ -784,6 +1255,10 @@ final class NodeMenu: NSObject {
         let menu = NSMenu()
         let parent = Int(tree.parents[node])
         let canClimb = parent != Int(UInt32.max) && tree.isDir(parent)
+        // Only node 0 has no parent, and removing it would delete the scan
+        // root itself: the engine refuses it, so the rows say so instead of
+        // offering an action that can only fail.
+        let canRemove = node != 0
 
         func add(_ title: String, _ action: Selector, enabled: Bool = true) {
             let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
@@ -801,7 +1276,12 @@ final class NodeMenu: NSObject {
         add(String(localized: "Select Enclosing Folder"), #selector(selectEnclosingFolder(_:)),
             enabled: canClimb)
         menu.addItem(.separator())
-        add(String(localized: "Move to Trash"), #selector(moveToTrash(_:)))
+        add(String(localized: "Move to Trash"), #selector(moveToTrash(_:)), enabled: canRemove)
+        // The irreversible one, below its reversible sibling and after a
+        // separator of its own: it must not sit where a stray click on the row
+        // above lands.
+        menu.addItem(.separator())
+        add(String(localized: "Delete Permanently"), #selector(deleteForGood(_:)), enabled: canRemove)
         return menu
     }
 
@@ -839,51 +1319,26 @@ final class NodeMenu: NSObject {
 
     @objc private func moveToTrash(_ sender: NSMenuItem) {
         guard let c = Self.context(sender) else { return }
-        let path = c.tree.path(c.node)
-        let url = URL(fileURLWithPath: path)
-        let alert = NSAlert()
-        alert.messageText = String(localized: "Move \u{201C}\(url.lastPathComponent)\u{201D} to Trash?")
-        alert.informativeText = path
-        alert.addButton(withTitle: String(localized: "Move to Trash"))
-        alert.addButton(withTitle: String(localized: "Cancel"))
-        if alert.runModal() == .alertFirstButtonReturn {
-            // Through `Trash.trash`, the one trash owner, so every surface
-            // reports a removal the same way. `.userDirect`, NOT the guard:
-            // the alert just answered is the authorization. The guard's
-            // "inside your home folder" rule belongs to README "## AI
-            // cleanup" — it bounds what a *planner* may nominate, because a
-            // planner writes a plan from a scan summary and AppleTree then
-            // acts on paths it never showed the user. Here the user right-
-            // clicked one specific item and named it in this dialog, and the
-            // app's own scan targets are mostly outside `$HOME`
-            // (`/Applications`, a whole drive). Running the planner's policy
-            // here refused `/Applications/Java 8 Update 491.app` with
-            // "Outside your home folder" — a disk-space tool that cannot empty
-            // /Applications is not doing its job.
-            //
-            // What DOES still apply: a symlink is judged by where it lands
-            // (inside `Trash.trash`), and every failure is reported rather
-            // than swallowed by the `try?` this used to be.
-            Task { @MainActor in
-                let outcome = await Trash.trash([path], authority: .userDirect).first
-                if outcome?.moved == true {
-                    // The folder is gone, so forget it locally rather than
-                    // re-walking the disk: the engine cuts this node's link in
-                    // place, every other id keeps its meaning, and the zoom,
-                    // the selection and the size totals all stay consistent.
-                    // A rescan here would renumber every id and throw away the
-                    // user's place in the tree for the sake of one folder.
-                    c.model.forgetPath(path)
-                } else if let reason = outcome?.reason {
-                    let failure = NSAlert()
-                    failure.alertStyle = .warning
-                    failure.messageText = String(localized: "Some folders couldn't be moved")
-                    failure.informativeText = "\(url.lastPathComponent): \(reason)"
-                    failure.addButton(withTitle: String(localized: "OK"))
-                    failure.runModal()
-                }
-            }
-        }
+        // The confirmation, the trash owner and the in-place forget all live
+        // in `NodeActions`, because the Delete key runs the same gesture.
+        targeted(c, kind: .trash)
+    }
+
+    @objc private func deleteForGood(_ sender: NSMenuItem) {
+        guard let c = Self.context(sender) else { return }
+        targeted(c, kind: .permanent)
+    }
+
+    /// What a menu row acts on: the whole selection when the clicked node is
+    /// part of it, otherwise just the clicked node.
+    ///
+    /// Right-clicking inside a multi-selection must not silently act on one item
+    /// — the user sees several ringed and the menu is the way to act on them.
+    /// Right-clicking something *outside* it is a deliberate change of target,
+    /// so it acts on that node alone rather than the previous selection.
+    private func targeted(_ c: Context, kind: RemovalKind) {
+        let nodes = c.model.picks.covers(c.node, in: c.tree) ? c.model.pickedNodes : [c.node]
+        NodeActions.remove(nodes: nodes, kind: kind, tree: c.tree, model: c.model)
     }
 }
 

@@ -38,11 +38,23 @@
 /* Clean Up panel */
 "Move 1 folder to the Trash?" = "1 Ordner in den Papierkorb legen?";
 "Move %@ folders to the Trash?" = "%@ Ordner in den Papierkorb legen?";
+
+/* Multi-selection: a batch confirmation names how many ITEMS and what
+   they weigh. "items", not "folders": a selection mixes files and
+   folders, so the folder wording above would be wrong for three files. */
+"1 item" = "1 Objekt";
+"%@ items" = "%@ Objekte";
+"Move %@ to the Trash?" = "%@ in den Papierkorb legen?";
+"%@ in %@. You can put them back until you empty the Trash." = "%@ in %@. Sie können sie zurückholen, bis Sie den Papierkorb leeren.";
+"Delete %@ permanently?" = "%@ endgültig löschen?";
+"%@ in %@. This does not go to the Trash, and cannot be undone." = "%@ in %@. Das kommt nicht in den Papierkorb und lässt sich nicht rückgängig machen.";
+"…and %@ more" = "…und %@ weitere";
 "Move to Trash (%@)" = "In den Papierkorb legen (%@)";
 "Cancel" = "Abbrechen";
 "You can put them back from the Trash until you empty it. The tools that made them rebuild them when needed." = "Sie können sie aus dem Papierkorb zurückholen, bis Sie ihn leeren. Die Tools, die sie erstellt haben, holen sie bei Bedarf wieder her.";
 "OK" = "OK";
 "Some folders couldn't be moved" = "Einige Ordner konnten nicht verschoben werden";
+"Some items couldn't be deleted" = "Einige Objekte konnten nicht gelöscht werden";
 "Reclaimable" = "Zurückgewinnbar";
 "Nothing large to clean up" = "Nichts Großes zu bereinigen";
 "%@ in %@ folders" = "%@ in %@ Ordnern";
@@ -61,7 +73,7 @@
 "Pick what to remove" = "Auswählen, was entfernt wird";
 "Move %@ to Trash" = "%@ in den Papierkorb legen";
 "Continue" = "Fortfahren";
-"Delete %@ for good" = "%@ endgültig löschen";
+"Delete %@ permanently" = "%@ endgültig löschen";
 "Deletes only what this cleanup moved to the Trash, and clears the tool caches" = "Löscht nur, was diese Bereinigung in den Papierkorb gelegt hat, und leert die Tool-Caches";
 "Keep in the Trash" = "Im Papierkorb behalten";
 "Done" = "Fertig";
@@ -81,8 +93,8 @@
 "Reading your scan, nothing is touched" = "Ihr Scan wird gelesen, nichts wird angefasst";
 "Writing the plan" = "Plan wird geschrieben";
 "Nothing is deleted yet" = "Noch nichts gelöscht";
-"Put anything back from the Trash, or delete it for good. Tool caches are cleared then too." = "Alles aus dem Papierkorb zurückholen oder endgültig löschen. Tool-Caches werden dann ebenfalls geleert.";
-"Put anything back from the Trash, or delete it for good." = "Alles aus dem Papierkorb zurückholen oder endgültig löschen.";
+"Put anything back from the Trash, or delete it permanently. Tool caches are cleared then too." = "Alles aus dem Papierkorb zurückholen oder endgültig löschen. Tool-Caches werden dann ebenfalls geleert.";
+"Put anything back from the Trash, or delete it permanently." = "Alles aus dem Papierkorb zurückholen oder endgültig löschen.";
 "Only what this cleanup moved; the rest of your Trash stays" = "Nur was diese Bereinigung verschoben hat; der Rest Ihres Papierkorbs bleibt";
 "Nothing was changed." = "Es wurde nichts geändert.";
 "ready to delete" = "bereit zum Löschen";
@@ -111,6 +123,18 @@
 "Parent Folder" = "Übergeordneter Ordner";
 "Move to Trash" = "In den Papierkorb legen";
 "Move “%@” to Trash?" = "„%@“ in den Papierkorb legen?";
+
+/* Endgültiges Löschen: die Zeile „Endgültig löschen“ im Kontextmenü, die
+   Umschalttaste mit einer der beiden Löschtasten und die Bestätigung, die
+   sagt, was es kostet. „Endgültig löschen“ ist EIN Schlüssel für zwei
+   Stellen — die Menüzeile und die Schaltfläche im Dialog —, denn die Zeile
+   trägt keine Auslassungspunkte: Die Bestätigungszeile unter der Frage sagt
+   bereits, dass ein Dialog folgt, und die Zeile liest sich als die Aktion
+   selbst. */
+"Delete “%@” permanently?" = "„%@“ endgültig löschen?";
+"It does not go to the Trash. This cannot be undone." = "Das kommt nicht in den Papierkorb. Das lässt sich nicht rückgängig machen.";
+"Delete Permanently" = "Endgültig löschen";
+"Cannot remove the scan root" = "Der Scan-Stamm kann nicht entfernt werden";
 
 /* Settings */
 "Custom model providers" = "Eigene Modellprovider";

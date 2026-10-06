@@ -655,8 +655,9 @@ final class ScanModel {
         let name = tree.name(node)
         cleanup = Cleanup.find(in: tree)
         // A selection, hover or zoom root inside what just went would now point
-        // at a detached node; move the view to its nearest surviving ancestor.
-        if let sel = selection, !tree.isAttached(sel) { selection = nil }
+        // at a detached node; drop just those, so removing one member of a
+        // multi-selection leaves the others picked rather than clearing them.
+        validateSelection()
         if let hovered, !tree.isAttached(hovered) { self.hovered = nil }
         if !tree.isAttached(viewRoot) { viewRoot = tree.attachedAncestor(of: viewRoot) }
         treeRevision &+= 1
@@ -666,11 +667,103 @@ final class ScanModel {
 
     var viewRoot: Int = 0 {
         didSet {
-            // A selection outside the folder on screen would read as over 100%.
-            if let sel = selection, let tree, !tree.ancestry(sel).contains(viewRoot) { selection = nil }
+            // Only attachment is enforced here, not containment.
+            //
+            // The old single-selection rule dropped a pick that fell outside the
+            // folder on screen, because one item outside the root reads as over
+            // 100%. A multi-selection cannot use that rule: the selection is
+            // shared across views on purpose, and dropping every member outside
+            // the new root would silently discard most of it. Nothing is lost by
+            // leaving off-screen members selected either — the map rings what it
+            // draws, and the status bar and Delete still count the whole set.
+            //
+            // Every path that re-roots either clears the selection
+            // (`navigate`, `rootForFocus`, a rescan, the trail) or moves the root
+            // UP to an ancestor (an in-place removal), so a member outside the
+            // root cannot arise from navigation in the first place.
+            validateSelection()
         }
     }
-    var selection: Int? = nil
+    /// The multi-selection: primary anchor plus its members, with the
+    /// antichain invariant owned by `SelectionSet`.
+    ///
+    /// The one place selection state lives. The views call this; none of them
+    /// keeps its own copy, which is what stops the map, the rings and the list
+    /// from disagreeing about what is picked.
+    ///
+    /// Cleared whenever the tree is REPLACED (a rescan renumbers every node id,
+    /// so old ids would name different folders — see `Cleanup`'s header for the
+    /// bug that caused), and validated in place when a node is removed.
+    private(set) var picks = SelectionSet()
+
+    /// The primary pick: the last node clicked, the range anchor, and what the
+    /// breadcrumbs and status bar describe.
+    ///
+    /// A façade over `picks` rather than separate state, so there is exactly one
+    /// selection and the single-pick callers keep working unchanged: assigning
+    /// replaces the whole selection, which is what a plain click and every
+    /// existing writer already meant.
+    var selection: Int? {
+        get { picks.primary }
+        set { picks.replace(with: newValue) }
+    }
+
+    /// Make `node` the selection (plain click), or clear it with nil.
+    func select(_ node: Int?) { picks.replace(with: node) }
+
+    /// Cmd+click: add `node`, or remove it when already picked.
+    func toggleSelection(_ node: Int) {
+        guard let tree else { return }
+        picks.toggle(node, in: tree)
+    }
+
+    /// Shift+click or Cmd+A: make these the selection, reduced to the outermost
+    /// items so a swept folder stands for everything inside it.
+    ///
+    /// `anchor` keeps the end the user did not click as the anchor, so a second
+    /// Shift+click re-ranges from the same place instead of creeping.
+    func setSelection(_ nodes: [Int], anchor: Int? = nil) {
+        guard let tree else { return }
+        picks.set(nodes, anchor: anchor, in: tree)
+    }
+
+    /// Shift+click: extend the selection to `node`, ranging over the order the
+    /// calling view draws. The whole gesture lives in `SelectionSet.extend`, so
+    /// the map and the rings cannot read the same click differently.
+    ///
+    /// The anchor is projected onto the SAME level as the range: a primary
+    /// picked in the list can be several levels below the folder the map is
+    /// showing, and ranging from its own deep index would span the whole level
+    /// plus everything under it — the same escape this gesture was just fixed
+    /// for, arriving through the other endpoint.
+    ///
+    /// Returns whether anything changed.
+    @discardableResult
+    func extendSelection(to node: Int, order: [Int]) -> Bool {
+        guard let tree else { return false }
+        // The endpoint is a FOLDER: a file's tile cannot express a range (the
+        // antichain rule would drop it against its own folder), and the scan
+        // root is never a selectable target.
+        guard let target = SelectionSet.folderEndpoint(for: node, in: tree),
+              target != viewRoot else { return false }
+        return picks.extend(to: target, order: order, in: tree)
+    }
+
+    /// Every picked node that still hangs off the root, outermost first.
+    var pickedNodes: [Int] {
+        guard let tree else { return picks.members }
+        return picks.containmentDeduped(in: tree)
+    }
+
+    /// Drop members whose node an in-place removal detached.
+    ///
+    /// `removeNode` cuts one link, so a removed folder's descendants stop being
+    /// attached without being individually touched: this drops the removed node
+    /// and everything that was under it in one pass.
+    func validateSelection() {
+        guard let tree else { picks.clear(); return }
+        picks.validate(in: tree)
+    }
 
     /// Select a node from a list, zooming out first if it is outside the
     /// folder on screen (it would have nothing to outline).
@@ -699,7 +792,7 @@ final class ScanModel {
     /// `viewRoot`, so nothing is lost by leaving the pick empty.
     func navigate(to folder: Int) {
         viewRoot = folder
-        selection = nil
+        picks.clear()
         hovered = nil
         record(folder)
     }
@@ -720,7 +813,7 @@ final class ScanModel {
     /// the user never chose — with B gone from the history entirely.
     func rootForFocus(on folder: Int) {
         viewRoot = folder
-        selection = nil
+        picks.clear()
         hovered = nil
     }
 
@@ -856,7 +949,7 @@ final class ScanModel {
         while trail.indices.contains(trailIndex) {
             if let node = resolve(trail[trailIndex], in: tree) {
                 viewRoot = node
-                selection = nil
+                picks.clear()
                 hovered = nil
                 persistTrail()
                 return true
@@ -932,7 +1025,7 @@ final class ScanModel {
         trailIndex = restoredIndex
         if let node = trail.indices.contains(trailIndex) ? resolve(trail[trailIndex], in: tree) : nil {
             viewRoot = node
-            selection = nil
+            picks.clear()
             hovered = nil
         } else {
             viewRoot = 0
@@ -1070,7 +1163,9 @@ final class ScanModel {
         tree = nil
         cleanup = []
         viewRoot = 0
-        selection = nil
+        // The new tree renumbers every node id, so old picks would name
+        // different folders; the selection is scoped to one tree by design.
+        picks.clear()
         hovered = nil
         files = 0; dirs = 0; bytes = 0; elapsed = 0
         lastPollAt = nil; maxPollGap = 0

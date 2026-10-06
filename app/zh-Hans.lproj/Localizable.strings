@@ -38,11 +38,23 @@
 /* Clean Up panel */
 "Move 1 folder to the Trash?" = "将 1 个文件夹移到废纸篓？";
 "Move %@ folders to the Trash?" = "将 %@ 个文件夹移到废纸篓？";
+
+/* Multi-selection: a batch confirmation names how many ITEMS and what
+   they weigh. "items", not "folders": a selection mixes files and
+   folders, so the folder wording above would be wrong for three files. */
+"1 item" = "1 个项目";
+"%@ items" = "%@ 个项目";
+"Move %@ to the Trash?" = "将%@移到废纸篓？";
+"%@ in %@. You can put them back until you empty the Trash." = "%@，共 %@。在清空废纸篓之前可以放回。";
+"Delete %@ permanently?" = "要永久删除%@吗？";
+"%@ in %@. This does not go to the Trash, and cannot be undone." = "%@，共 %@。不会进入废纸篓，且无法撤销。";
+"…and %@ more" = "…以及另外 %@ 项";
 "Move to Trash (%@)" = "移到废纸篓（%@）";
 "Cancel" = "取消";
 "You can put them back from the Trash until you empty it. The tools that made them rebuild them when needed." = "在清倒废纸篓之前，你可以随时从中取回这些文件夹。创建它们的工具会在需要时重新生成。";
 "OK" = "好";
 "Some folders couldn't be moved" = "部分文件夹无法移动";
+"Some items couldn't be deleted" = "部分项目无法删除";
 "Reclaimable" = "可回收";
 "Nothing large to clean up" = "没有需要清理的大项目";
 "%@ in %@ folders" = "%@ 个文件夹，共 %@";
@@ -61,7 +73,7 @@
 "Pick what to remove" = "选择要移除的内容";
 "Move %@ to Trash" = "将 %@ 移到废纸篓";
 "Continue" = "继续";
-"Delete %@ for good" = "永久删除 %@";
+"Delete %@ permanently" = "永久删除 %@";
 "Deletes only what this cleanup moved to the Trash, and clears the tool caches" = "仅删除本次清理移入废纸篓的内容，并清空工具缓存";
 "Keep in the Trash" = "保留在废纸篓中";
 "Done" = "完成";
@@ -81,8 +93,8 @@
 "Reading your scan, nothing is touched" = "正在读取你的扫描，未改动任何内容";
 "Writing the plan" = "正在编写规划";
 "Nothing is deleted yet" = "尚未删除任何内容";
-"Put anything back from the Trash, or delete it for good. Tool caches are cleared then too." = "可从废纸篓取回任何内容，或将其永久删除。届时工具缓存也会一并清空。";
-"Put anything back from the Trash, or delete it for good." = "可从废纸篓取回任何内容，或将其永久删除。";
+"Put anything back from the Trash, or delete it permanently. Tool caches are cleared then too." = "可从废纸篓取回任何内容，或将其永久删除。届时工具缓存也会一并清空。";
+"Put anything back from the Trash, or delete it permanently." = "可从废纸篓取回任何内容，或将其永久删除。";
 "Only what this cleanup moved; the rest of your Trash stays" = "仅限本次清理移入的内容；废纸篓中的其他内容不受影响";
 "Nothing was changed." = "未做任何更改。";
 "ready to delete" = "待删除";
@@ -111,6 +123,15 @@
 "Parent Folder" = "上级文件夹";
 "Move to Trash" = "移到废纸篓";
 "Move “%@” to Trash?" = "将“%@”移到废纸篓？";
+
+/* 永久删除：右键菜单中的“永久删除”一项、两个删除键加 Shift 的组合，
+   以及说明其代价的确认框。“永久删除”是同一个键用于两处——菜单项和对话框
+   按钮——因为该菜单项末尾不带省略号：问题下方的确认行已经说明会弹出
+   对话框，而菜单项本身读起来就是该操作。 */
+"Delete “%@” permanently?" = "要永久删除“%@”吗？";
+"It does not go to the Trash. This cannot be undone." = "它不会进入废纸篓。此操作无法撤销。";
+"Delete Permanently" = "永久删除";
+"Cannot remove the scan root" = "无法删除扫描根目录";
 
 /* Settings */
 "Custom model providers" = "自定义模型提供商";

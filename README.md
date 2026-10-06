@@ -32,16 +32,44 @@ opens where you left off.
 
 **Right-click works everywhere.** The treemap, the rings and the directory list
 offer the same menu for any file or folder: Reveal in Finder, Copy Path, Select
-Enclosing Folder, and Move to Trash. One owner builds that menu, so no surface
-can offer a different set of actions for the same item.
+Enclosing Folder, Move to Trash, and Delete Permanently — which deletes the item
+itself rather than moving it to the Trash, and says so before it does. One owner
+builds that menu, so no surface can offer a different set of actions for the
+same item.
+
+**Delete means delete.** Delete or Backspace moves the selection to the Trash,
+in the map, the rings and the list alike; holding Shift with either key deletes
+it permanently. Both ask first — one dialog naming how many items and how much
+they weigh — and the permanent one's button carries its own verb rather than a
+generic "OK".
+
+**Pick as many as you like.** ⌘-click adds an item to the selection and removes
+it when clicked again; Shift-click selects the range between the anchor and the
+click, on the level you are looking at; ⌘A selects everything the view is
+showing you. The selection is shared, so
+picking in the list and switching to the map or the rings keeps it highlighted.
+Selecting a folder and a file inside it cannot both be true — whichever you
+picked last wins — so the space you reclaim is never counted twice. In the rings
+a selected folder lights the arcs inside it too, since one arc is the folder and
+what it holds is drawn further out; in the map the folder's own box already
+stands for its contents.
 
 **A title path you can navigate.** The breadcrumb path follows the selection,
 and every folder above it is one click away.
 
+**Collapsing never loses a selection.** A folder with something selected inside
+it can still be collapsed, and its row keeps a striped highlight to say so —
+the pick is hidden, not cancelled, so Delete still removes it and the byte total
+still counts it. Selecting anything new opens the list back up to show it.
+
 **Keyboard navigation.** Arrow keys move the focus, Return zooms in, Escape
 zooms out, and ⌘↑ selects the folder holding the focused item — useful when a
-tile is too small to click. Focus is chosen geometrically, so files and folders
-compete for the nearest tile together.
+tile is too small to click: a folder drawn as nothing but its own outline still
+takes the focus when you point at that outline, so ⌘↑ climbs from it rather than
+from whatever sits inside it. Delete moves the selection to the Trash and
+Shift+Delete deletes it permanently. ⌘-click, Shift-click and ⌘A build a
+selection across all three views. Focus is chosen geometrically, so files and
+folders compete for the nearest tile together.
 
 **Clean Up panel.** Finds folders that are safe to remove — caches,
 `node_modules`, Rust `target`, Xcode DerivedData and more — so they can be
@@ -50,8 +78,8 @@ moved to the Trash in one pass.
 **AI cleanup, using your own agent.** Click "Clean up with Claude Code" (or
 Codex) and the agent plans what can go while the treemap highlights those
 folders. AppleTree performs the cleanup itself, in two steps you approve: move
-to the Trash, then delete for good. If no agent is installed, one click installs
-and signs in to Codex (free with a ChatGPT account) or Claude Code.
+to the Trash, then delete permanently. If no agent is installed, one click
+installs and signs in to Codex (free with a ChatGPT account) or Claude Code.
 
 **Every planner stays reachable.** The Clean Up button carries a menu listing
 all of them: each installed agent, each custom provider, the agents that still
@@ -181,7 +209,7 @@ AppleTree then acts on that plan behind its own checks, whatever the plan says:
 - Only each tool's own cleanup commands (`uv cache clean`, `brew cleanup`, `npm cache clean` and similar, plus `xcrun simctl` for Xcode simulator runtimes and device data), with no shell syntax
 - Codex chats and projects you used in the last 2 days are left alone
 - Caches belonging to apps that are open are skipped until you quit them
-- "Delete for good" removes only what this cleanup moved to the Trash
+- "Delete permanently" removes only what this cleanup moved to the Trash
 
 ## Trust, privacy and permissions
 

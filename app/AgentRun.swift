@@ -117,7 +117,7 @@ final class PlanItem: Identifiable {
 @MainActor
 final class AgentRun {
     /// Two decisions from the user: `planned` → Move to Trash (can be undone)
-    /// → `staged` → Delete for good → `done`.
+    /// → `staged` → Delete permanently → `done`.
     enum Phase: Equatable { case thinking, planned, trashing, staged, deleting, done, failed(String) }
 
     /// Nil when the plan comes from a custom provider over HTTP.
@@ -180,7 +180,7 @@ final class AgentRun {
 
     /// What step one moves to the Trash (tool caches wait for step two).
     var trashBytes: UInt64 { targets.filter { !$0.isCommand }.reduce(0) { $0 + $1.bytes } }
-    /// What step two deletes for good; while it runs, what is still going,
+    /// What step two deletes permanently; while it runs, what is still going,
     /// so the number counts down as each item finishes.
     var pendingBytes: UInt64 {
         targets.filter {
@@ -487,7 +487,7 @@ final class AgentRun {
         }
     }
 
-    /// Step two: delete for good what step one trashed, and run the tools'
+    /// Step two: delete permanently what step one trashed, and run the tools'
     /// own cache cleanups. Only this run's items; the rest of the Trash stays.
     /// Everything runs at once: folder deletes spread over every core.
     func deleteForGood(env: AgentEnvironment) {
@@ -565,7 +565,7 @@ final class AgentRun {
     nonisolated private static let deleteQueue = DispatchQueue(label: "appletree.delete", qos: .userInitiated,
                                                                attributes: .concurrent)
 
-    /// Deletes folders for good, fast: each folder's children go through
+    /// Deletes folders permanently, fast: each folder's children go through
     /// removefile(3) on the shared slots, then the folder itself. Returns the
     /// first failure, or nil when every path is gone.
     ///

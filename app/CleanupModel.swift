@@ -74,6 +74,17 @@ nonisolated enum Trash {
         case plannerPlan
     }
 
+    /// Whether anything occupies `path` — the link itself counted as a thing.
+    ///
+    /// `lstat` does not follow the final component, so a symlink to a missing
+    /// target is present here (and can be trashed), while a path that genuinely
+    /// does not exist is not. `FileManager.fileExists` cannot answer this: it
+    /// resolves, so a dangling link looks absent.
+    nonisolated static func exists(_ path: String) -> Bool {
+        var info = stat()
+        return lstat(path, &info) == 0
+    }
+
     /// Move each path to the Trash, reporting one outcome per path.
     ///
     /// A path that is already gone reports "Already gone" rather than being
@@ -83,7 +94,14 @@ nonisolated enum Trash {
         await Task.detached(priority: .userInitiated) {
             paths.map { path in
                 let source = (path as NSString).standardizingPath
-                guard FileManager.default.fileExists(atPath: source) else {
+                // `lstat`, NOT `fileExists`: the latter resolves the path, so a
+                // dangling symlink — a link whose target is gone, exactly the
+                // dead thing a disk-space tool is asked to clean up — reads as
+                // absent. Reporting "Already gone" then makes the caller treat
+                // the item as removed, so the map drops the node and subtracts
+                // its bytes while the link is still on disk and `trashItem`
+                // would have moved it. Same non-resolving test `Erase` uses.
+                guard Trash.exists(source) else {
                     return TrashOutcome(source: source, trashed: nil,
                                         reason: String(localized: "Already gone"))
                 }
@@ -101,6 +119,64 @@ nonisolated enum Trash {
                 }
             }
         }.value
+    }
+}
+
+/// The one permanent-deletion pathway: deletes the path itself, never the
+/// Trash.
+///
+/// Deliberately not `trashItem`. A shortcut that quietly filled the Trash
+/// instead of deleting would make "permanently" a lie and leave the bytes on disk
+/// — and the user who chose it did so precisely to skip the Trash. So the
+/// irreversible step is named as one, confirmed as one, and performs one.
+///
+/// `removefile(REMOVEFILE_RECURSIVE)` removes a file, a folder with everything
+/// inside it, or a symlink (the link itself, never what it points at) with the
+/// same call, which is what makes one function enough here. It is the same
+/// primitive `AgentRun`'s parallel sweep uses, so "delete permanently" means one
+/// thing in this app.
+nonisolated enum Erase {
+    /// Delete `path` permanently. Nil when it is gone, else why it is not.
+    ///
+    /// A path that is already absent is a *success*, not a failure: there is
+    /// nothing left to delete, and the caller must still forget its node, or a
+    /// removed item would sit in the map and in the totals forever. That is the
+    /// one place this differs from `Trash.trash`, which reports "Already gone"
+    /// because its caller lists rows the user can still tick.
+    ///
+    /// Existence is asked with `lstat`, never `fileExists`: `fileExists`
+    /// resolves the path, so a *dangling* symlink — a link whose target is
+    /// gone, which is exactly the sort of dead thing a disk-space tool is asked
+    /// to clean up — reads as absent. Treating that as "already gone" reported
+    /// success while the link sat on disk, so the node was cut from the map and
+    /// subtracting its bytes from every total, all with nothing removed. The
+    /// link owns no data, so the totals were only off by its own entry, but the
+    /// item would reappear on the next scan with no sign the delete had failed.
+    ///
+    /// The status is the whole story on failure: `removefile` returns less than
+    /// zero and does not set errno, so there is no message to read. A path that
+    /// survived the call is reported; one that did not is not a failure, even
+    /// with a non-zero status (a partial sweep can still leave nothing behind).
+    static func erase(_ path: String) async -> String? {
+        await Task.detached(priority: .userInitiated) {
+            let target = (path as NSString).standardizingPath
+            guard exists(target) else { return nil }
+            let status = removefile(target, nil, removefile_flags_t(REMOVEFILE_RECURSIVE))
+            // Re-check with the same non-resolving test, or a dangling link
+            // would look gone on both sides of a call that never touched it.
+            guard status < 0, exists(target) else { return nil }
+            return "\(target): removefile failed (\(status))"
+        }.value
+    }
+
+    /// Whether anything occupies `path` — the link itself counted as a thing.
+    ///
+    /// `lstat` does not follow the final component, so a symlink to a missing
+    /// target is present here (and can be removed), while a path that genuinely
+    /// does not exist is not. That is the question a delete has to ask.
+    nonisolated private static func exists(_ path: String) -> Bool {
+        var info = stat()
+        return lstat(path, &info) == 0
     }
 }
 

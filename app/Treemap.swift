@@ -6,6 +6,16 @@ nonisolated struct TMRect {
     var rect: CGRect
     var node: Int
     var isDir: Bool
+    /// Tree depth of `node`, 0 for the scan root.
+    ///
+    /// Carried here rather than re-derived from the tree because the renderer
+    /// already knows it: `draw` recurses one level per call and every entry is
+    /// appended with the depth it was drawn at. A caller that needs "what is
+    /// addressable at the level on screen" must ask with the SAME depth the
+    /// picture was built from, or it will disagree with what the user sees —
+    /// which is how a Shift+range came to sweep in grandchildren of a folder
+    /// that was only passed over.
+    var depth: Int = 0
     /// Width in points of this folder's separation frame, when it was drawn.
     ///
     /// The frame is painted *over* the children, so it is the one part of an
@@ -79,6 +89,72 @@ nonisolated struct TMLeafIndex {
             if leaves[i].rect.contains(point) { return leaves[i] }
         }
         return nil
+    }
+}
+
+/// The smallest drawn folder containing a point, in one grid cell's worth of
+/// work instead of a scan of every directory rect.
+///
+/// A file-tile lookup (`TMLeafIndex`) is not enough on its own: a folder's
+/// separation frame is painted *over* its children, and where several frames
+/// nest the outermost is painted last, so a frame pixel can sit over no file at
+/// all — or over a file belonging to a different folder. A hit-test that only
+/// consults leaves then answers "nothing" or the wrong node for a pixel the
+/// picture plainly shows as a folder's border.
+///
+/// Both `pick` and `hover` need this same answer, which is why it lives here
+/// rather than in either caller: two lookups would drift, and the drift is
+/// exactly what made a folder clickable but not hoverable.
+nonisolated struct TMDirIndex {
+    private static let cellSize: CGFloat = 32
+    private var columns = 0
+    private var rows = 0
+    private var cells: [[Int]] = []
+
+    init() {}
+
+    init(rects: [TMRect], size: CGSize) {
+        guard !rects.isEmpty, size.width > 0, size.height > 0 else { return }
+        columns = max(1, Int(ceil(size.width / Self.cellSize)))
+        rows = max(1, Int(ceil(size.height / Self.cellSize)))
+        cells = Array(repeating: [], count: columns * rows)
+        for (i, r) in rects.enumerated() where r.isDir {
+            let x0 = column(r.rect.minX), x1 = column(r.rect.maxX)
+            let y0 = row(r.rect.minY), y1 = row(r.rect.maxY)
+            for y in y0...y1 {
+                for x in x0...x1 { cells[y * columns + x].append(i) }
+            }
+        }
+    }
+
+    private func column(_ x: CGFloat) -> Int {
+        Int(min(CGFloat(columns - 1), max(0, floor(x / Self.cellSize))))
+    }
+
+    private func row(_ y: CGFloat) -> Int {
+        Int(min(CGFloat(rows - 1), max(0, floor(y / Self.cellSize))))
+    }
+
+    /// The deepest drawn folder containing `point`, or nil outside every one.
+    ///
+    /// Ties are broken by the SMALLEST area, not by draw order: nested folders
+    /// all contain the point, and the smallest box is the one whose border the
+    /// user is looking at. `rects` is in draw order, so scanning it directly and
+    /// keeping the last match happens to work today, but it makes the answer
+    /// depend on paint order rather than on geometry — and a folder that is
+    /// painted before a wholly unrelated sibling overlapping it would win for
+    /// the wrong reason.
+    func hit(_ point: CGPoint, rects: [TMRect]) -> TMRect? {
+        guard !cells.isEmpty, point.x.isFinite, point.y.isFinite else { return nil }
+        var best: TMRect?
+        var bestArea = CGFloat.greatestFiniteMagnitude
+        for i in cells[row(point.y) * columns + column(point.x)] {
+            let r = rects[i]
+            guard r.isDir, r.rect.contains(point) else { continue }
+            let area = r.rect.width * r.rect.height
+            if area < bestArea { bestArea = area; best = r }
+        }
+        return best
     }
 }
 
@@ -413,6 +489,93 @@ nonisolated enum TreemapRenderer {
                       paintMs: -laidOut.timeIntervalSinceNow * 1000)
     }
 
+    /// Every node the map draws AT THE LEVEL ON SCREEN, in the order it reads.
+    ///
+    /// This is the ONE source of truth for what a Shift+range or a Cmd+A may
+    /// name, and it lives here because the renderer is what decides what is
+    /// drawn and at what depth. A view that rebuilds this list from `rects` and
+    /// `leaves` is re-deriving geometry it cannot see the depth of.
+    ///
+    /// ## The depth is the renderer's, and it is relative to the view root
+    ///
+    /// `Layout.draw(viewRoot, …, depth: 0)` — the view root is drawn at depth 0
+    /// and its children at depth 1, whatever their depth in the tree. So the
+    /// LEVEL ON SCREEN is always draw-depth 1, at every zoom, and everything
+    /// deeper is a nested tile the map happens to paint inside a sibling.
+    ///
+    /// ## Why the level, and not "every depth sorted by depth"
+    ///
+    /// `Layout.draw` RECURSES: a folder too small for a title strip is appended
+    /// to `rects` *and its children are laid out inside it*. A single flat
+    /// banded sort of the drawn nodes therefore interleaves a depth-3 file
+    /// between two depth-1 folders whenever their screen rows coincide, and a
+    /// range built as a contiguous slice sweeps in grandchildren of a folder the
+    /// user merely passed over — measured at 42% of sweeps on a realistic layout,
+    /// and `outermost` cannot repair it because those grandchildren have no
+    /// selected ancestor.
+    ///
+    /// Sorting such a list by depth is NOT enough, which an earlier version of
+    /// this function did: the level becomes a contiguous prefix, but the list
+    /// still CONTAINS the deeper nodes, so an anchor that lives below the level
+    /// (a file picked in the list, or a nested folder clicked directly) gets a
+    /// range from its own deep index and spans the level plus what is under it.
+    /// Returning the level ALONE removes the class at the source: no index in
+    /// this array can name anything the user is not looking at, so neither
+    /// endpoint of a range can leave the level. Callers that need to address a
+    /// node below the level project it onto the level first.
+    ///
+    /// It is also the shape the RINGS already have: `layout` places ring 0 from
+    /// the view root's own children, so their ring order is already the level.
+    ///
+    /// ## Order within the level
+    ///
+    /// How the eye scans: banded into visual rows by the MEDIAN tile height, then
+    /// left to right. The median, not the smallest, because a map normally holds
+    /// sub-pixel slivers (`ShareWeight` exists for exactly that) and banding by
+    /// those would make every tile its own row, so the order would degrade to "by
+    /// top edge" — not how the picture reads. The 6 pt floor keeps a degenerate
+    /// layout from producing a band per pixel.
+    ///
+    /// The view root itself is excluded, and must be: the renderer appends it as
+    /// the window-wide box everything sits in, so leaving it in makes it an
+    /// ancestor of every entry and `outermost` would collapse any selection to
+    /// the root alone.
+    ///
+    /// A folder collapsed into a merged "A ▸ B" strip is drawn as a LABEL and
+    /// lands in neither `rects` nor `leaves`; its label carries the draw depth
+    /// and region, so it competes at the level as the node the strip names.
+    ///
+    /// Deterministic for a given layout: the final tiebreak is the node id, so
+    /// equal-position tiles never depend on sort instability, and the same
+    /// picture always yields the same range.
+    nonisolated static func readingOrder(rects: [TMRect], leaves: [TMRect], labels: [TMLabel],
+                                        root: Int) -> [Int] {
+        let level = 1                     // the view root's children, as drawn
+        var seen: Set<Int> = [root]
+        var all: [TMRect] = []
+        all.reserveCapacity(rects.count + leaves.count)
+        for r in rects where r.depth == level && seen.insert(r.node).inserted { all.append(r) }
+        for l in leaves where l.depth == level && seen.insert(l.node).inserted { all.append(l) }
+        // A merged "A ▸ B" strip is the only handle its deepest folder has.
+        for label in labels where label.node >= 0 && label.depth == level
+            && seen.insert(label.node).inserted {
+            all.append(TMRect(rect: label.region, node: label.node, isDir: true, depth: label.depth))
+        }
+        guard !all.isEmpty else { return [] }
+        let heights = all.map(\.rect.height).sorted()
+        let bandHeight = max(6, heights[heights.count / 2])
+        return all
+            .sorted { a, b in
+                // Every entry is at the level already, so the sort is purely
+                // visual: band, then left to right, then a stable tiebreak.
+                let bandA = Int(a.rect.minY / bandHeight), bandB = Int(b.rect.minY / bandHeight)
+                if bandA != bandB { return bandA < bandB }
+                if a.rect.minX != b.rect.minX { return a.rect.minX < b.rect.minX }
+                return a.node < b.node
+            }
+            .map(\.node)
+    }
+
     /// One step of the cushion painter, in paint order, with its pixel
     /// bounds rounded and clipped once at layout time.
     private struct PaintOp {
@@ -496,12 +659,12 @@ nonisolated enum TreemapRenderer {
             }
             let ptRect = points(rect)
             guard tree.isDir(node) else {
-                leaves.append(TMRect(rect: ptRect, node: node, isDir: false))
+                leaves.append(TMRect(rect: ptRect, node: node, isDir: false, depth: depth))
                 shade(rect, colors.color(tree, node), s)
                 return
             }
             let rectIndex = rects.count
-            rects.append(TMRect(rect: ptRect, node: node, isDir: true))
+            rects.append(TMRect(rect: ptRect, node: node, isDir: true, depth: depth))
 
             // WizTree-style framed box: big directories get a title
             // strip on their top border and children render inside

@@ -38,11 +38,23 @@
 /* Clean Up panel */
 "Move 1 folder to the Trash?" = "Déplacer 1 dossier à la Corbeille ?";
 "Move %@ folders to the Trash?" = "Déplacer %@ dossiers à la Corbeille ?";
+
+/* Multi-selection: a batch confirmation names how many ITEMS and what
+   they weigh. "items", not "folders": a selection mixes files and
+   folders, so the folder wording above would be wrong for three files. */
+"1 item" = "1 élément";
+"%@ items" = "%@ éléments";
+"Move %@ to the Trash?" = "Déplacer %@ à la Corbeille ?";
+"%@ in %@. You can put them back until you empty the Trash." = "%@ dans %@. Vous pouvez les remettre jusqu'à ce que vous vidiez la Corbeille.";
+"Delete %@ permanently?" = "Supprimer définitivement %@ ?";
+"%@ in %@. This does not go to the Trash, and cannot be undone." = "%@ dans %@. Cela ne va pas à la Corbeille et est irréversible.";
+"…and %@ more" = "…et %@ de plus";
 "Move to Trash (%@)" = "Déplacer à la Corbeille (%@)";
 "Cancel" = "Annuler";
 "You can put them back from the Trash until you empty it. The tools that made them rebuild them when needed." = "Vous pouvez les remettre depuis la Corbeille tant que vous ne la videz pas. Les outils qui les ont créés les recréent au besoin.";
 "OK" = "OK";
 "Some folders couldn't be moved" = "Certains dossiers n'ont pas pu être déplacés";
+"Some items couldn't be deleted" = "Certains éléments n'ont pas pu être supprimés";
 "Reclaimable" = "Récupérable";
 "Nothing large to clean up" = "Rien de volumineux à nettoyer";
 "%@ in %@ folders" = "%@ dans %@ dossiers";
@@ -61,7 +73,7 @@
 "Pick what to remove" = "Choisissez quoi supprimer";
 "Move %@ to Trash" = "Déplacer %@ à la Corbeille";
 "Continue" = "Continuer";
-"Delete %@ for good" = "Supprimer définitivement %@";
+"Delete %@ permanently" = "Supprimer définitivement %@";
 "Deletes only what this cleanup moved to the Trash, and clears the tool caches" = "Supprime uniquement ce que ce nettoyage a mis à la Corbeille et vide les caches des outils";
 "Keep in the Trash" = "Garder dans la Corbeille";
 "Done" = "Terminé";
@@ -81,8 +93,8 @@
 "Reading your scan, nothing is touched" = "Lecture de votre scan, rien n'est touché";
 "Writing the plan" = "Écriture du plan";
 "Nothing is deleted yet" = "Rien n'est encore supprimé";
-"Put anything back from the Trash, or delete it for good. Tool caches are cleared then too." = "Remettez ce que vous voulez depuis la Corbeille, ou supprimez-le définitivement. Les caches des outils sont vidés à ce moment-là aussi.";
-"Put anything back from the Trash, or delete it for good." = "Remettez ce que vous voulez depuis la Corbeille, ou supprimez-le définitivement.";
+"Put anything back from the Trash, or delete it permanently. Tool caches are cleared then too." = "Remettez ce que vous voulez depuis la Corbeille, ou supprimez-le définitivement. Les caches des outils sont vidés à ce moment-là aussi.";
+"Put anything back from the Trash, or delete it permanently." = "Remettez ce que vous voulez depuis la Corbeille, ou supprimez-le définitivement.";
 "Only what this cleanup moved; the rest of your Trash stays" = "Seulement ce que ce nettoyage a déplacé ; le reste de votre Corbeille reste";
 "Nothing was changed." = "Rien n'a été modifié.";
 "ready to delete" = "prêt à supprimer";
@@ -111,6 +123,18 @@
 "Parent Folder" = "Dossier parent";
 "Move to Trash" = "Déplacer à la Corbeille";
 "Move “%@” to Trash?" = "Déplacer « %@ » à la Corbeille ?";
+
+/* Suppression définitive : la ligne « Supprimer définitivement » du menu
+   contextuel, la touche Maj avec l'une des deux touches de suppression, et la
+   confirmation qui en énonce le prix. « Supprimer définitivement » est UNE
+   clé pour deux endroits — la ligne du menu et le bouton de la boîte de
+   dialogue — car la ligne ne porte pas de points de suspension : la ligne de
+   confirmation sous la question annonce déjà la boîte de dialogue, et la
+   ligne se lit comme l'action elle-même. */
+"Delete “%@” permanently?" = "Supprimer définitivement « %@ » ?";
+"It does not go to the Trash. This cannot be undone." = "Il ne va pas à la Corbeille. Cette action est irréversible.";
+"Delete Permanently" = "Supprimer définitivement";
+"Cannot remove the scan root" = "Impossible de supprimer la racine de l'analyse";
 
 /* Settings */
 "Custom model providers" = "Fournisseurs de modèles personnalisés";

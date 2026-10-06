@@ -38,11 +38,23 @@
 /* Clean Up panel */
 "Move 1 folder to the Trash?" = "1 klasör Çöp Kutusu'na taşınsın mı?";
 "Move %@ folders to the Trash?" = "%@ klasör Çöp Kutusu'na taşınsın mı?";
+
+/* Multi-selection: a batch confirmation names how many ITEMS and what
+   they weigh. "items", not "folders": a selection mixes files and
+   folders, so the folder wording above would be wrong for three files. */
+"1 item" = "1 öge";
+"%@ items" = "%@ öge";
+"Move %@ to the Trash?" = "%@ Çöp Kutusu'na taşınsın mı?";
+"%@ in %@. You can put them back until you empty the Trash." = "%@ · %@. Çöp Kutusu'nu boşaltana kadar geri koyabilirsiniz.";
+"Delete %@ permanently?" = "%@ kalıcı olarak silinsin mi?";
+"%@ in %@. This does not go to the Trash, and cannot be undone." = "%@ · %@. Çöp Kutusu'na gitmez ve geri alınamaz.";
+"…and %@ more" = "…ve %@ tane daha";
 "Move to Trash (%@)" = "Çöp Kutusu'na Taşı (%@)";
 "Cancel" = "İptal";
 "You can put them back from the Trash until you empty it. The tools that made them rebuild them when needed." = "Çöp Kutusu'nu boşaltana kadar onları geri getirebilirsiniz. Onları oluşturan araçlar gerektiğinde yeniden oluşturur.";
 "OK" = "Tamam";
 "Some folders couldn't be moved" = "Bazı klasörler taşınamadı";
+"Some items couldn't be deleted" = "Bazı ögeler silinemedi";
 "Reclaimable" = "Geri Kazanılabilir";
 "Nothing large to clean up" = "Temizlenecek büyük bir şey yok";
 "%@ in %@ folders" = "%@ klasörde %@";
@@ -61,7 +73,7 @@
 "Pick what to remove" = "Nelerin kaldırılacağını seçin";
 "Move %@ to Trash" = "%@ Çöp Kutusu'na Taşı";
 "Continue" = "Devam Et";
-"Delete %@ for good" = "%@ kalıcı olarak sil";
+"Delete %@ permanently" = "%@ kalıcı olarak sil";
 "Deletes only what this cleanup moved to the Trash, and clears the tool caches" = "Yalnızca bu temizliğin Çöp Kutusu'na taşıdıklarını siler ve araç önbelleklerini temizler";
 "Keep in the Trash" = "Çöp Kutusu'nda Tut";
 "Done" = "Bitti";
@@ -81,8 +93,8 @@
 "Reading your scan, nothing is touched" = "Taramanız okunuyor, hiçbir şeye dokunulmuyor";
 "Writing the plan" = "Plan yazılıyor";
 "Nothing is deleted yet" = "Henüz hiçbir şey silinmedi";
-"Put anything back from the Trash, or delete it for good. Tool caches are cleared then too." = "Çöp Kutusu'ndan istediğinizi geri koyun ya da kalıcı olarak silin. Araç önbellekleri de o zaman temizlenir.";
-"Put anything back from the Trash, or delete it for good." = "Çöp Kutusu'ndan istediğinizi geri koyun ya da kalıcı olarak silin.";
+"Put anything back from the Trash, or delete it permanently. Tool caches are cleared then too." = "Çöp Kutusu'ndan istediğinizi geri koyun ya da kalıcı olarak silin. Araç önbellekleri de o zaman temizlenir.";
+"Put anything back from the Trash, or delete it permanently." = "Çöp Kutusu'ndan istediğinizi geri koyun ya da kalıcı olarak silin.";
 "Only what this cleanup moved; the rest of your Trash stays" = "Yalnızca bu temizliğin taşıdıkları; Çöp Kutusu'nuzun geri kalanı kalır";
 "Nothing was changed." = "Hiçbir şey değişmedi.";
 "ready to delete" = "silinmeye hazır";
@@ -111,6 +123,16 @@
 "Parent Folder" = "Üst Klasör";
 "Move to Trash" = "Çöp Kutusu'na Taşı";
 "Move “%@” to Trash?" = "“%@” Çöp Kutusu'na taşınsın mı?";
+
+/* Kalıcı silme: sağ tık menüsündeki "Kalıcı Olarak Sil" satırı, iki Silme
+   tuşunun Shift'li hâli ve bedelini söyleyen onay penceresi. "Kalıcı Olarak
+   Sil" menü satırı ve iletişim penceresinin düğmesi için TEK anahtar: satırda
+   son üç nokta yok, çünkü sorunun altındaki onay satırı bir pencere açılacağını
+   zaten söylüyor ve satırın kendisi yapılan iş olarak okunuyor. */
+"Delete “%@” permanently?" = "“%@” kalıcı olarak silinsin mi?";
+"It does not go to the Trash. This cannot be undone." = "Çöp Kutusu'na gitmez. Bu işlem geri alınamaz.";
+"Delete Permanently" = "Kalıcı Olarak Sil";
+"Cannot remove the scan root" = "Tarama kökü silinemez";
 
 /* Settings */
 "Custom model providers" = "Özel model sağlayıcıları";

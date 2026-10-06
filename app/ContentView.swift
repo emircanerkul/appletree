@@ -582,23 +582,157 @@ struct FlowLayout: Layout {
 final class NodeOutlineView: NSOutlineView {
     weak var menuCoordinator: OutlinePanel.Coordinator?
 
+    /// Highlight exactly the rows the model has selected.
+    ///
+    /// The outline is told what to highlight rather than deciding it, so a
+    /// selection made in the map or the rings shows up here. Called after any
+    /// gesture that changes the selection from outside the outline.
+    /// True while this view is pushing a model selection INTO AppKit.
+    ///
+    /// `selectRowIndexes` posts `NSOutlineViewSelectionDidChange`, whose delegate
+    /// handler writes the row set back to the model — which would re-enter this
+    /// push and, on any model-side reduction, oscillate. The flag makes the echo
+    /// a no-op so the sync flows one way per gesture.
+    var isSyncingFromModel = false
+
+    func syncHighlightFromModel() {
+        guard !isSyncingFromModel, let model = menuCoordinator?.model else { return }
+        isSyncingFromModel = true
+        defer { isSyncingFromModel = false }
+        let wanted = Set(model.picks.members)
+        var rows = IndexSet()
+        for row in 0..<numberOfRows {
+            guard let item = item(atRow: row) as? OutlinePanel.Item,
+                  wanted.contains(item.id) else { continue }
+            rows.insert(row)
+        }
+        guard rows != selectedRowIndexes else { return }
+        selectRowIndexes(rows, byExtendingSelection: false)
+        if let first = rows.first { scrollRowToVisible(first) }
+    }
+
+    /// Declare what a click means BEFORE AppKit acts on it, so the selection
+    /// notification that follows can be read correctly instead of guessed at.
+    ///
+    /// The three gestures are told apart by geometry, which is certain:
+    ///
+    /// - a click in a row's disclosure triangle opens/closes a folder and must
+    ///   not change the selection at all;
+    /// - a click with Cmd or Shift adds to the selection;
+    /// - any other click on a row replaces it.
+    ///
+    /// A click that misses every row (empty space below the last row) is left
+    /// undeclared: AppKit keeps the selection, and `.unknown` asserts only what
+    /// the rows already say.
+    override func mouseDown(with event: NSEvent) {
+        declareGesture(for: event)
+        super.mouseDown(with: event)
+    }
+
+    /// Classify the click and hand it to the coordinator.
+    private func declareGesture(for event: NSEvent) {
+        guard let coordinator = menuCoordinator else { return }
+        let point = convert(event.locationInWindow, from: nil)
+        let row = self.row(at: point)
+        guard row >= 0 else { return }
+
+        // The disclosure triangle has its own rect, so a click inside it is a
+        // folder open/close and nothing else. `frameOfOutlineCell` is the only
+        // reliable way to ask: comparing x against the indentation would guess.
+        let cell = frameOfOutlineCell(atRow: row)
+        if !cell.isEmpty, cell.contains(point) {
+            coordinator.noteGesture(.disclosure)
+            return
+        }
+        let flags = event.modifierFlags.intersection([.command, .shift])
+        coordinator.noteGesture(flags.isEmpty ? .replace : .extend)
+    }
+
     override func menu(for event: NSEvent) -> NSMenu? {
         guard let coordinator = menuCoordinator, let model = coordinator.model,
               let tree = model.tree else { return nil }
         let row = self.row(at: convert(event.locationInWindow, from: nil))
         guard row >= 0, let item = self.item(atRow: row) as? OutlinePanel.Item else { return nil }
-        // Right-clicking a row also focuses it, so the menu's actions and the
-        // list's highlight cannot disagree about which item was meant.
-        if self.selectedRow != row {
+        // Right-clicking a row OUTSIDE the selection focuses it, so the menu's
+        // actions and the list's highlight cannot disagree about which item was
+        // meant. Right-clicking a row INSIDE the selection keeps the whole
+        // selection: the user sees several rows highlighted and the menu is the
+        // way to act on all of them, so collapsing to one row here would make
+        // the menu act on something other than what is highlighted.
+        if !selectedRowIndexes.contains(row) {
             self.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+            // Tell the model inline rather than waiting for the selection
+            // notification: the menu is built on the very next line, so
+            // `NodeActions` would read the OLD rows and act on one set while the
+            // list highlighted another.
+            model.setSelection([item.id])
         }
         return NodeMenu.menu(node: item.id, tree: tree, model: model)
     }
 
-    /// Cmd-Up climbs out of the selection, matching the map and the rings.
-    /// A selected file's enclosing folder is then revealed as a row here, so
-    /// every surface offers the same way up. Everything else stays AppKit's.
+    /// Every node this list currently renders as a row.
+    ///
+    /// Used to tell an off-screen pick from a row the user has just deselected:
+    /// a member absent from `highlightedNodes` because it has no row here must
+    /// stay selected, while one that HAS a row and is not highlighted was really
+    /// un-picked.
+    func renderedNodes() -> [Int] {
+        (0..<numberOfRows).compactMap { (item(atRow: $0) as? OutlinePanel.Item)?.id }
+    }
+
+    /// Every highlighted row's node, outermost-first order preserved.
+    ///
+    /// AppKit's own multi-select answers "which rows", and this is the one
+    /// conversion from rows to nodes. The model is then told, so the map and the
+    /// rings ring the same items — the outline never keeps a second copy of the
+    /// selection (see `SelectionSet`: one owner is what stops the views
+    /// disagreeing).
+    var highlightedNodes: [Int] {
+        selectedRowIndexes.compactMap { (item(atRow: $0) as? OutlinePanel.Item)?.id }
+    }
+
+    /// Delete and Backspace remove every highlighted row — Shift with either
+    /// deletes them permanently — exactly as on the map and the rings.
+    ///
+    /// The ROWS, not `model.selection`: they can disagree while no row is
+    /// highlighted — collapsing the selected row's parent clears AppKit's
+    /// selection without the model hearing about it — and Delete must name what
+    /// the screen shows as chosen. `model.pickedNodes` is the fallback for the
+    /// case the outline is focused while the selection was made elsewhere: the
+    /// same shared set is then acted on, which is what one selection means.
+    ///
+    /// Cmd+A selects every row at the current level, never recursing: the list
+    /// shows one folder's children and a recursive select-all would tick
+    /// millions of nodes the user cannot see. Cmd-Up climbs out of the
+    /// selection, matching the map and the rings. Everything else stays
+    /// AppKit's.
     override func keyDown(with event: NSEvent) {
+        if let kind = RemovalKeys.intent(for: event),
+           let model = menuCoordinator?.model, let tree = model.tree {
+            let rows = highlightedNodes
+            let nodes = rows.isEmpty ? model.pickedNodes : rows
+            NodeActions.remove(nodes: nodes, kind: kind, tree: tree, model: model)
+            return
+        }
+        // Cmd+A: everything this view currently renders.
+        //
+        // ONE definition, shared by all three views: "every node the view draws
+        // right now, reduced to the outermost". The reduction (owned by
+        // `SelectionSet`) is what makes the three agree despite drawing
+        // differently — the list renders an expanded folder AND its contents, so
+        // the folder collapses them to itself; the map and the rings draw one
+        // level, so their order is already the level. The previous comment
+        // claimed "the current level, never recursing", which was never what
+        // this code did and is not what a list can do: a row the user can see and
+        // click is a row Cmd+A must be able to name.
+        if event.modifierFlags.contains(.command), event.keyCode == 0,
+           let model = menuCoordinator?.model {
+            let all = (0..<numberOfRows).compactMap { (item(atRow: $0) as? OutlinePanel.Item)?.id }
+            guard !all.isEmpty else { return }
+            model.setSelection(all)
+            syncHighlightFromModel()
+            return
+        }
         // Cmd-[ / Cmd-] walk the trail of folders visited, as on the map. The
         // list follows the new root through its own reload, so this only has
         // to re-select the row for the folder now on screen.
@@ -617,6 +751,101 @@ final class NodeOutlineView: NSOutlineView {
             return
         }
         super.keyDown(with: event)
+    }
+}
+
+/// A row that can say "something inside me is selected" while collapsed.
+///
+/// A collapsed folder is one row, so a pick inside it has no row of its own and
+/// the selection would be invisible — yet the pick still exists: Delete removes
+/// it and the byte total counts it. The row therefore draws the accent as
+/// translucent strips rather than a solid bar, which is how AppKit itself shows
+/// a partially selected container, and the user can see that opening it will
+/// reveal a selection rather than nothing.
+final class PartialRowView: NSTableRowView {
+    static let reuseID = NSUserInterfaceItemIdentifier("partial-row")
+
+    /// A pick lives strictly inside this row's folder.
+    ///
+    /// AppKit recycles row views, so a reused row could otherwise keep the
+    /// previous item's stripes: `didAdd`/`refreshPartialRows` set this for every
+    /// row they touch, and this clears on reuse so a stale `true` cannot survive
+    /// into a row that does not want it.
+    var holdsPick = false {
+        didSet { if holdsPick != oldValue { needsDisplay = true } }
+    }
+
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        holdsPick = false
+    }
+
+    /// Draw the selection in the accent whenever the WINDOW is active — even
+    /// when another view holds keyboard focus.
+    ///
+    /// AppKit's stock row view picks its selection colour from `isEmphasized`,
+    /// which is false whenever the table is not first responder. Since the
+    /// selection here is SHARED across three views, a pick made in the treemap
+    /// left the list showing a grey bar while the map ringed the same item in
+    /// accent blue — the same selection looking like two different things, and
+    /// the list looking like it had merely lost focus rather than that the item
+    /// was chosen. The selection is not a focus indicator here; it is the app's
+    /// selection, so it keeps its colour while the window is active.
+    ///
+    /// A genuinely inactive window (the user is in another app) still dims, via
+    /// the system's own unemphasized colour, so this does not fight the platform.
+    override func drawSelection(in dirtyRect: NSRect) {
+        guard isSelected, selectionHighlightStyle != .none else { return }
+        let active = window?.isKeyWindow ?? false
+        let fill = active ? NSColor.controlAccentColor
+                          : NSColor.unemphasizedSelectedContentBackgroundColor
+        fill.setFill()
+        bounds.fill()
+    }
+
+    /// The partial look is drawn as the row's BACKGROUND, not as its selection.
+    ///
+    /// `drawSelection` only runs when the row is actually selected — and the row
+    /// that needs this is the one that is NOT selected, holding a collapsed
+    /// folder over picks inside it. Drawing here means the strips appear whether
+    /// or not AppKit considers the row highlighted.
+    override func drawBackground(in dirtyRect: NSRect) {
+        super.drawBackground(in: dirtyRect)
+        guard holdsPick, selectionHighlightStyle != .none else { return }
+        // A lighter blue than the selection accent: a partial mark must not
+        // compete with the solid bar of a genuinely selected row, and the accent
+        // is also what the rows above and below use when they really are picked.
+        let stripeColor = NSColor.controlAccentColor.blended(withFraction: 0.35, of: .white)
+            ?? NSColor.controlAccentColor
+        // A very faint wash, purely so the row reads as touched at all.
+        let wash: CGFloat = 0.06
+        stripeColor.withAlphaComponent(wash).setFill()
+        bounds.fill()
+        // 45° DIAGONAL hatching, the conventional "partly selected" texture.
+        // Strokes are drawn and clipped to the row, which keeps the spacing
+        // honest at 45 degrees instead of foreshortening it the way a vertical
+        // pass would.
+        let stripe: CGFloat = 0.45
+        let drawAlpha = (stripe - wash) / (1 - wash)
+        stripeColor.withAlphaComponent(drawAlpha).setStroke()
+        let band: CGFloat = 3
+        let gap: CGFloat = 8            // wider spacing: the hatch reads as texture
+        let path = NSBezierPath()
+        path.lineWidth = band
+        // One diagonal per (gap + band) of horizontal travel. A 45° line spans
+        // the row's height as it crosses, so the sweep must start a full height
+        // to the left and run a full height to the right of the bounds.
+        let step = band + gap
+        var x = bounds.minX - bounds.height
+        while x < bounds.maxX + bounds.height {
+            path.move(to: NSPoint(x: x, y: bounds.minY))
+            path.line(to: NSPoint(x: x + bounds.height, y: bounds.maxY))
+            x += step
+        }
+        NSGraphicsContext.saveGraphicsState()
+        NSBezierPath(rect: bounds).setClip()
+        path.stroke()
+        NSGraphicsContext.restoreGraphicsState()
     }
 }
 
@@ -735,6 +964,14 @@ struct OutlinePanel: NSViewRepresentable {
         /// keeps the same `Tree` object, so identity alone cannot tell this
         /// data source that any size changed.
         var revision = -1
+        /// The picks the list has already opened ancestors for, so expansion
+        /// happens once per NEW pick instead of on every redraw. Without this a
+        /// collapsed folder was re-opened the moment anything invalidated the
+        /// view, which made the disclosure triangle look broken.
+        private var lastSyncedPicks: Set<Int> = []
+
+
+
         var roots: [Item] = []
         weak var outline: NSOutlineView?
         private var iconCache: [String: NSImage] = [:]
@@ -757,7 +994,10 @@ struct OutlinePanel: NSViewRepresentable {
                 // Without this, deleting one row collapsed every folder the user
                 // had opened and dropped the row they were on.
                 let openIDs = reuseRows ? [] : expandedIDs()
-                let selectedID = reuseRows ? nil : selectedItem?.id
+                // Every highlighted row, not just `selectedRow`: a reload throws
+                // the row objects away, and restoring only the primary's row made
+                // the whole multi-selection collapse on the next in-place removal.
+                let selectedIDs = reuseRows ? [] : selectedItems.map(\.id)
                 tree = t
                 viewRoot = model.viewRoot
                 revision = model.treeRevision
@@ -785,7 +1025,7 @@ struct OutlinePanel: NSViewRepresentable {
                     // read at a glance. An id that no longer has children simply
                     // fails to expand, so a removed subtree needs no special
                     // case here.
-                    restore(open: openIDs, selected: selectedID)
+                    restore(open: openIDs, selected: selectedIDs)
                 }
                 if ProcessInfo.processInfo.environment["BZ_TIMING"] != nil {
                     NSLog("BZ list reload: %.1f ms", -started.timeIntervalSinceNow * 1000)
@@ -811,20 +1051,16 @@ struct OutlinePanel: NSViewRepresentable {
             return open
         }
 
-        /// The item the outline currently has selected, if any.
-        ///
-        /// `row(forItem:)`/`item(atRow:)` is used rather than indexing `roots`,
-        /// because a selection is usually a child several levels deep inside an
-        /// expanded parent.
-        private var selectedItem: Item? {
-            guard let outline, outline.selectedRow >= 0 else { return nil }
-            return outline.item(atRow: outline.selectedRow) as? Item
+        /// Every item the outline currently has selected.
+        private var selectedItems: [Item] {
+            guard let outline else { return [] }
+            return outline.selectedRowIndexes.compactMap { outline.item(atRow: $0) as? Item }
         }
 
         /// Re-open each remembered id (parents before children) and restore the
-        /// selected row. Ids absent from the new tree are skipped, so this needs
+        /// selected ROWS. Ids absent from the new tree are skipped, so this needs
         /// no knowledge of what was removed.
-        private func restore(open: [Int], selected: Int?) {
+        private func restore(open: [Int], selected: [Int]) {
             guard let outline else { return }
             let wanted = Set(open)
             if !wanted.isEmpty {
@@ -839,12 +1075,18 @@ struct OutlinePanel: NSViewRepresentable {
                 }
                 walk(roots)
             }
-            if let selected, let match = find(selected) {
+            // Every remembered row, so a multi-selection survives the reload.
+            // A node absent from the new tree simply has no item to match, so a
+            // removed subtree needs no special case here.
+            var rows = IndexSet()
+            for id in selected {
+                guard let match = find(id) else { continue }
                 let row = outline.row(forItem: match)
-                if row >= 0 {
-                    outline.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
-                    outline.scrollRowToVisible(row)
-                }
+                if row >= 0 { rows.insert(row) }
+            }
+            if !rows.isEmpty {
+                outline.selectRowIndexes(rows, byExtendingSelection: false)
+                outline.scrollRowToVisible(rows.first!)
             }
         }
 
@@ -917,6 +1159,48 @@ struct OutlinePanel: NSViewRepresentable {
             return it.tree.isDir(it.id) && !it.tree.children(it.id).isEmpty
         }
 
+        /// A reusable row view, so the partial-selection look is decided in one
+        /// place instead of by recolouring every cell.
+        func outlineView(_ v: NSOutlineView, rowViewForItem item: Any) -> NSTableRowView? {
+            (v.makeView(withIdentifier: PartialRowView.reuseID, owner: nil) as? PartialRowView)
+                ?? {
+                    let r = PartialRowView()
+                    r.identifier = PartialRowView.reuseID
+                    return r
+                }()
+        }
+
+        /// Mark every row whose folder holds a hidden pick.
+        ///
+        /// Called with the highlight, because the two describe the same state:
+        /// which rows are picked outright, and which merely contain a pick the
+        /// collapsed row is hiding.
+        func refreshPartialRows() {
+            guard let outline, let tree, let model else { return }
+            outline.enumerateAvailableRowViews { rowView, row in
+                guard let partial = rowView as? PartialRowView,
+                      let item = outline.item(atRow: row) as? Item else { return }
+                partial.holdsPick = needsPartialMark(item, tree: tree, model: model)
+            }
+        }
+
+        /// Whether a row shows the "something inside me is selected" hatch.
+        ///
+        /// Only a COLLAPSED folder needs it. An expanded one already shows the
+        /// selected child, on its own solid row, so hatching the parent too would
+        /// be a second, contradictory statement about the same fact — and on a
+        /// tree with many open folders it hatched most of the visible rows, which
+        /// is what made the list look broken rather than informative.
+        ///
+        /// A picked row never needs it either: `SelectionSet`'s antichain rule
+        /// means a folder and something inside it can never both be picked, so
+        /// `contains` is enough to exclude it.
+        private func needsPartialMark(_ item: Item, tree: Tree, model: ScanModel) -> Bool {
+            guard !model.picks.contains(item.id) else { return false }
+            guard outline?.isItemExpanded(item) != true else { return false }
+            return model.picks.holdsPick(inside: item.id, in: tree)
+        }
+
         // MARK: cells
         func outlineView(_ v: NSOutlineView, viewFor col: NSTableColumn?, item: Any) -> NSView? {
             let it = item as! Item
@@ -959,48 +1243,246 @@ struct OutlinePanel: NSViewRepresentable {
             }
         }
 
+
+        /// Rows come and go as folders open and close, so a freshly revealed row
+        /// needs its partial mark. Cheap: it only touches rows AppKit currently
+        /// has on screen.
+        func outlineView(_ v: NSOutlineView, didAdd rowView: NSTableRowView, forRow row: Int) {
+            guard let partial = rowView as? PartialRowView, let tree, let model,
+                  let item = v.item(atRow: row) as? Item else { return }
+            partial.holdsPick = needsPartialMark(item, tree: tree, model: model)
+        }
+
+        /// Opening or closing a folder changes whether its hatch belongs, and no
+        /// selection change fires — a collapse keeps the picks, by design — so
+        /// the two disclosure notifications are the only signal that the mark is
+        /// now stale.
+        ///
+        /// EXPANDING also has to put the selection back. AppKit restores the rows
+        /// a collapse removed but NOT their selection, and it posts no
+        /// `selectionDidChange` for the restore — so after a collapse/expand the
+        /// rows came back unhighlighted and the picks looked lost, even though
+        /// the model still held them. `syncHighlightFromModel` re-applies the
+        /// model's own selection to the freshly revealed rows, which is the same
+        /// path every other cross-view push uses.
+        func outlineViewItemDidExpand(_ notification: Notification) {
+            (notification.object as? NodeOutlineView)?.syncHighlightFromModel()
+            refreshPartialRows()
+        }
+
+        func outlineViewItemDidCollapse(_ notification: Notification) {
+            refreshPartialRows()
+        }
+
+
+
+        /// What the user just did in this list, so a selection notification can
+        /// be read for what it MEANS instead of being guessed from timing.
+        ///
+        /// Earlier attempts recognised a collapse from the notifications
+        /// themselves: first "is some pick hidden?" (state, so it excused every
+        /// later click), then a "collapse in flight" window drained on the next
+        /// runloop turn (racy — AppKit posts a BURST for one collapse and the
+        /// drain could land between them, losing the pick again). Both inferred
+        /// intent from the symptom.
+        ///
+        /// The gesture is known exactly when it happens: a click in the
+        /// disclosure triangle cannot be confused with a click on a row, because
+        /// they are different rects. So the view declares it here and the handler
+        /// reads it. No timing, no burst counting.
+        enum ListGesture {
+            /// A folder was opened or closed: what is selected is unchanged.
+            case disclosure
+            /// A plain click: replaces the whole selection.
+            case replace
+            /// Cmd+click or Shift+click: adds to the selection.
+            case extend
+            /// No gesture recorded (a programmatic change, or a selection made in
+            /// another view): infer nothing, and keep what cannot be shown.
+            case unknown
+        }
+
+        /// The gesture being handled, consumed by the next selection change.
+        ///
+        /// Single-use on purpose: a stale value must never excuse a later real
+        /// click, which is how the first version of this went wrong.
+        private var pendingGesture: ListGesture = .unknown
+
+        /// Record what the user just did. Called by the view, which owns the
+        /// click and so knows the answer for certain.
+        func noteGesture(_ gesture: ListGesture) {
+            pendingGesture = gesture
+        }
+
+        private func takeGesture() -> ListGesture {
+            defer { pendingGesture = .unknown }
+            return pendingGesture
+        }
+
         func outlineViewSelectionDidChange(_ n: Notification) {
             // While a rescan runs the list still shows the old tree, hidden.
             guard let outline, let model, model.tree != nil, model.tree === tree else { return }
-            if let it = outline.item(atRow: outline.selectedRow) as? Item {
-                model.selection = it.id
+            // An echo of our own push, not a user gesture.
+            if let list = outline as? NodeOutlineView, list.isSyncingFromModel { return }
+            guard let list = outline as? NodeOutlineView else { return }
+
+            // What the user just did, declared at the click. This is what makes
+            // the handler correct without reasoning about AppKit's timing: a
+            // disclosure click never means "deselect", and a plain click always
+            // means "replace", whether or not a collapse happened first.
+            let gesture = takeGesture()
+            let rows = list.highlightedNodes
+            let rendered = Set(list.renderedNodes())
+            let hidden = model.picks.members.filter { !rendered.contains($0) }
+
+            switch gesture {
+            case .disclosure:
+                // Opening or closing a folder changes nothing about WHAT is
+                // selected. AppKit reports an empty row set here — the rows it hid
+                // are gone — and reading that as a deselect is what lost the
+                // selection inside a collapsed folder.
+                return
+
+            case .replace:
+                // A plain click replaces the WHOLE selection, hidden picks
+                // included: this is the gesture that must be able to clear a pick
+                // inside a closed folder.
+                model.setSelection(rows)
+
+            case .extend:
+                // Cmd+click / Shift+click adds. A pick with no row cannot be in
+                // `rows`, so it is carried — otherwise extending would silently
+                // discard what a collapsed folder is hiding.
+                model.setSelection(hidden + rows, anchor: model.picks.primary)
+
+            case .unknown:
+                // Nothing was declared: assert only the rows the list can show,
+                // and keep what it cannot. Guessing here is what made this area
+                // fragile.
+                let combined = hidden + rows
+                if Set(combined) != Set(model.picks.members) {
+                    model.setSelection(combined, anchor: model.picks.primary)
+                }
             }
+            list.syncHighlightFromModel()
         }
 
-        /// Treemap click → expand ancestors, select and reveal the row here.
+        /// Expand the ancestors of every picked node and highlight all their
+        /// rows.
+        ///
+        /// Every member, not just the primary. This used to select the primary's
+        /// row alone, and because `selectRowIndexes` fires the selection
+        /// notification whose handler writes the row set back, the model
+        /// collapsed to that one row on the next SwiftUI update — so a
+        /// Cmd+click or Shift+range in the map or the rings survived only until
+        /// the next redraw. The push also sets `isSyncingFromModel`, so its own
+        /// echo is not mistaken for a user gesture.
+        ///
+        /// The rows must match the folder on screen before any row is looked up:
+        /// a zoom (keyboard "up", a crumb) changes `viewRoot` and the reload
+        /// only lands later in `updateNSView`.
         func syncSelection() {
-            // The roots must match the folder on screen before any row is
-            // looked up: a zoom (keyboard "up", a crumb) changes `viewRoot`
-            // and the reload only lands later in `updateNSView`.
             rebuildIfNeeded()
-            guard let outline, let tree, let sel = model?.selection else { return }
-            if let cur = outline.item(atRow: outline.selectedRow) as? Item, cur.id == sel { return }
+            guard let outline, let tree, let model else { return }
+            let wanted = Set(model.picks.members)
 
+            // A member with no row — a deep file under a collapsed folder, or
+            // one outside the folder on screen — is left to the model rather
+            // than dropped from it: the selection is shared across views on
+            // purpose, and narrowing it to what this list happens to show would
+            // silently discard the rest.
+            var targets: [Item] = []
+            for id in wanted where tree.isAttached(id) {
+                if let item = revealRow(for: id, in: outline, tree: tree) { targets.append(item) }
+            }
+            // `revealRow` opens ancestors so a nested pick has a row at all.
+            // That is right when the pick ARRIVES from another view, and wrong
+            // on every later redraw: this runs from `updateNSView` whenever the
+            // model changes, so it re-opened a folder the user had just
+            // collapsed and the disclosure triangle looked broken. Expansion is
+            // therefore driven by the picks themselves, in `picksDidChange`.
+            // Highlight through the model's own push, so the row set it writes
+            // and the echo suppression are the ones already proven to converge.
+            let list = outline as? NodeOutlineView
+            list?.isSyncingFromModel = true
+            defer { list?.isSyncingFromModel = false }
+            var rows = IndexSet()
+            for item in targets {
+                let row = outline.row(forItem: item)
+                if row >= 0 { rows.insert(row) }
+            }
+            if rows != outline.selectedRowIndexes {
+                outline.selectRowIndexes(rows, byExtendingSelection: false)
+            }
+            if rows.isEmpty, !wanted.isEmpty {
+                // Every pick is off-screen here: clear the highlight rather than
+                // leaving the previous rows blue.
+                outline.deselectAll(nil)
+            }
+            if let first = rows.first { outline.scrollRowToVisible(first) }
+            refreshPartialRows()
+        }
+
+        /// The item for `id`, when its ancestors are already open.
+        ///
+        /// Returns nil for a pick with no row: a file under a collapsed folder,
+        /// or anything outside the folder on screen. It does NOT expand anything
+        /// — see `syncSelection`; opening happens once per new pick in
+        /// `picksDidChange`, so a collapsed folder stays collapsed.
+        private func revealRow(for id: Int, in outline: NSOutlineView, tree: Tree) -> Item? {
             var chain: [Int] = []
-            var cur = sel
+            var cur = id
             while cur != viewRoot {
-                if cur == Int(UInt32.max) { return } // outside current view root
+                if cur == Int(UInt32.max) { return nil } // outside this view root
                 chain.append(cur)
                 cur = Int(tree.parents[cur])
             }
             chain.reverse()
-
             var level = roots
             var target: Item?
-            for id in chain {
-                guard let it = level.first(where: { $0.id == id }) else { return }
+            for node in chain {
+                guard let it = level.first(where: { $0.id == node }) else { return nil }
                 target = it
-                if id != chain.last {
-                    outline.expandItem(it)
-                    level = it.children
-                }
+                level = it.children
             }
-            if let target {
-                let row = outline.row(forItem: target)
-                if row >= 0 {
-                    outline.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
-                    outline.scrollRowToVisible(row)
-                }
+            return target
+        }
+
+        /// Open the ancestors of picks that arrived from OUTSIDE this list, and
+        /// leave the user's own disclosure state alone.
+        ///
+        /// Called when the selection itself changes (a Cmd+A, a click in the map
+        /// or the rings), not on every redraw. Two rules make collapsing usable:
+        /// a folder is only opened when the pick is genuinely new, and a folder
+        /// the user has collapsed is never re-opened by a redraw — only by a
+        /// new pick landing inside it.
+        func picksDidChange() {
+            guard let outline, let tree, let model else { return }
+            let current = Set(model.picks.members)
+            guard current != lastSyncedPicks else { return }
+            let added = current.subtracting(lastSyncedPicks)
+            lastSyncedPicks = current
+            guard !added.isEmpty else { return }
+            for id in added where tree.isAttached(id) {
+                expandAncestors(of: id, in: outline, tree: tree)
+            }
+        }
+
+        /// Open every ancestor of `id` up to the folder on screen.
+        private func expandAncestors(of id: Int, in outline: NSOutlineView, tree: Tree) {
+            var chain: [Int] = []
+            var cur = id
+            while cur != viewRoot {
+                if cur == Int(UInt32.max) { return }
+                chain.append(cur)
+                cur = Int(tree.parents[cur])
+            }
+            chain.reverse()
+            var level = roots
+            for node in chain.dropLast() {
+                guard let it = level.first(where: { $0.id == node }) else { return }
+                if !outline.isItemExpanded(it) { outline.expandItem(it) }
+                level = it.children
             }
         }
 
@@ -1020,6 +1502,11 @@ struct OutlinePanel: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSScrollView {
         let outline = NodeOutlineView()
+        // Multi-selection is AppKit's: Cmd+click toggles a row, Shift+click
+        // selects the visible range, and Cmd+A is handled in `keyDown`. The
+        // delegate mirrors the resulting row set into the model, so the map and
+        // the rings highlight the same items.
+        outline.allowsMultipleSelection = true
         outline.style = .plain
         outline.rowSizeStyle = .default
         outline.usesAlternatingRowBackgroundColors = true
@@ -1064,6 +1551,9 @@ struct OutlinePanel: NSViewRepresentable {
     func updateNSView(_ scroll: NSScrollView, context: Context) {
         context.coordinator.model = model
         context.coordinator.rebuildIfNeeded()
+        // Open ancestors for picks that just arrived (from the map, the rings or
+        // Cmd+A) BEFORE highlighting, so a newly selected nested item gets a row.
+        context.coordinator.picksDidChange()
         context.coordinator.syncSelection()
     }
 }

@@ -38,11 +38,23 @@
 /* Clean Up panel */
 "Move 1 folder to the Trash?" = "¿Mover 1 carpeta a la Papelera?";
 "Move %@ folders to the Trash?" = "¿Mover %@ carpetas a la Papelera?";
+
+/* Multi-selection: a batch confirmation names how many ITEMS and what
+   they weigh. "items", not "folders": a selection mixes files and
+   folders, so the folder wording above would be wrong for three files. */
+"1 item" = "1 elemento";
+"%@ items" = "%@ elementos";
+"Move %@ to the Trash?" = "¿Mover %@ a la Papelera?";
+"%@ in %@. You can put them back until you empty the Trash." = "%@ en %@. Puedes recuperarlos hasta que vacíes la Papelera.";
+"Delete %@ permanently?" = "¿Eliminar %@ definitivamente?";
+"%@ in %@. This does not go to the Trash, and cannot be undone." = "%@ en %@. No va a la Papelera y no se puede deshacer.";
+"…and %@ more" = "…y %@ más";
 "Move to Trash (%@)" = "Mover a la Papelera (%@)";
 "Cancel" = "Cancelar";
 "You can put them back from the Trash until you empty it. The tools that made them rebuild them when needed." = "Puedes recuperarlas desde la Papelera hasta vaciarla. Las herramientas que las crearon las reconstruyen cuando hacen falta.";
 "OK" = "OK";
 "Some folders couldn't be moved" = "No se pudieron mover algunas carpetas";
+"Some items couldn't be deleted" = "No se pudieron eliminar algunos elementos";
 "Reclaimable" = "Recuperable";
 "Nothing large to clean up" = "Nada grande que limpiar";
 "%@ in %@ folders" = "%@ en %@ carpetas";
@@ -61,7 +73,7 @@
 "Pick what to remove" = "Elige qué eliminar";
 "Move %@ to Trash" = "Mover %@ a la Papelera";
 "Continue" = "Continuar";
-"Delete %@ for good" = "Eliminar %@ definitivamente";
+"Delete %@ permanently" = "Eliminar %@ definitivamente";
 "Deletes only what this cleanup moved to the Trash, and clears the tool caches" = "Solo elimina lo que esta limpieza movió a la Papelera y vacía las cachés de las herramientas";
 "Keep in the Trash" = "Mantener en la Papelera";
 "Done" = "Listo";
@@ -81,8 +93,8 @@
 "Reading your scan, nothing is touched" = "Leyendo tu escaneo, no se toca nada";
 "Writing the plan" = "Escribiendo el plan";
 "Nothing is deleted yet" = "Aún no se elimina nada";
-"Put anything back from the Trash, or delete it for good. Tool caches are cleared then too." = "Recupera lo que quieras desde la Papelera o elimínalo definitivamente. Las cachés de las herramientas también se vacían entonces.";
-"Put anything back from the Trash, or delete it for good." = "Recupera lo que quieras desde la Papelera o elimínalo definitivamente.";
+"Put anything back from the Trash, or delete it permanently. Tool caches are cleared then too." = "Recupera lo que quieras desde la Papelera o elimínalo definitivamente. Las cachés de las herramientas también se vacían entonces.";
+"Put anything back from the Trash, or delete it permanently." = "Recupera lo que quieras desde la Papelera o elimínalo definitivamente.";
 "Only what this cleanup moved; the rest of your Trash stays" = "Solo lo que esta limpieza movió; el resto de tu Papelera se queda";
 "Nothing was changed." = "No cambió nada.";
 "ready to delete" = "listo para eliminar";
@@ -111,6 +123,17 @@
 "Parent Folder" = "Carpeta contenedora";
 "Move to Trash" = "Mover a la Papelera";
 "Move “%@” to Trash?" = "¿Mover «%@» a la Papelera?";
+
+/* Eliminación permanente: la fila «Eliminar definitivamente» del menú
+   contextual, la tecla Mayús con cualquiera de las dos teclas de borrado, y
+   la confirmación que dice lo que cuesta. «Eliminar definitivamente» es UNA
+   clave para dos sitios — la fila del menú y el botón del diálogo — porque la
+   fila no lleva puntos suspensivos: la línea de confirmación bajo la pregunta
+   ya avisa de que habrá un diálogo, y la fila se lee como la acción misma. */
+"Delete “%@” permanently?" = "¿Eliminar «%@» definitivamente?";
+"It does not go to the Trash. This cannot be undone." = "No va a la Papelera. Esto no se puede deshacer.";
+"Delete Permanently" = "Eliminar definitivamente";
+"Cannot remove the scan root" = "No se puede eliminar la raíz del análisis";
 
 /* Settings */
 "Custom model providers" = "Proveedores de modelos personalizados";

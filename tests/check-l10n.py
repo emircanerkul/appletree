@@ -109,12 +109,19 @@ def read_string_literal(src: str, start: int) -> tuple[str, int] | None:
     return None
 
 
+# An interpolated expression that Swift formats as an INTEGER, whose
+# localization key is therefore `%lld` and not `%@`. Only the shapes this
+# project writes are matched: a bare `x.count`, optionally minus a literal.
+INT_INTERPOLATION = re.compile(r"^[A-Za-z_][\w.]*\.count(\s*-\s*\d+)?$")
+
 def interpolations_to_format(raw: str) -> str:
     """Spell an interpolation the way the table's key does.
-
-    A LocalizedStringKey renders `\\(value)` as a format specifier, and every
-    specifier in these tables is `%@`, so the literal and the key become
-    comparable.
+    Swift picks the specifier from the interpolated value's TYPE: a `String`
+    renders as `%@`, an `Int` as `%lld`. Rewriting EVERY interpolation to `%@`
+    masked a real bug: the batch dialog wrote `"\(items.count) items"`, whose
+    key is `"%lld items"`, while all seven tables defined `"%@ items"`. The
+    checker called those tables complete while six translations silently fell
+    back to English.
     """
     out: list[str] = []
     i = 0
@@ -134,7 +141,8 @@ def interpolations_to_format(raw: str) -> str:
                     if depth == 0:
                         break
                 j += 1
-            out.append("%@")
+            expr = raw[i + 2:j].strip()
+            out.append("%lld" if INT_INTERPOLATION.match(expr) else "%@")
             i = j + 1
         else:
             out.append(raw[i])

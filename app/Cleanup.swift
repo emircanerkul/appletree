@@ -552,8 +552,8 @@ private struct AgentRunView: View {
 
     private var stagedLine: String {
         let waiting = run.targets.contains { $0.isCommand && $0.status == .waiting }
-        return waiting ? String(localized: "Put anything back from the Trash, or delete it for good. Tool caches are cleared then too.")
-            : String(localized: "Put anything back from the Trash, or delete it for good.")
+        return waiting ? String(localized: "Put anything back from the Trash, or delete it permanently. Tool caches are cleared then too.")
+            : String(localized: "Put anything back from the Trash, or delete it permanently.")
     }
 
     private var finishedLine: String {
@@ -655,7 +655,7 @@ private struct AgentRunView: View {
                 Button {
                     run.deleteForGood(env: model.agentEnv)
                 } label: {
-                    Text("Delete \(Fmt.size(run.pendingBytes)) for good")
+                    Text("Delete \(Fmt.size(run.pendingBytes)) permanently")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
