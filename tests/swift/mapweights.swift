@@ -240,31 +240,70 @@ func run() {
     check("the pool is non-decreasing",
           (0..<400).allSatisfy { ShareWeight.pooled(siblings: $0) <= ShareWeight.pooled(siblings: $0 + 1) })
     // easeInCubic: at the midpoint of the range t³ = 0.125, so only an eighth
-    // of the range is spent — the growth is late.
+    // of the range is spent — the growth is late. Asserted against the curve's
+    // own definition: `pooled` is quantised, so it intentionally differs from
+    // the raw cubic by up to half a quantum.
     let mid = (ShareWeight.pooledMinCount + ShareWeight.pooledMaxCount) / 2
     let tMid = Double(mid - ShareWeight.pooledMinCount)
         / Double(ShareWeight.pooledMaxCount - ShareWeight.pooledMinCount)
     check("the curve is ease-in-cubic, not linear",
-          abs(ShareWeight.pooled(siblings: mid)
+          abs(ShareWeight.pooledCubic(siblings: mid)
               - (ShareWeight.pooledMin + (ShareWeight.pooledMax - ShareWeight.pooledMin) * tMid * tMid * tMid)) < 1e-15,
-          "pooled(\(mid))=\(ShareWeight.pooled(siblings: mid))")
+          "cubic(\(mid))=\(ShareWeight.pooledCubic(siblings: mid))")
+    check("the quantised lookup tracks the cubic within half a quantum",
+          (0...ShareWeight.pooledMaxCount).allSatisfy {
+              abs(ShareWeight.pooled(siblings: $0) - ShareWeight.pooledCubic(siblings: $0))
+                  <= ShareWeight.pooledQuantum / 2 + 1e-12
+          })
     check("a busy folder gives up more than a small one",
           ShareWeight.pooled(siblings: 30) > ShareWeight.pooled(siblings: 3))
 
-    // THE MEMO EQUALS THE CURVE, for every input the table can serve. This is
-    // what makes the cache safe: `pooled` is a lookup, `pooledCubic` is the
-    // definition, and this asserts they agree bit for bit over the whole
-    // domain, so the table can never drift from the curve it stands for.
+    // THE MEMO EQUALS THE QUANTISED CURVE, for every input the table can
+    // serve. This is what makes the cache safe: `pooled` is a lookup,
+    // `pooledCubic` is the shape's definition, and `quantize` is the precision,
+    // so this asserts the table equals `quantize(pooledCubic(…))` bit for bit
+    // over the whole domain and can never drift from the curve it stands for.
     var memoMismatch: Int? = nil
     for n in 0...ShareWeight.pooledMaxCount {
-        if ShareWeight.pooled(siblings: n) != ShareWeight.pooledCubic(siblings: n) { memoMismatch = n }
+        if ShareWeight.pooled(siblings: n) != ShareWeight.quantize(ShareWeight.pooledCubic(siblings: n)) {
+            memoMismatch = n
+        }
     }
-    check("the memo table equals the curve at every n in 0...\(ShareWeight.pooledMaxCount)",
+    check("the memo table equals quantize(cubic) at every n in 0...\(ShareWeight.pooledMaxCount)",
           memoMismatch == nil, "first mismatch at n=\(memoMismatch.map(String.init) ?? "-")")
-    check("a table read is exactly the curve, bit for bit, not merely close",
+    check("a table read is exactly quantize(cubic), bit for bit, not merely close",
           (0...ShareWeight.pooledMaxCount).allSatisfy {
-              ShareWeight.pooled(siblings: $0).bitPattern == ShareWeight.pooledCubic(siblings: $0).bitPattern
+              ShareWeight.pooled(siblings: $0).bitPattern
+                  == ShareWeight.quantize(ShareWeight.pooledCubic(siblings: $0)).bitPattern
           })
+
+    // PRECISION: every entry is a clean multiple of the table's quantum, so the
+    // values are the legible 3-decimal ones (0.100, 0.101, … 0.250). Without
+    // this a quantisation that silently stopped rounding would still pass the
+    // equality check above only if quantize stopped working too.
+    check("every table entry is a whole number of \(ShareWeight.pooledQuantum)s",
+          (0...ShareWeight.pooledMaxCount).allSatisfy {
+              let scaled = ShareWeight.pooled(siblings: $0) * 1000
+              return abs(scaled - scaled.rounded()) < 1e-9
+          })
+    check("no entry carries more than \(ShareWeight.pooledDecimals) decimals",
+          (0...ShareWeight.pooledMaxCount).allSatisfy {
+              abs(ShareWeight.pooled(siblings: $0) * 1000 - (ShareWeight.pooled(siblings: $0) * 1000).rounded()) < 1e-9
+          })
+    check("quantize rounds to nearest, not toward zero",
+          ShareWeight.quantize(0.1294) == 0.129 && ShareWeight.quantize(0.1296) == 0.13)
+    // Quantising a non-decreasing curve leaves it non-decreasing.
+    check("quantising preserved monotonicity",
+          (0..<ShareWeight.pooledMaxCount).allSatisfy {
+              ShareWeight.pooled(siblings: $0) <= ShareWeight.pooled(siblings: $0 + 1)
+          })
+    // The ends are exact: the clamp returns pooledMax, which is already a clean
+    // 3-decimal value, so the boundary and the table cannot disagree.
+    check("pooledMax is exactly representable at this precision",
+          ShareWeight.quantize(ShareWeight.pooledMax) == ShareWeight.pooledMax)
+    check("the clamped path agrees with the table",
+          ShareWeight.pooled(siblings: ShareWeight.pooledMaxCount) == ShareWeight.pooledMax
+          && ShareWeight.pooled(siblings: 999) == ShareWeight.pooledMax)
 
     // DETERMINISM: the same input gives the same answer, every call, and it is
     // the value the curve computes rather than something inherited from a
@@ -275,17 +314,18 @@ func run() {
     let repeatableAgain = order.map { ShareWeight.pooled(siblings: $0) }
     check("pooled is deterministic across repeated, out-of-order calls",
           repeatable == repeatableAgain)
-    check("each repeated lookup still matches its curve value",
-          zip(order, repeatable).allSatisfy { ShareWeight.pooledCubic(siblings: $0.0) == $0.1 })
+    check("each repeated lookup still matches its quantised curve value",
+          zip(order, repeatable).allSatisfy {
+              ShareWeight.quantize(ShareWeight.pooledCubic(siblings: $0.0)) == $0.1
+          })
     // A few exact values, so a future edit to the table cannot pass silently.
-    // These are the curve's own doubles, listed to 17 significant digits.
+    // These are the 3-decimal values the request named, listed exhaustively.
     let expected: [(Int, Double)] = [
-        (2, 0.10000000000000001), (10, 0.10069444444444445),
-        (20, 0.10791015625), (30, 0.12977430555555558),
-        (40, 0.17442491319444442), (50, 0.25),
+        (2, 0.100), (10, 0.101), (13, 0.102), (20, 0.108),
+        (30, 0.130), (40, 0.174), (44, 0.200), (50, 0.250),
     ]
     for (n, want) in expected {
-        check("pooled(\(n)) is exactly \(want)",
+        check("pooled(\(n)) is exactly \(String(format: "%.3f", want))",
               ShareWeight.pooled(siblings: n).bitPattern == want.bitPattern,
               "got \(String(format: "%.17g", ShareWeight.pooled(siblings: n)))")
     }

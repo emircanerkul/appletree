@@ -103,15 +103,40 @@ nonisolated enum ShareWeight {
     /// `pooledMax`, so nothing beyond this needs a value.
     static let pooledMaxCount = 50
 
+    /// Decimal places kept in the memoised pool.
+    ///
+    /// The pool is a heuristic nudge, not a measured quantity: a thousandth of
+    /// the parent's area is far below what a pixel can resolve, and the layouts
+    /// re-quantise to whole pixels anyway. Trimming the table to 3 places makes
+    /// its values legible in the source (`0.100`, `0.101`, … `0.250`) and
+    /// collapses runs of near-identical entries into one answer.
+    static let pooledDecimals = 3
+
+    /// The step between adjacent table entries: 10⁻³.
+    static let pooledQuantum = 0.001
+
+    /// Round to the table's precision, deterministically.
+    ///
+    /// `(v × 1000).rounded() / 1000` rather than a `%` or `pow` form: the
+    /// intermediate is an exact integer-valued double for every value in the
+    /// curve's range, so the result is a clean multiple of 0.001 with no
+    /// dependence on the rounding mode, the locale, or the platform's `pow`.
+    /// Monotone, so quantising preserves the curve's non-decreasing property.
+    static func quantize(_ value: Double) -> Double {
+        (value * 1000).rounded() / 1000
+    }
+
     /// The plain curve: `pooledMin` through `pooledMax`, eased with `t³`.
     ///
-    /// This is the single definition of the curve. `pooledTable` is its memo,
-    /// and the test asserts they agree for every `n`, so this function is the
-    /// authority and the table is only a cache of it.
+    /// This is the single definition of the curve's *shape*, at full double
+    /// precision. `pooledTable` is its memo, quantised to `pooledQuantum`; the
+    /// test asserts the table equals `quantize(pooledCubic(…))` for every `n`,
+    /// so this function stays the authority and the table only a cache of it.
     ///
     /// Continuous and non-decreasing in `siblings`, and flat outside the
     /// range — no cliff at either end, so a folder gaining one entry does not
-    /// jump its layout.
+    /// jump its layout, and quantising a non-decreasing function leaves it
+    /// non-decreasing.
     static func pooledCubic(siblings: Int) -> Double {
         let n = Double(siblings)
         guard n > Double(pooledMinCount) else { return pooledMin }
@@ -120,19 +145,21 @@ nonisolated enum ShareWeight {
         return pooledMin + (pooledMax - pooledMin) * (t * t * t)
     }
 
-    /// `pooledCubic(siblings:)` for every `n` in `0...pooledMaxCount`.
+    /// `pooledCubic(siblings:)` quantised to `pooledQuantum`, for every `n` in
+    /// `0...pooledMaxCount`.
     ///
-    /// Built once, on first use, from the curve above; index `n` is the answer
-    /// for `n` siblings. Index 0 is present (and equals `pooledMin`) only so
-    /// the lookup needs no offset arithmetic — no caller passes 0, because
-    /// `weight` floors a non-positive count to 1.
+    /// Built once, on first use; index `n` is the answer for `n` siblings.
+    /// Index 0 is present (and equals `pooledMin`) only so the lookup needs no
+    /// offset arithmetic — no caller passes 0, because `weight` floors a
+    /// non-positive count to 1.
     ///
-    /// Deterministic: the entries are plain IEEE-754 doubles computed from
-    /// constants, with no dependence on time, locale, hashing order or
-    /// floating-point environment, so the same build answers identically on
-    /// every run. `make test-mapweights` asserts the whole table against the
-    /// curve, which is what keeps these two in step.
-    private static let pooledTable: [Double] = (0...pooledMaxCount).map { pooledCubic(siblings: $0) }
+    /// The quantisation costs nothing at lookup time: it happens here, over 51
+    /// values, once per process. It is deterministic for the same reason the
+    /// curve is — plain IEEE-754 arithmetic on constants, independent of time,
+    /// locale and hashing order — and `make test-mapweights` pins the whole
+    /// table bit for bit.
+    private static let pooledTable: [Double] =
+        (0...pooledMaxCount).map { quantize(pooledCubic(siblings: $0)) }
 
     /// The pool for a folder of `siblings` sized children — a clamp and a table
     /// read. See `pooledCubic(siblings:)` for the curve this memoises.
