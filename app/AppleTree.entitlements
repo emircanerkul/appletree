@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  The Mac App Store sandbox, and nothing speculative.
+
+	  This is the entitlement set a submittable build needs. It is committed as a
+	  real file rather than generated inside a recipe so the differences between
+	  the two distribution routes stay reviewable: `make build` signs WITHOUT
+	  these keys (Developer ID, unnotarized-sandbox, the GitHub/dmg route), and
+	  `make deploy-sandbox` signs WITH them, which is the only way to find out
+	  what the App Store build can actually do before paying a review cycle for
+	  the answer.
+
+	  Read docs/appstore/app-store-metadata.md §2 for the finding this exists to
+	  reproduce: the sandbox is not a formality here, it decides whether the
+	  agent-launching feature can ship at all.
+	-->
+
+	<!-- Required for every Mac App Store app. -->
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+
+	<!-- The user picks the folder or volume to scan. Note that the scan itself
+	     does NOT need this: Full Disk Access remains available to a sandboxed app
+	     and is still granted by the user in System Settings, which is what makes
+	     a whole-disk scan work. This key covers the picker. -->
+	<key>com.apple.security.files.user-selected.read-write</key>
+	<true/>
+
+	<!-- Outbound HTTP to the model provider the user configured (a local Ollama
+	     or LM Studio endpoint, or a hosted one). Without this the custom-provider
+	     AI panel cannot connect at all. -->
+	<key>com.apple.security.network.client</key>
+	<true/>
+
+	<!-- The Rust scan engine is linked as a staticlib built outside Xcode, so the
+	     binary loads code that is not signed by the app's own team. Required, not
+	     optional: without it the app is killed at launch. -->
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<true/>
+
+	<!--
+	  DELIBERATELY ABSENT: com.apple.security.files.user-selected.executable.
+
+	  That entitlement is the only proposed route to launching an external CLI
+	  from a sandboxed app, and it was measured (2026-10-06): adding the key alone
+	  changes NOTHING, because it only takes effect once the user grants it
+	  through a file picker. It therefore cannot express "run whatever is on the
+	  user's PATH", which is what the agent feature does, so it does not rescue
+	  that feature and is not worth requesting. Adding it here would imply it
+	  helps.
+
+	  What the sandbox actually does to the app, measured with the shipping code
+	  under this exact entitlement set: the user's login shell still runs, but it
+	  sees a container filesystem, so `command -v claude` and `command -v codex`
+	  return nothing and exec of an absolute path fails with "doesn't exist".
+	  `xcrun` refuses outright ("cannot be used within an App Sandbox"). The
+	  feature does not fail loudly — it silently finds no agents.
+
+	  Use `make deploy-sandbox` to reproduce that, and `make deploy` to go back.
+	-->
+</dict>
+</plist>

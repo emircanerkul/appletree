@@ -32,6 +32,11 @@ SHELL := /bin/bash
 VERSION := $(shell awk -F'"' '/^version/{print $$2; exit}' Cargo.toml)
 MIN_MACOS := 14.0
 APP := build/AppleTree.app
+# A second, separately-named bundle for the App Store sandbox rehearsal: it is
+# never the artifact `make build` produces, so a sandboxed test build can never
+# be mistaken for the shipping one.
+SANDBOX_APP := build/AppleTree-sandboxed.app
+SANDBOX_ENTITLEMENTS := app/AppleTree.entitlements
 CARGO := $(shell command -v cargo 2>/dev/null || echo "$$HOME/.cargo/bin/cargo")
 
 # Signing keychain used so codesign never prompts interactively.
@@ -47,12 +52,14 @@ SWIFT_FLAGS := -O -parse-as-library -swift-version 6 -default-isolation MainActo
                -framework DiskArbitration -framework IOKit
 
 .DEFAULT_GOAL := help
-.PHONY: help all build engine bundle open deploy release test test-planner test-drawer test-deletion test-selection test-links test-readme test-doclinks test-router test-privacy test-l10n test-mapweights test-rust icon clean
+.PHONY: help all build engine bundle open deploy deploy-sandbox deploy-sandbox-undo release test test-planner test-drawer test-deletion test-selection test-links test-readme test-doclinks test-router test-privacy test-l10n test-mapweights test-rust icon clean
 
 help:
 	@echo 'AppleTree targets:'
 	@echo '  make build              build/AppleTree.app (engine + UI + signing)'
 	@echo '  make deploy             rebuild and clean-replace /Applications/AppleTree.app'
+	@echo '  make deploy-sandbox     install the Mac App Store sandbox rehearsal alongside it'
+	@echo '  make deploy-sandbox-undo  remove the sandbox rehearsal build'
 	@echo '  make release V=x.y.z    notarize, package dmg, publish GitHub release'
 	@echo '                          optional NOTES_FILE=path/to/notes.md'
 	@echo '  make test               guard unit tests (Swift over the Rust staticlib)'
@@ -242,6 +249,68 @@ deploy: build
 	ditto '$(APP)' /Applications/AppleTree.app
 	codesign --verify --strict /Applications/AppleTree.app
 	@echo '==> Deployed to /Applications/AppleTree.app (signature verified)'
+
+# The App Store rehearsal: the REAL app, with the REAL sandbox entitlements,
+# installed where a person can actually use it.
+#
+# Why this exists. Every Mac App Store build is sandboxed, and the sandbox
+# decides which features can ship at all — not a formality, and not something to
+# discover from a rejected submission. docs/appstore/app-store-metadata.md §2
+# argues that the agent-launching feature cannot survive it. This target is how
+# that claim gets checked instead of believed: build, re-sign with
+# `app/AppleTree.entitlements`, install to a DIFFERENT /Applications name, and let
+# the user click through the app.
+#
+# Measured result on this codebase (2026-10-06): the app launches and the scan,
+# treemap, rings, Clean Up panel and Trash actions work; the user's login shell
+# still runs but sees a container filesystem, so `command -v claude` and
+# `command -v codex` find nothing and exec of an absolute path fails with
+# "doesn't exist" — the agent feature goes quiet rather than erroring.
+#
+# Uses an ad-hoc signature. That is deliberate and sufficient for THIS question:
+# the sandbox is enforced from the entitlement, not from the certificate, so a
+# self-signed build reproduces the boundary without needing the Apple
+# Distribution certificate a real submission would use. It is NOT a submittable
+# artifact — see §3 of the metadata doc for what that needs.
+#
+# The non-sandboxed app is left untouched, so `make deploy` (or `make
+# deploy-sandbox-undo`) puts the ordinary build back at the usual path.
+deploy-sandbox: build
+	@test -f '$(SANDBOX_ENTITLEMENTS)' || { \
+	    echo "error: $(SANDBOX_ENTITLEMENTS) is missing; it defines the sandbox this target rehearses." >&2; exit 1; }
+	@echo '==> Building the sandboxed rehearsal bundle'
+	rm -rf '$(SANDBOX_APP)'
+	ditto '$(APP)' '$(SANDBOX_APP)'
+	# --deep is required: assets, the Rust-built executable and the icon are
+	# sealed as one unit, and the entitlement has to end up on the process the
+	# kernel actually launches.
+	codesign --force --deep --sign - --entitlements '$(SANDBOX_ENTITLEMENTS)' '$(SANDBOX_APP)'
+	codesign --verify --strict '$(SANDBOX_APP)'
+	@echo '==> Entitlements sealed into the bundle:'
+	@codesign -d --entitlements - '$(SANDBOX_APP)' 2>/dev/null \
+	    | grep -E 'app-sandbox|network|user-selected|library-validation' | sed 's/^/      /' || true
+	@echo '==> Installing to /Applications/AppleTree (Sandboxed).app'
+	rm -rf '/Applications/AppleTree (Sandboxed).app'
+	ditto '$(SANDBOX_APP)' '/Applications/AppleTree (Sandboxed).app'
+	@echo ''
+	@echo '    A sandboxed AppleTree is now installed. It is a SEPARATE app with a'
+	@echo '    different name, so your normal install at /Applications/AppleTree.app'
+	@echo '    is untouched. Launch it and try:'
+	@echo '      - the Clean Up panel, the treemap, the rings, Delete  (expected: work)'
+	@echo '      - "Clean up with Claude Code / Codex"                  (expected: no agents found)'
+	@echo '      - the shell-command rows (brew/npm/uv/xcrun cleanups)  (expected: fail)'
+	@echo ''
+	@echo '    Then remove it with:  make deploy-sandbox-undo'
+
+# Remove the sandboxed rehearsal build. The normal install is not touched — this
+# only deletes what deploy-sandbox created.
+deploy-sandbox-undo:
+	@echo '==> Removing the sandboxed rehearsal build'
+	rm -rf '$(SANDBOX_APP)' '/Applications/AppleTree (Sandboxed).app'
+	@echo '==> Removed. /Applications/AppleTree.app is untouched.'
+	@test -d /Applications/AppleTree.app \
+	    && echo '    Your normal install is still there.' \
+	    || echo '    Note: no normal install present; run `make deploy` to create one.'
 
 # ---------------------------------------------------------------------------
 # Release
