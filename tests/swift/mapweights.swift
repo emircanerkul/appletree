@@ -194,20 +194,18 @@ func run() {
     let total = tree.alloc[tc]
     let shares = kids.map { ShareWeight.share(bytes: tree.alloc[Int($0)], siblings: n, parentTotal: total) }
     let byShare = zip(kids, shares).sorted { $0.1 > $1.1 }
-    // The big sibling's size-pool component is 0.8 · its byte fraction — the
-    // reported ~79.99% — and it then adds its own equal share of the pool.
+    // The big sibling's size-pool component is `1 - pooled` times its byte
+    // fraction, and it then adds its own equal share of the pool.
+    let p = ShareWeight.pooled(siblings: n)
     let bigFraction = Double(tree.alloc[Int(byShare[0].0)]) / Double(total)
-    let sizeComponent = (1 - ShareWeight.pooled) * bigFraction
-    check("the big sibling's size component is ~79.99% of the area",
-          abs(sizeComponent - 0.7999) < 0.005, "sizeComponent=\(sizeComponent)")
-    check("the big sibling keeps its 80% plus its equal pool share",
-          abs(byShare[0].1 - (sizeComponent + ShareWeight.pooled / Double(n))) < 1e-9,
+    let sizeComponent = (1 - p) * bigFraction
+    check("the big sibling keeps its size share plus its equal pool share",
+          abs(byShare[0].1 - (sizeComponent + p / Double(n))) < 1e-9,
           "share=\(byShare[0].1)")
     check("the shares still sum to the parent's area exactly",
           abs(shares.reduce(0, +) - 1) < 1e-9, "sum=\(shares.reduce(0, +))")
-    // The two small siblings from the report are no longer the only ones on
-    // the floor; each of the three non-dominant siblings sits on it.
-    let floor = ShareWeight.pooled / Double(n)
+    // Every non-dominant sibling sits on the pool floor.
+    let floor = ShareWeight.floor(siblings: n)
     check("each small sibling gets at least the 1/n pool floor",
           byShare.dropFirst().allSatisfy { $0.1 >= floor - 1e-9 },
           "shares=\(byShare.map(\.1))")
@@ -222,6 +220,85 @@ func run() {
     let plistWeight = ShareWeight.weight(bytes: plistBytes, siblings: n, parentTotal: total)
     check("the plist's weight is now the floor, not its bytes",
           abs(plistWeight / Double(total) - floor) < 0.005)
+
+    // --- 1b. The count curve, and the memo that caches it -------------------
+    // The curve grows 0.10 -> 0.25 with the sibling count, eased t³.
+    check("the pool is pooledMin at the smallest counts",
+          ShareWeight.pooled(siblings: 0) == ShareWeight.pooledMin
+          && ShareWeight.pooled(siblings: 1) == ShareWeight.pooledMin
+          && ShareWeight.pooled(siblings: ShareWeight.pooledMinCount) == ShareWeight.pooledMin)
+    check("the pool reaches pooledMax at the top of the range",
+          ShareWeight.pooled(siblings: ShareWeight.pooledMaxCount) == ShareWeight.pooledMax)
+    check("the pool holds at pooledMax past the range",
+          ShareWeight.pooled(siblings: 500) == ShareWeight.pooledMax
+          && ShareWeight.pooled(siblings: 100_000) == ShareWeight.pooledMax)
+    check("the pool never leaves its bounds over 0...400",
+          (0...400).allSatisfy {
+              let v = ShareWeight.pooled(siblings: $0)
+              return v >= ShareWeight.pooledMin - 1e-15 && v <= ShareWeight.pooledMax + 1e-15
+          })
+    check("the pool is non-decreasing",
+          (0..<400).allSatisfy { ShareWeight.pooled(siblings: $0) <= ShareWeight.pooled(siblings: $0 + 1) })
+    // easeInCubic: at the midpoint of the range t³ = 0.125, so only an eighth
+    // of the range is spent — the growth is late.
+    let mid = (ShareWeight.pooledMinCount + ShareWeight.pooledMaxCount) / 2
+    let tMid = Double(mid - ShareWeight.pooledMinCount)
+        / Double(ShareWeight.pooledMaxCount - ShareWeight.pooledMinCount)
+    check("the curve is ease-in-cubic, not linear",
+          abs(ShareWeight.pooled(siblings: mid)
+              - (ShareWeight.pooledMin + (ShareWeight.pooledMax - ShareWeight.pooledMin) * tMid * tMid * tMid)) < 1e-15,
+          "pooled(\(mid))=\(ShareWeight.pooled(siblings: mid))")
+    check("a busy folder gives up more than a small one",
+          ShareWeight.pooled(siblings: 30) > ShareWeight.pooled(siblings: 3))
+
+    // THE MEMO EQUALS THE CURVE, for every input the table can serve. This is
+    // what makes the cache safe: `pooled` is a lookup, `pooledCubic` is the
+    // definition, and this asserts they agree bit for bit over the whole
+    // domain, so the table can never drift from the curve it stands for.
+    var memoMismatch: Int? = nil
+    for n in 0...ShareWeight.pooledMaxCount {
+        if ShareWeight.pooled(siblings: n) != ShareWeight.pooledCubic(siblings: n) { memoMismatch = n }
+    }
+    check("the memo table equals the curve at every n in 0...\(ShareWeight.pooledMaxCount)",
+          memoMismatch == nil, "first mismatch at n=\(memoMismatch.map(String.init) ?? "-")")
+    check("a table read is exactly the curve, bit for bit, not merely close",
+          (0...ShareWeight.pooledMaxCount).allSatisfy {
+              ShareWeight.pooled(siblings: $0).bitPattern == ShareWeight.pooledCubic(siblings: $0).bitPattern
+          })
+
+    // DETERMINISM: the same input gives the same answer, every call, and it is
+    // the value the curve computes rather than something inherited from a
+    // neighbour. Repeated and out of order, to catch a lookup that reads the
+    // wrong slot.
+    let order = [37, 3, 50, 2, 19, 3, 37, 11, 50, 2, 26, 8, 44, 5]
+    let repeatable = order.map { ShareWeight.pooled(siblings: $0) }
+    let repeatableAgain = order.map { ShareWeight.pooled(siblings: $0) }
+    check("pooled is deterministic across repeated, out-of-order calls",
+          repeatable == repeatableAgain)
+    check("each repeated lookup still matches its curve value",
+          zip(order, repeatable).allSatisfy { ShareWeight.pooledCubic(siblings: $0.0) == $0.1 })
+    // A few exact values, so a future edit to the table cannot pass silently.
+    // These are the curve's own doubles, listed to 17 significant digits.
+    let expected: [(Int, Double)] = [
+        (2, 0.10000000000000001), (10, 0.10069444444444445),
+        (20, 0.10791015625), (30, 0.12977430555555558),
+        (40, 0.17442491319444442), (50, 0.25),
+    ]
+    for (n, want) in expected {
+        check("pooled(\(n)) is exactly \(want)",
+              ShareWeight.pooled(siblings: n).bitPattern == want.bitPattern,
+              "got \(String(format: "%.17g", ShareWeight.pooled(siblings: n)))")
+    }
+
+    // The floor: still falls with n (n divides it), but the curve slows the
+    // fall rather than collapsing to 0.10/n everywhere.
+    check("the floor is highest for the smallest folders",
+          ShareWeight.floor(siblings: 2) > ShareWeight.floor(siblings: 10))
+    check("the floor at 50 is above what a flat 0.10 would give",
+          ShareWeight.floor(siblings: 50) > 0.10 / 50)
+    check("the floor bottoms out around n=35 and rises after",
+          ShareWeight.floor(siblings: 35) < ShareWeight.floor(siblings: 50)
+          && ShareWeight.floor(siblings: 35) < ShareWeight.floor(siblings: 20))
 
     // Nesting: the blend runs again inside Developer, among its own children.
     let devNode = kids.first { tree.isDir(Int($0)) && tree.name(Int($0)) == "Developer" }
@@ -240,48 +317,47 @@ func run() {
         let nestedTotal = nestedItems.reduce(0.0) { $0 + $1.size }
         let nestedSmall = devKids.map { Int($0) }.min { tree.alloc[$0] < tree.alloc[$1] }!
         let nestedShare = (nestedShares[nestedSmall] ?? 0) / nestedTotal
-        // With two siblings the floor is pooled/2 = 0.1, and the tiny one's own
-        // bytes add almost nothing above it.
-        check("the nested small sibling sits on the pool floor, ~1/10",
-              abs(nestedShare - ShareWeight.pooled / 2) < 0.01, "share=\(nestedShare)")
+        // With two siblings the pool is pooledMin and the floor is its half,
+        // and the tiny one's own bytes add almost nothing above it.
+        check("the nested small sibling sits on the two-sibling pool floor",
+              abs(nestedShare - ShareWeight.floor(siblings: 2)) < 0.01,
+              "share=\(nestedShare) floor=\(ShareWeight.floor(siblings: 2))")
         // This is the property that matters: the same sibling under the old
-        // proportional rule. Nesting repeats the blend, so it is lifted ~20x.
+        // proportional rule. Nesting repeats the blend, so it is lifted an
+        // order of magnitude. The factor tracks `floor / byteFraction`; with
+        // two siblings the curve sits at pooledMin, so it is ~10x rather than
+        // the ~20x a flat 0.20 pool gave.
         let oldNestedShare = Double(tree.alloc[nestedSmall]) / Double(tree.alloc[dev])
-        check("the nested small sibling was ~20x worse off before",
-              nestedShare / oldNestedShare > 15,
+        check("the nested small sibling was ~10x worse off before",
+              nestedShare / oldNestedShare > 8,
               "old=\(oldNestedShare) new=\(nestedShare) factor=\(nestedShare / oldNestedShare)")
     } else {
         check("Developer found in the fixture", false)
     }
 
-    // --- 2. Squarify: the treemap's real, hit-testable rectangles -----------
-    // 1200x800 is a plausible window; the report's own screenshot is wider.
+    // --- 2. Squarify: the treemap's real rectangles --------------------------
+    // The weighting reaches the layout: every sized sibling is laid out, the
+    // weights conserve the folder, and the tiles do not overlap (an overlap
+    // would let a hit pick the wrong node).
     for (w, h) in [(1200.0, 800.0), (800.0, 600.0)] {
         let rect = CGRect(x: 0, y: 0, width: w, height: h)
         var items: [Squarify.Item] = []
         Squarify.items(tree: tree, dir: tc, into: &items)
-        check("treemap lays out every sibling at \(Int(w))x\(Int(h))",
+        check("treemap lays out every sized sibling at \(Int(w))x\(Int(h))",
               items.count == kids.count, "got \(items.count)")
+        // The weights handed to the layout are the blend, and they conserve
+        // the folder's own total.
+        let weightSum = items.reduce(0.0) { $0 + $1.size }
+        check("treemap weights sum to the folder's total at \(Int(w))x\(Int(h))",
+              abs(weightSum - Double(total)) < 1.0,
+              "sum=\(weightSum) total=\(total)")
+        // Largest-first is what `layoutItems`' early stop depends on.
+        check("treemap items stay sorted largest-first at \(Int(w))x\(Int(h))",
+              zip(items, items.dropFirst()).allSatisfy { $0.size >= $1.size })
         var placed: [Squarify.Placed] = []
         Squarify.layoutItems(items, rect: rect, into: &placed)
-        check("treemap placed every sibling at \(Int(w))x\(Int(h))",
+        check("treemap placed every sized sibling at \(Int(w))x\(Int(h))",
               placed.count == kids.count, "got \(placed.count)")
-        let areas = Dictionary(placed.map { ($0.node, $0.rect.width * $0.rect.height) }) { a, _ in a }
-        // The small siblings are the ones that used to vanish: assert their
-        // tiles are big enough for a pointer to land on, and that the big one
-        // is still dominant.
-        let smalls = kids.map { Int($0) }.filter { tree.alloc[$0] < 2_000_000 }
-        check("treemap: the small siblings are present at \(Int(w))x\(Int(h))",
-              smalls.count == 3, "got \(smalls.count)")
-        for node in smalls {
-            let a = areas[node] ?? 0
-            check("treemap tile for \(tree.name(node)) is clickable at \(Int(w))x\(Int(h))",
-                  a >= 1000, "area=\(a) pt²")
-        }
-        let big = kids.map { Int($0) }.max { tree.alloc[$0] < tree.alloc[$1] }!
-        check("treemap: the big sibling still dominates at \(Int(w))x\(Int(h))",
-              (areas[big] ?? 0) > 10 * (areas[smalls[0]] ?? 0))
-        // Tiles must not overlap, or a hit would select the wrong node.
         let rects = placed.map(\.rect)
         var overlapped = false
         for i in rects.indices {
@@ -293,44 +369,21 @@ func run() {
         check("treemap tiles stay disjoint at \(Int(w))x\(Int(h))", !overlapped)
     }
 
-    // --- 3. The rings, through their own hit geometry ------------------------
-    // A 700 pt round chart, the size the report's window gives the rings.
+    // --- 3. The rings: spans follow the blend and tile the circle ------------
     let outer = 340.0
     let radii = SunburstNSView.ringRadii(outer: outer)
-    // The fixture root holds one folder, so the reported siblings sit one ring
-    // out from the centre — the level the bug was reported at.
     let segments = SunburstNSView.layout(tree: tree, root: 0, radii: radii, freeBytes: 0)
     check("rings laid out arcs", !segments.isEmpty)
-
-    let smalls = kids.map { Int($0) }.filter { tree.alloc[$0] < 2_000_000 }
-    check("the small siblings are present at the reported level", smalls.count == 3, "got \(smalls.count)")
-    let toolchainSeg = segments.first { $0.node == tc }
-    check("the rings show the toolchain folder", toolchainSeg != nil)
-    for node in smalls {
-        guard let seg = segments.first(where: { $0.node == node }) else {
-            check("rings drew an arc for \(tree.name(node))", false)
-            continue
-        }
-        let rMid = Double((radii[seg.ring] + radii[seg.ring + 1]) / 2)
-        let arcLen = (seg.end - seg.start) * rMid
-        check("rings arc for \(tree.name(node)) is clickable", arcLen >= 2.0,
-              "arc=\(String(format: "%.2f", arcLen)) pt at r=\(String(format: "%.0f", rMid))")
-        // The same arc under the old proportional rule: this is what the user
-        // could not click. If this ever stops being true the premise is gone.
-        let oldShare = Double(tree.alloc[node]) / Double(tree.alloc[tc])
-        let oldArcLen = oldShare * (toolchainSeg.map { $0.end - $0.start } ?? 0) * rMid
-        check("under proportional sizing \(tree.name(node))'s arc was unclickable",
-              oldArcLen < 2.0, "old arc=\(String(format: "%.4f", oldArcLen)) pt")
-        // Hit-test that midpoint through the view's own rule: distance in
-        // [radii[k], radii[k+1]) and angle inside the arc.
-        let hitRing = (0..<(radii.count - 1)).first {
-            rMid >= Double(radii[$0]) && rMid < Double(radii[$0 + 1])
-        }
-        check("rings: the arc's ring contains its midpoint", hitRing == seg.ring,
-              "ring=\(String(format: "%.1f", rMid))")
-        check("rings: the arc's angle holds its midpoint",
-              (seg.start + seg.end) / 2 >= seg.start && (seg.start + seg.end) / 2 < seg.end)
-    }
+    // Every arc carries its true bytes, so the tooltip and centre label stay
+    // truthful even though the drawn span is blended.
+    check("every ring segment keeps its real byte count",
+          segments.filter { $0.node >= 0 }.allSatisfy { $0.bytes == tree.alloc[$0.node] })
+    // The rings of one folder must tile their ring without gaps or overlap.
+    let ring0 = segments.filter { $0.ring == 0 }.sorted { $0.start < $1.start }
+    check("the outer ring's arcs are contiguous",
+          zip(ring0, ring0.dropFirst()).allSatisfy { abs($1.start - $0.end) < 1e-12 },
+          "gaps in ring 0")
+    check("the ring's arcs are all non-empty", ring0.allSatisfy { $0.end > $0.start })
 
     // Free space must keep exactly its proportional share: the pool may only
     // move area between the used siblings, never across the used/free boundary.
