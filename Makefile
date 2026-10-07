@@ -515,6 +515,7 @@ test-readme:
 	    -parse-as-library -swift-version 6 -default-isolation MainActor \
 	    -target arm64-apple-macos$(MIN_MACOS) \
 	    -o .build/readme-tests
+	.build/readme-tests
 
 # Document links: every relative link in the bundled README/LICENSE must resolve
 # to something openable. A scheme-less link reaches macOS as a filesystem path
@@ -526,6 +527,7 @@ test-doclinks:
 	    -parse-as-library -swift-version 6 -default-isolation MainActor \
 	    -target arm64-apple-macos$(MIN_MACOS) \
 	    -o .build/doclink-tests
+	.build/doclink-tests
 
 # Privacy compliance: the policy must be reachable in the app (5.1.1(i)), the
 # AI disclosure must name the destination (5.1.2(i)), and the manifest must
