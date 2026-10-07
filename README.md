@@ -244,7 +244,7 @@ make help              # every target
 make build             # build/AppleTree.app
 make deploy            # build and install to /Applications
 make open              # build and launch
-make release V=x.y.z   # notarize, package a .dmg, publish a GitHub release
+make package           # notarize when possible, and package AppleTree.dmg locally
 make test              # guard unit tests, l10n check and the Swift suites
 cargo test --release   # engine tests
 ```

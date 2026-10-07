@@ -9,9 +9,8 @@
 #
 #   make build                 build/AppleTree.app (Rust engine + Swift UI + signing)
 #   make deploy                rebuild and clean-replace /Applications/AppleTree.app
-#   make release V=1.2.3       build, notarize (if Developer ID + notary profile),
-#                              package AppleTree.dmg, publish GitHub release
-#                              optional: NOTES_FILE=path/to/notes.md
+#   make package               build, notarize (if Developer ID + notary profile),
+#                              and produce AppleTree.dmg + SHA256SUMS.txt locally
 #   make test                  guard unit tests (Swift, linked against the Rust staticlib)
 #   make test-rust             cargo test --release
 #   make engine                cargo build --release only
@@ -52,7 +51,7 @@ SWIFT_FLAGS := -O -parse-as-library -swift-version 6 -default-isolation MainActo
                -framework DiskArbitration -framework IOKit
 
 .DEFAULT_GOAL := help
-.PHONY: help all build engine bundle open deploy deploy-sandbox deploy-sandbox-undo release test test-drawer test-deletion test-selection test-links test-readme test-doclinks test-router test-privacy test-planner-selection test-prompt-scope test-shellenv test-engine-writer test-l10n test-mapweights test-rust icon clean
+.PHONY: help all build engine bundle open deploy deploy-sandbox deploy-sandbox-undo package test test-drawer test-deletion test-selection test-links test-readme test-doclinks test-router test-privacy test-planner-selection test-prompt-scope test-shellenv test-engine-writer test-l10n test-mapweights test-rust icon clean
 
 help:
 	@echo 'AppleTree targets:'
@@ -60,8 +59,7 @@ help:
 	@echo '  make deploy             rebuild and clean-replace /Applications/AppleTree.app'
 	@echo '  make deploy-sandbox     install the Mac App Store sandbox rehearsal alongside it'
 	@echo '  make deploy-sandbox-undo  remove the sandbox rehearsal build'
-	@echo '  make release V=x.y.z    notarize, package dmg, publish GitHub release'
-	@echo '                          optional NOTES_FILE=path/to/notes.md'
+	@echo '  make package            notarize (when possible) and package AppleTree.dmg locally'
 	@echo '  make test               guard unit tests (Swift over the Rust staticlib)'
 	@echo '  make test-drawer        right-drawer trash outcome and plan-group tests'
 	@echo '  make test-deletion      "Delete Permanently" and the Delete/Backspace keys'
@@ -316,10 +314,16 @@ deploy-sandbox-undo:
 	    || echo '    Note: no normal install present; run `make deploy` to create one.'
 
 # ---------------------------------------------------------------------------
-# Release
+# Package
 # ---------------------------------------------------------------------------
 
-# Build, notarize when possible, package as dmg, publish a GitHub release.
+# Build, notarize when possible, and package a distributable dmg — locally.
+#
+# This target publishes NOTHING. It used to end in `gh release create/upload/
+# edit`, which made a local "I want a dmg" request also re-publish a GitHub
+# release; that responsibility has been retired. Nothing here contacts the
+# network except Apple's notary service, and only when a Developer ID signature
+# is present. Uploading the dmg somewhere is a deliberate, separate act.
 #
 # Notarization needs a Developer ID signature and stored notary credentials
 # (one-time: `xcrun notarytool store-credentials appletree-notary --key
@@ -328,22 +332,18 @@ deploy-sandbox-undo:
 # signed, notarized and stapled itself. (-dvv: plain -dv never prints the
 # Authority lines.)
 #
-# Re-running over an existing (e.g. draft) release replaces its files.
-#
-# The V guard is its own recipe line ahead of the recursive build, so a mistyped
-# `make release` fails before any compiling or signing. It carries the `+` flag
-# so make still runs it under `-n` (recursive-make lines are skipped there),
-# which is what makes `make -n release` show the usage error and no build.
+# Without a Developer ID identity it still packages: the dmg is built and the
+# signature is whatever `make build` produced, so a Development-signed or
+# ad-hoc build is usable locally (Gatekeeper will ask for "Open Anyway"
+# elsewhere). It prints which case it took rather than claiming a notarized one.
 #
 # notarytool submit exits 0 even for a REJECTED submission (it prints
 # "status: Invalid"), so the output is captured and required to read Accepted
-# before anything is stapled or published — otherwise a rejected build went on
-# to `gh release create` and printed `released`.
-release:
-	+@test -n '$(V)' || { echo 'usage: make release V=0.1.0 [NOTES_FILE=path]' >&2; exit 1; }
+# before anything is stapled or reported — otherwise a rejected build was
+# described as releasable.
+package:
 	@$(MAKE) --no-print-directory build
 	@DEVID=$$(codesign -dvv '$(APP)' 2>&1 | awk -F= '/^Authority=Developer ID Application/ && !n++ {print $$2}'); \
-	RELNOTES=''; \
 	if [[ -n "$$DEVID" ]]; then \
 	    echo '==> Notarizing app'; \
 	    ZIP=$$(mktemp -d)/AppleTree.zip; \
@@ -351,7 +351,7 @@ release:
 	    OUT=$$(xcrun notarytool submit "$$ZIP" --keychain-profile appletree-notary --wait 2>&1) || { printf '%s\n' "$$OUT" >&2; echo 'ERROR: notarytool submit failed for the app.' >&2; exit 1; }; \
 	    printf '%s\n' "$$OUT"; \
 	    grep -qE '^ *status: Accepted$$' <<<"$$OUT" || { \
-	        echo 'ERROR: notarization of the app was not Accepted; refusing to staple or publish it.' >&2; \
+	        echo 'ERROR: notarization of the app was not Accepted; refusing to staple or package it.' >&2; \
 	        echo '       Inspect the rejection with: xcrun notarytool log <submission-id> --keychain-profile appletree-notary' >&2; \
 	        exit 1; \
 	    }; \
@@ -370,28 +370,17 @@ release:
 	    OUT=$$(xcrun notarytool submit AppleTree.dmg --keychain-profile appletree-notary --wait 2>&1) || { printf '%s\n' "$$OUT" >&2; echo 'ERROR: notarytool submit failed for the dmg.' >&2; exit 1; }; \
 	    printf '%s\n' "$$OUT"; \
 	    grep -qE '^ *status: Accepted$$' <<<"$$OUT" || { \
-	        echo 'ERROR: notarization of the dmg was not Accepted; refusing to staple or publish it.' >&2; \
+	        echo 'ERROR: notarization of the dmg was not Accepted; refusing to staple it.' >&2; \
 	        echo '       Inspect the rejection with: xcrun notarytool log <submission-id> --keychain-profile appletree-notary' >&2; \
 	        exit 1; \
 	    }; \
 	    xcrun stapler staple AppleTree.dmg; \
 	    spctl --assess --type open --context context:primary-signature -v AppleTree.dmg; \
-	    RELNOTES='Download AppleTree.dmg and drag it to Applications, then grant Full Disk Access when asked and relaunch.'; \
-	else \
-	    RELNOTES='Download AppleTree.dmg, drag to Applications. First launch: System Settings → Privacy & Security → Open Anyway (unnotarized build), then grant Full Disk Access and relaunch.'; \
 	fi; \
-	if [[ -n '$(NOTES_FILE)' ]]; then RELNOTES=$$(<$(NOTES_FILE)); fi; \
 	shasum -a 256 AppleTree.dmg > SHA256SUMS.txt; \
-	if gh release view 'v$(V)' >/dev/null 2>&1; then \
-	    gh release upload 'v$(V)' AppleTree.dmg SHA256SUMS.txt --clobber; \
-	    gh release edit 'v$(V)' --title 'AppleTree $(V)' --notes "$$RELNOTES" --draft=false --latest; \
-	else \
-	    gh release create 'v$(V)' AppleTree.dmg SHA256SUMS.txt \
-	        --title 'AppleTree $(V)' \
-	        --notes "$$RELNOTES"; \
-	fi; \
-	rm -f SHA256SUMS.txt; \
-	echo '==> released v$(V)'
+	echo "==> packaged AppleTree.dmg"; \
+	cat SHA256SUMS.txt; \
+	echo "    Uploading it anywhere is a separate, deliberate act; this target does not."
 
 # ---------------------------------------------------------------------------
 # Tests

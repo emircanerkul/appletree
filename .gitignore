@@ -2,6 +2,10 @@
 /build
 .DS_Store
 AppleTree.dmg
+# The dmg's checksum, written by `make package` and meant to be shipped
+# alongside it. It used to be deleted at the end of the old release target, so
+# it never lingered; a local package keeps it, and it must not be committed.
+SHA256SUMS.txt
 __pycache__/
 /.cache
 /.build
