@@ -172,6 +172,7 @@
    CleanupGuard.blockReason and the run planner. Mechanical first-pass
    translations — please review. */
 "Outside your home folder" = "Fuera de tu carpeta de inicio";
+"Inside a signed app bundle" = "Dentro de un paquete de aplicación firmado";
 "Too broad: other apps keep live data here" = "Demasiado amplio: otras apps guardan datos activos aquí";
 "In ~/%@, which AppleTree never cleans" = "En ~/%@, que AppleTree nunca limpia";
 "A git repository" = "Un repositorio Git";

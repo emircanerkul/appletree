@@ -139,6 +139,73 @@ fn is_home_broad_cache(t: &Tree, i: u32) -> bool {
     parent_of(t, i).is_some_and(|home| is_home_dir(t, home))
 }
 
+/// True when `dir` is a real application bundle rather than a directory that
+/// merely ends in `.app`.
+///
+/// The suffix alone is not enough. macOS names container and support folders
+/// that way — `~/Library/Containers/com.example.app`,
+/// `~/Library/Application Support/com.cmuxterm.app` — and treating those as
+/// bundles would stop recognizing the caches inside them, which are ordinary
+/// app data the guard permits. A bundle is identified by its structure, the
+/// same two layouts `CleanupGuard.isBundle` accepts, so both owners agree on
+/// what a bundle is:
+///
+/// - the classic macOS bundle, `Contents/Info.plist`;
+/// - the flat iOS/Unity wrapper, whose `Info.plist` sits at the bundle root
+///   with no `Contents/` at all. `/Applications/ARES.app` wraps one at
+///   `Wrapper/ARES.app`, so checking for `Contents` alone would descend into a
+///   signed inner bundle.
+fn is_app_bundle(t: &Tree, dir: u32) -> bool {
+    if !t.is_dir(dir as usize) || !t.name(dir as usize).ends_with(".app") {
+        return false;
+    }
+    if contains(t, dir, "Info.plist") {
+        return true;
+    }
+    t.kids(dir as usize).iter().any(|&c| {
+        t.name(c as usize) == "Contents"
+            && t.kids(c as usize)
+                .iter()
+                .any(|&g| t.name(g as usize) == "Info.plist")
+    })
+}
+
+/// True when the node sits inside an installed application bundle — an
+/// ancestor directory that is one (see `is_app_bundle`).
+///
+/// A bundle is one signed, sealed unit, not a project. Its `node_modules` are
+/// what the app ships and `dlopen`s at runtime (Electron unpacks native
+/// modules next to `app.asar`), not build output a package manager recreates:
+/// removing one makes `codesign` report "a sealed resource is missing or
+/// invalid" and the app stops verifying. So a name-based rule ("npm packages,
+/// reinstallable") is simply false here, and the guard refuses these paths
+/// anyway — `/Applications` is outside `$HOME`, and an app installed there is
+/// exactly the case the guard is right about.
+///
+/// Measured on a real `/Applications`: an unfiltered scan offered exactly two
+/// candidates, both of them sealed bundle internals —
+/// `Bitwarden.app/Contents/Resources/app.asar.unpacked/node_modules` and
+/// `Openship.app/Contents/Resources/dashboard/node_modules`. Both were
+/// unselectable ("Outside your home folder"), so the panel advertised two
+/// Moves that could only fail. Recognition must not nominate what
+/// authorization refuses (module doc).
+///
+/// This walks ancestors rather than checking the immediate parent because the
+/// bundle's `Contents/Resources/…` is several levels down.
+fn is_inside_app_bundle(t: &Tree, i: u32) -> bool {
+    let mut cur = i;
+    loop {
+        if let Some(parent) = parent_of(t, cur) {
+            if is_app_bundle(t, parent) {
+                return true;
+            }
+            cur = parent;
+        } else {
+            return false;
+        }
+    }
+}
+
 /// True when the node sits under an Apple-managed container prefix, mirroring
 /// `CleanupGuard.blockReason(path:)`'s "Managed by macOS" rule exactly.
 ///
@@ -186,7 +253,7 @@ fn is_apple_managed(t: &Tree, i: u32) -> bool {
 }
 
 fn kind(t: &Tree, i: u32) -> Option<Kind> {
-    if is_apple_managed(t, i) {
+    if is_apple_managed(t, i) || is_inside_app_bundle(t, i) {
         return None;
     }
     let parent = t.parents[i as usize];
@@ -497,6 +564,110 @@ mod tests {
         // A non-Apple container cache under Library/Containers stays a candidate.
         let (scan, node) = chain(&["/", "Library", "Containers", "com.example.app", "Data", "Library", "Caches"]);
         assert_eq!(kind(&scan, node), Some(Kind::AppCaches));
+    }
+
+    #[test]
+    fn app_bundle_internals_are_not_candidates() {
+        // A bundle is one signed, sealed unit: its node_modules are shipped to
+        // be loaded at runtime, not build output to recreate. Offering them
+        // showed the user Moves that could only fail — measured on a real
+        // /Applications, an unfiltered scan offered exactly these two paths and
+        // the guard refused both ("Outside your home folder").
+        //
+        // A bundle fixture needs `Contents/Info.plist`: that structure is what
+        // distinguishes a bundle from a folder that merely ends in `.app` (see
+        // `is_app_bundle`). `bundle_app` adds the `.app` and its `Contents`
+        // directory and returns both, so the caller hangs the rest off it.
+        // Each directory's children are added in one batch, as `add` requires.
+        let bundle_app = |scan: &mut Tree, parent: u32, name: &str| {
+            let app = add(scan, parent, name, true, MIN_BYTES * 10);
+            let contents = add(scan, app, "Contents", true, MIN_BYTES * 10);
+            add(scan, contents, "Info.plist", false, 0);
+            (app, contents)
+        };
+
+        // /Applications/Bitwarden.app/Contents/Resources/app.asar.unpacked/node_modules
+        let mut scan = Tree::default();
+        add(&mut scan, NO_PARENT, "/", true, 0);
+        let apps = add(&mut scan, 0, "Applications", true, MIN_BYTES * 10);
+        let (_, bw_contents) = bundle_app(&mut scan, apps, "Bitwarden.app");
+        let resources = add(&mut scan, bw_contents, "Resources", true, MIN_BYTES * 10);
+        let unpacked = add(&mut scan, resources, "app.asar.unpacked", true, MIN_BYTES);
+        let bw_nm = add(&mut scan, unpacked, "node_modules", true, MIN_BYTES);
+        let scan = link(scan);
+        assert_eq!(kind(&scan, bw_nm), None, "Bitwarden's sealed node_modules");
+        assert!(
+            find(&scan, MIN_BYTES).iter().all(|c| c.node != bw_nm),
+            "a sealed bundle internal must not be offered at all"
+        );
+
+        // /Applications/Openship.app/Contents/Resources/dashboard/node_modules
+        let mut scan = Tree::default();
+        add(&mut scan, NO_PARENT, "/", true, 0);
+        let apps = add(&mut scan, 0, "Applications", true, MIN_BYTES * 10);
+        let (_, op_contents) = bundle_app(&mut scan, apps, "Openship.app");
+        let resources = add(&mut scan, op_contents, "Resources", true, MIN_BYTES * 10);
+        let dashboard = add(&mut scan, resources, "dashboard", true, MIN_BYTES);
+        let op_nm = add(&mut scan, dashboard, "node_modules", true, MIN_BYTES);
+        assert_eq!(kind(&link(scan), op_nm), None, "Openship's sealed node_modules");
+
+        // The same shape inside the home folder. The guard permits anything
+        // under $HOME, so this is the case where a nomination really would be
+        // acted on — and it still breaks the bundle's signature.
+        let mut scan = Tree::default();
+        add(&mut scan, NO_PARENT, "/Users/me", true, 0);
+        let lib = add(&mut scan, 0, "Library", true, MIN_BYTES * 10);
+        let support = add(&mut scan, lib, "Application Support", true, MIN_BYTES * 10);
+        let raycast = add(&mut scan, support, "com.raycast.macos", true, MIN_BYTES * 10);
+        let updates = add(&mut scan, raycast, "Updates", true, MIN_BYTES * 10);
+        let version = add(&mut scan, updates, "2.6.3", true, MIN_BYTES * 10);
+        let (_, rc_contents) = bundle_app(&mut scan, version, "Raycast.app");
+        let resources = add(&mut scan, rc_contents, "Resources", true, MIN_BYTES * 10);
+        let api = add(&mut scan, resources, "api", true, MIN_BYTES);
+        let rc_nm = add(&mut scan, api, "node_modules", true, MIN_BYTES);
+        assert_eq!(kind(&link(scan), rc_nm), None, "an in-home bundle is still sealed");
+
+        // A project outside any bundle is untouched: this is the rule's whole
+        // purpose and it must keep working.
+        let mut scan = Tree::default();
+        add(&mut scan, NO_PARENT, "/Users/me", true, 0);
+        let projects = add(&mut scan, 0, "projects", true, MIN_BYTES * 10);
+        let web = add(&mut scan, projects, "web", true, MIN_BYTES);
+        let proj_nm = add(&mut scan, web, "node_modules", true, MIN_BYTES);
+        assert_eq!(kind(&link(scan), proj_nm), Some(Kind::NodeModules));
+
+        // A folder that merely ends in `.app` is not a bundle — macOS names
+        // containers and app-support folders that way — so the folders inside
+        // it stay recognized.
+        let mut scan = Tree::default();
+        add(&mut scan, NO_PARENT, "/Users/me", true, 0);
+        let projects = add(&mut scan, 0, "projects", true, MIN_BYTES * 10);
+        let notabundle = add(&mut scan, projects, "com.example.app", true, MIN_BYTES);
+        let inner_nm = add(&mut scan, notabundle, "node_modules", true, MIN_BYTES);
+        assert_eq!(
+            kind(&link(scan), inner_nm),
+            Some(Kind::NodeModules),
+            "a plain folder named like a bundle is not one"
+        );
+
+        // The flat iOS/Unity layout: `Info.plist` at the bundle root and no
+        // `Contents/` at all. `/Applications/ARES.app` wraps one of these at
+        // `Wrapper/ARES.app`, so a `Contents`-only check descends into a signed
+        // inner bundle.
+        let mut scan = Tree::default();
+        add(&mut scan, NO_PARENT, "/Applications", true, 0);
+        let ares = add(&mut scan, 0, "ARES.app", true, MIN_BYTES * 10);
+        let wrapper = add(&mut scan, ares, "Wrapper", true, MIN_BYTES * 10);
+        let inner = add(&mut scan, wrapper, "ARES.app", true, MIN_BYTES * 10);
+        add(&mut scan, inner, "Info.plist", false, 0);
+        add(&mut scan, inner, "Resources", true, MIN_BYTES);
+        let nm = add(&mut scan, inner, "Resources", true, MIN_BYTES);
+        let flat_nm = add(&mut scan, nm, "node_modules", true, MIN_BYTES);
+        assert_eq!(
+            kind(&link(scan), flat_nm),
+            None,
+            "a flat wrapper bundle with root Info.plist is a bundle"
+        );
     }
 
     #[test]

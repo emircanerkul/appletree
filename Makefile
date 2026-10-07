@@ -52,7 +52,7 @@ SWIFT_FLAGS := -O -parse-as-library -swift-version 6 -default-isolation MainActo
                -framework DiskArbitration -framework IOKit
 
 .DEFAULT_GOAL := help
-.PHONY: help all build engine bundle open deploy deploy-sandbox deploy-sandbox-undo release test test-drawer test-deletion test-selection test-links test-readme test-doclinks test-router test-privacy test-planner-selection test-shellenv test-engine-writer test-l10n test-mapweights test-rust icon clean
+.PHONY: help all build engine bundle open deploy deploy-sandbox deploy-sandbox-undo release test test-drawer test-deletion test-selection test-links test-readme test-doclinks test-router test-privacy test-planner-selection test-prompt-scope test-shellenv test-engine-writer test-l10n test-mapweights test-rust icon clean
 
 help:
 	@echo 'AppleTree targets:'
@@ -76,6 +76,7 @@ help:
 	@echo '  make test-shellenv      a failed login shell still finds brew and uv'
 	@echo '  make test-engine-writer ProviderStore is the only owner of bz.engine'
 	@echo '  make test-l10n          every .strings table has the same keys, no duplicates'
+	@echo '  make test-prompt-scope  the planner prompt only describes folders the scan covered'
 	@echo '  make test-rust          cargo test --release'
 	@echo '  make engine             cargo build --release only'
 	@echo '  make icon               regenerate AppIcon source (assets/gen_icon.py)'
@@ -405,7 +406,7 @@ test-rust:
 # bz_cleanup_allowlist FFI (fail-closed).
 # The .strings check runs first: it is instant, and a table that drifted is a
 # bug the Swift tests cannot see, so there is no reason to compile first.
-test: engine test-l10n test-drawer test-deletion test-selection test-mapweights test-links test-readme test-doclinks test-router test-privacy test-planner-selection test-shellenv test-engine-writer
+test: engine test-l10n test-drawer test-deletion test-selection test-mapweights test-links test-readme test-doclinks test-router test-privacy test-planner-selection test-prompt-scope test-shellenv test-engine-writer
 	@mkdir -p .build
 	swiftc tests/swift/main.swift app/CleanupGuard.swift \
 	    -import-objc-header app/bz.h \
@@ -561,6 +562,24 @@ test-planner-selection:
 	    -target arm64-apple-macos$(MIN_MACOS) -framework Security \
 	    -o .build/planner-selection-tests
 	.build/planner-selection-tests
+
+# The planner prompt's scope: it may only describe folders the scan covered.
+# An /Applications scan used to hand the planner Xcode's /System simulator
+# runtimes, because `AgentPrompt.appData()` appended that section
+# unconditionally, so the plan filled with cards for folders never scanned.
+# Compiled against the real shipping sources (whole app except Main.swift)
+# because the gate turns on `Tree.node(at:)` and the real `simctl` output.
+test-prompt-scope: engine
+	@mkdir -p .build
+	swiftc tests/swift/prompt-scope.swift $(filter-out app/Main.swift,$(wildcard app/*.swift)) \
+	    -import-objc-header app/bz.h \
+	    -parse-as-library \
+	    -swift-version 6 -default-isolation MainActor \
+	    -target arm64-apple-macos$(MIN_MACOS) \
+	    -L target/release -lappletree \
+	    -framework DiskArbitration -framework IOKit -framework Security \
+	    -o .build/prompt-scope-tests
+	.build/prompt-scope-tests
 
 # The shell PATH a cleanup command runs under. A login shell that fails or
 # times out prints no BZPATH=, and the old code kept the bare Apple default —

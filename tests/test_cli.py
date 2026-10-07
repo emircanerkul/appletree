@@ -99,6 +99,29 @@ class AgentCLITests(unittest.TestCase):
             self.file(path)
         self.assertEqual(self.wins()["candidates"], [])
 
+    def test_app_bundle_internals_are_not_candidates(self):
+        # A bundle is one signed, sealed unit: its node_modules ship with the
+        # app and are loaded at runtime, not build output to recreate. Measured
+        # on a real /Applications, an unfiltered scan offered exactly two such
+        # paths (Bitwarden's app.asar.unpacked/node_modules and Openship's
+        # dashboard/node_modules) and the guard refused both; moving either one
+        # makes `codesign --verify --strict` report "a sealed resource is
+        # missing or invalid". Recognition must not nominate what authorization
+        # refuses, so neither may be a candidate.
+        self.file("Bitwarden.app/Contents/Info.plist")
+        self.file("Bitwarden.app/Contents/Resources/app.asar.unpacked/node_modules/file")
+        self.file("Openship.app/Contents/Info.plist")
+        self.file("Openship.app/Contents/Resources/dashboard/node_modules/file")
+        # A folder that merely ends in `.app` is not a bundle — macOS names
+        # containers and app-support folders that way — so what is inside it
+        # stays a candidate.
+        self.file("com.example.app/node_modules/file")
+        candidates = self.wins("--limit", "100")["candidates"]
+        paths = {Path(c["path"]).relative_to(self.home).as_posix() for c in candidates}
+        self.assertNotIn("Bitwarden.app/Contents/Resources/app.asar.unpacked/node_modules", paths)
+        self.assertNotIn("Openship.app/Contents/Resources/dashboard/node_modules", paths)
+        self.assertIn("com.example.app/node_modules", paths)
+
     def test_no_nested_candidates_or_overlapping_totals(self):
         self.file("project/package.json")
         self.file("project/node_modules/inner/package.json")

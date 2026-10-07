@@ -154,7 +154,7 @@ final class AgentRun {
             guard !Task.isCancelled else { return }
             let input = await Task.detached(priority: .userInitiated) {
                 AgentPrompt.build(tree: tree, scanRoot: scanRoot, known: known, running: running)
-                + AgentPrompt.appData()
+                + AgentPrompt.appData(tree: tree)
             }.value
             // Closing or replacing a run while its prompt was being built
             // must not start a request after cancellation.

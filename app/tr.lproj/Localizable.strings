@@ -171,6 +171,7 @@
    CleanupGuard.blockReason and the run planner. Mechanical first-pass
    translations — please review. */
 "Outside your home folder" = "Ev klasörünün dışında";
+"Inside a signed app bundle" = "İmzalı bir uygulama paketinin içinde";
 "Too broad: other apps keep live data here" = "Çok geniş: diğer uygulamalar burada etkin veri tutuyor";
 "In ~/%@, which AppleTree never cleans" = "AppleTree'nin asla temizlemediği ~/%@ içinde";
 "A git repository" = "Bir Git deposu";

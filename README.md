@@ -199,7 +199,7 @@ scan summary: a custom model provider gets no tools at all. It writes a plan,
 and AppleTree then acts on that plan behind its own checks, whatever the plan
 says:
 
-- Only paths inside your home folder, never Documents, Desktop, Photos, iCloud Drive, Mail, keychains or `~/.ssh` (build output such as `node_modules` inside them is allowed), never a git repository, and never a whole folder such as `~/Library/Caches`
+- Only paths inside your home folder, never Documents, Desktop, Photos, iCloud Drive, Mail, keychains or `~/.ssh` (build output such as `node_modules` inside them is allowed), never a git repository, never a whole folder such as `~/Library/Caches`, and never anything inside a signed app bundle — a bundle's own folders are sealed by its code signature, so removing one invalidates the app
 - Only each tool's own cleanup commands (`uv cache clean`, `brew cleanup`, `npm cache clean` and similar, plus `xcrun simctl` for Xcode simulator runtimes and device data), with no shell syntax
 - Projects you used in the last 2 days are left alone
 - Caches belonging to apps that are open are skipped until you quit them

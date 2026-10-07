@@ -6,6 +6,32 @@ import SwiftUI
 // MARK: - What the planner is told
 
 nonisolated enum AgentPrompt {
+    /// Whether `i` is an installed application bundle.
+    ///
+    /// Its whole subtree is withheld from the tables below. A bundle is sealed
+    /// by its code signature, so anything inside it is off limits
+    /// (`CleanupGuard` refuses it as "Inside a signed app bundle"), and the
+    /// planner must never be invited to nominate it — a card that can only be
+    /// blocked is a Move the user cannot act on. The name alone is not enough:
+    /// macOS names containers `com.example.app`, which are ordinary folders.
+    ///
+    /// Both bundle layouts count, matching `CleanupGuard.isBundle`: the classic
+    /// `Contents/Info.plist`, and the flat iOS/Unity wrapper whose
+    /// `Info.plist` sits at the bundle root (`/Applications/ARES.app` wraps one
+    /// at `Wrapper/ARES.app`).
+    static func isAppBundle(_ tree: Tree, _ i: Int) -> Bool {
+        guard tree.isDir(i), tree.name(i).hasSuffix(".app") else { return false }
+        for child in tree.children(i) {
+            let name = tree.name(Int(child))
+            if name == "Info.plist" { return true }
+            if name == "Contents",
+               tree.children(Int(child)).contains(where: { tree.name(Int($0)) == "Info.plist" }) {
+                return true
+            }
+        }
+        return false
+    }
+
     /// The flat tree orders siblings by size and includes descendants in
     /// each directory's total. Small subtrees cannot contribute a row.
     static func largestNodes(in tree: Tree) -> (folders: [Int], files: [Int]) {
@@ -17,6 +43,15 @@ nonisolated enum AgentPrompt {
                 let i = Int(raw), size = tree.alloc[i]
                 guard size >= 100_000_000 else { break }
                 if tree.isDir(i) {
+                    // A bundle and its whole subtree stay out of the tables,
+                    // the bundle's own row included. Keeping the row was worse
+                    // than useless: `/Applications/Xcode.app` is the largest
+                    // thing there, so listing it invited the planner to
+                    // nominate a sealed bundle, and the guard then refused the
+                    // card — the user sees an option they cannot select, which
+                    // is the very complaint this withholds. Nothing inside a
+                    // bundle is ever cleanable, so there is no row to offer.
+                    if isAppBundle(tree, i) { continue }
                     stack.append(i)
                     // Still descend through pass-through folders: only their
                     // redundant table row is omitted.
@@ -107,9 +142,18 @@ nonisolated enum AgentPrompt {
 
     /// Big folders the scan alone can't explain: Xcode's simulators, whose
     /// runtime images live outside the home folder and go only through
-    /// `simctl`. Listed with what the planner needs to plan them.
-    static func appData() -> String {
-        simulators()
+    /// `simctl`. Listed with what the planner needs to plan them — but only
+    /// what the scan actually covered.
+    ///
+    /// `tree` is the scanned tree, and it is what decides: a row is kept only
+    /// when its path resolves in that tree. `simctl` reports paths that are
+    /// real on the machine but sit outside a folder scan, and handing those to
+    /// the planner on an `/Applications` scan produced a plan of nothing but
+    /// `/System/Library/AssetsV2/…` simulator runtimes — cards for folders the
+    /// user never scanned, in a panel headed "Here's the plan" for the folder
+    /// they did scan. Every path offered must be one the scan reached.
+    static func appData(tree: Tree) -> String {
+        simulators(tree: tree)
     }
 
     private static func ago(_ date: Date?) -> String {
@@ -118,7 +162,20 @@ nonisolated enum AgentPrompt {
         return days < 1 ? "today" : days == 1 ? "yesterday" : "\(days) days ago"
     }
 
-    private static func simulators() -> String {
+    /// The `.asset` folder a runtime's reported path belongs to.
+    ///
+    /// `simctl runtime list -j` reports
+    /// `…/com_apple_MobileAsset_iOSSimulatorRuntime/<hash>.asset/AssetData/Restore/<n>.dmg`.
+    /// The plan names the whole asset folder — `xcrun simctl runtime delete`
+    /// takes the runtime and removes that — so coverage is judged on it. Paths
+    /// with no `.asset` component yield "" and are treated as uncovered.
+    static func assetFolder(ofReportedPath path: String) -> String {
+        let parts = path.split(separator: "/").map(String.init)
+        guard let end = parts.firstIndex(where: { $0.hasSuffix(".asset") }) else { return "" }
+        return "/" + parts[0...end].joined(separator: "/")
+    }
+
+    private static func simulators(tree: Tree) -> String {
         // Run simctl straight from the selected Xcode: /usr/bin/xcrun would
         // offer to install the command line tools on a Mac without them.
         let developer = ShellRunner.run("/usr/bin/xcode-select", ["-p"]).output
@@ -136,12 +193,20 @@ nonisolated enum AgentPrompt {
         for image in images.sorted(by: { ($0["sizeBytes"] as? Int64 ?? 0) > ($1["sizeBytes"] as? Int64 ?? 0) }) {
             guard let id = image["identifier"] as? String, image["deletable"] as? Bool ?? true,
                   let size = image["sizeBytes"] as? Int64, size >= 100_000_000 else { continue }
+            // Only what the scan reached (see `appData`). `simctl` reports the
+            // runtime's `.dmg`, which is a file deep inside the asset folder
+            // and can be absent from the tree; the `.asset` directory is the
+            // path the plan card names and the one `tree.node(at:)` resolves,
+            // so coverage is judged on it.
+            let reported = image["path"] as? String ?? ""
+            let asset = assetFolder(ofReportedPath: reported)
+            guard !asset.isEmpty, tree.node(at: asset) != nil else { continue }
             // "com.apple.CoreSimulator.SimRuntime.iOS-27-0" → "iOS"
             let platform = (image["runtimeIdentifier"] as? String)?.split(separator: ".").last?
                 .split(separator: "-").first.map(String.init) ?? "Simulator"
             let version = image["version"] as? String ?? ""
             runtimes += "| \(Fmt.size(UInt64(size))) | \(platform) \(version) | \(ago(date(image["lastUsedAt"]))) "
-                + "| \(id) | \(image["path"] as? String ?? "") |\n"
+                + "| \(id) | \(asset) |\n"
         }
 
         var devices = ""
@@ -151,6 +216,9 @@ nonisolated enum AgentPrompt {
             guard let udid = device["udid"] as? String, let data = device["dataPath"] as? String,
                   let size = device["dataPathSize"] as? Int64, size >= 100_000_000 else { continue }
             let folder = (data as NSString).deletingLastPathComponent
+            // Same coverage rule: a device's data folder is under the scanned
+            // root only when the scan covered it.
+            guard tree.node(at: folder) != nil else { continue }
             let state = device["state"] as? String ?? ""
             devices += "| \(Fmt.size(UInt64(size))) | \(device["name"] as? String ?? "") (\(state)) "
                 + "| \(ago(date(device["lastUsedAt"]))) | \(udid) | \(folder) |\n"

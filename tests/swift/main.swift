@@ -100,6 +100,50 @@ check("/var blocked", CleanupGuard.blockReason(path: "/var/log") != nil)
 // A path with .. must not escape the rules via string tricks.
 check(".. traversal judged safely", CleanupGuard.blockReason(path: "/tmp/../Users/x") != nil)
 
+// --- Signed app bundles ------------------------------------------------------
+//
+// A bundle is one sealed unit: removing a folder inside it invalidates the
+// app's signature (verified with `codesign --verify --strict` on real bundles,
+// which then reports "a sealed resource is missing or invalid"). A `.app` in
+// /Applications used to be refused only for being outside $HOME, which named
+// the wrong cause — and, for the many bundles inside the home folder, was no
+// protection at all.
+
+// A real bundle under $HOME: the guard permits everything there, so this is
+// the case where a nomination would actually be acted on.
+let bundleRoot = home + "/Library/Application Support/com.raycast.macos/Updates/2.6.3/Raycast.app"
+try? fm.createDirectory(atPath: bundleRoot + "/Contents", withIntermediateDirectories: true)
+try? "plist".write(toFile: bundleRoot + "/Contents/Info.plist", atomically: true, encoding: .utf8)
+try? fm.createDirectory(atPath: bundleRoot + "/Contents/Resources/api/node_modules",
+                        withIntermediateDirectories: true)
+check("a bundle inside the home folder is refused",
+      CleanupGuard.blockReason(path: bundleRoot + "/Contents/Resources/api/node_modules")
+        == "Inside a signed app bundle",
+      CleanupGuard.blockReason(path: bundleRoot + "/Contents/Resources/api/node_modules") ?? "nil")
+// The same reason, rather than the misleading home rule, once outside it.
+let outsideBundle = fm.temporaryDirectory.path + "/guard-bundle-\(ProcessInfo.processInfo.processIdentifier).app"
+try? fm.createDirectory(atPath: outsideBundle + "/Contents", withIntermediateDirectories: true)
+try? "plist".write(toFile: outsideBundle + "/Contents/Info.plist", atomically: true, encoding: .utf8)
+let outsideNM = outsideBundle + "/Contents/Resources/node_modules"
+try? fm.createDirectory(atPath: outsideNM, withIntermediateDirectories: true)
+check("a bundle outside the home names the bundle, not the home rule",
+      CleanupGuard.blockReason(path: outsideNM) == "Inside a signed app bundle",
+      CleanupGuard.blockReason(path: outsideNM) ?? "nil")
+// A folder that merely ends in `.app` is not a bundle: macOS names containers
+// and app-support folders that way, and their contents stay permitted.
+try? fm.createDirectory(atPath: path("Library/Application Support/com.example.app/Caches"),
+                        withIntermediateDirectories: true)
+check("a folder merely named *.app is not a bundle",
+      CleanupGuard.blockReason(path: path("Library/Application Support/com.example.app/Caches")) == nil,
+      CleanupGuard.blockReason(path: path("Library/Application Support/com.example.app/Caches")) ?? "nil")
+// A normal project stays permitted.
+check("a project outside any bundle is still permitted",
+      CleanupGuard.blockReason(path: ws + "/node_modules") == nil,
+      CleanupGuard.blockReason(path: ws + "/node_modules") ?? "nil")
+try? fm.removeItem(atPath: bundleRoot)
+try? fm.removeItem(atPath: home + "/Library/Application Support/com.example.app")
+try? fm.removeItem(atPath: outsideBundle)
+
 // --- Guard categories, pinned by message --------------------------------------
 check("managed by macOS", CleanupGuard.blockReason(path: path("Library/Containers/com.apple.Safari")) == "Managed by macOS",
       CleanupGuard.blockReason(path: path("Library/Containers/com.apple.Safari")) ?? "nil")

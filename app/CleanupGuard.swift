@@ -96,6 +96,57 @@ nonisolated enum CleanupGuard {
         !token.isEmpty && !token.hasPrefix("-") && token != "all"
     }
 
+    /// The enclosing application bundle of `path`, when there is one.
+    ///
+    /// A bundle is one sealed, signed unit: its inner folders are what the app
+    /// ships and loads at runtime, so removing one invalidates the app's
+    /// signature. Verified on real bundles — moving
+    /// `Bitwarden.app/Contents/Resources/app.asar.unpacked/node_modules` or
+    /// `…/Openship.app/Contents/Resources/dashboard/node_modules` makes
+    /// `codesign --verify --strict` report "a sealed resource is missing or
+    /// invalid", and `spctl` rejects the app. Those sighed internals are what
+    /// an Electron app `dlopen`s (native modules sit beside `app.asar`).
+    ///
+    /// The guard must refuse them for a reason of its own, not by accident:
+    /// `/Applications` is refused merely for being outside `$HOME`, which is a
+    /// misleading explanation for a sealed bundle and no protection at all for
+    /// the many bundles that live *inside* the home folder. Measured on this
+    /// machine: `~/Library/Application Support/com.raycast.macos/Updates/…/
+    /// Raycast.app/Contents/Resources/…/api/node_modules` is inside `$HOME`,
+    /// so the guard permitted it, and moving it breaks that bundle's
+    /// signature (50 sealed entries).
+    ///
+    /// Whether `dir` really is an application bundle rather than a folder that
+    /// merely ends in `.app`.
+    ///
+    /// Two layouts occur in practice and both must count:
+    ///
+    /// - the classic macOS bundle, `Contents/Info.plist` — every native app;
+    /// - the flat iOS/Unity wrapper, which carries its `Info.plist` at the
+    ///   bundle root and has no `Contents/` at all. `/Applications/ARES.app`
+    ///   wraps one at `Wrapper/ARES.app`, and testing for `Contents` alone
+    ///   walked straight into that signed inner bundle.
+    ///
+    /// Real container and support folders carry neither marker
+    /// (`~/Library/Application Support/com.cmuxterm.app`), so this stays
+    /// precise instead of refusing them by name.
+    private static func isBundle(_ dir: String) -> Bool {
+        guard (dir as NSString).lastPathComponent.hasSuffix(".app") else { return false }
+        if FileManager.default.fileExists(atPath: dir + "/Contents/Info.plist") { return true }
+        return FileManager.default.fileExists(atPath: dir + "/Info.plist")
+    }
+
+    private static func enclosingBundle(_ path: String) -> String? {
+        var dir = path
+        while dir.count > 1 {
+            if isBundle(dir) { return dir }
+            let parent = (dir as NSString).deletingLastPathComponent
+            if parent == dir { break }
+            dir = parent
+        }
+        return nil
+    }
+
     /// Why a path may not be touched, or nil when it may.
     static func blockReason(path: String) -> String? {
         // Resolve before matching: `trashItem` follows a symlink in the last
@@ -105,6 +156,13 @@ nonisolated enum CleanupGuard {
         let p = ((path as NSString).resolvingSymlinksInPath as NSString).standardizingPath
         // Reason strings are user-visible safety communication (T7): routed
         // through String(localized:), keys in all 7 .lproj tables.
+        //
+        // Judged before the home rule, so a sealed bundle gets the reason that
+        // is actually true of it. A bundle inside `$HOME` used to pass, and one
+        // outside it was refused as "Outside your home folder" — a message that
+        // named the wrong cause and, once the user's own scan root was
+        // `/Applications`, read as a bug in the app rather than a rule.
+        if enclosingBundle(p) != nil { return String(localized: "Inside a signed app bundle") }
         guard p.hasPrefix(home + "/") else { return String(localized: "Outside your home folder") }
         let rel = p.dropFirst(home.count + 1)
         guard rel.split(separator: "/").count >= 2 || rel.hasPrefix("."), !tooBroad.contains(p) else {
