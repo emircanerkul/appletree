@@ -4,34 +4,11 @@ import Observation
 import SwiftUI
 
 // Guards (enforced here, never left to the model)
-/// When Codex last worked in each folder, from its session logs: every
-/// rollout file opens with the chat's working folder and is appended to as
-/// the chat goes on.
-nonisolated enum CodexSessions {
-    static func lastActive(since: Date? = nil) -> [String: Date] {
-        let home = ProcessInfo.processInfo.environment["CODEX_HOME"] ?? NSHomeDirectory() + "/.codex"
-        let root = URL(fileURLWithPath: home + "/sessions")
-        guard let files = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.contentModificationDateKey])
-        else { return [:] }
-        var active: [String: Date] = [:]
-        for case let url as URL in files where url.pathExtension == "jsonl" {
-            guard let date = try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate,
-                  since.map({ date > $0 }) ?? true,
-                  let file = try? FileHandle(forReadingFrom: url) else { continue }
-            let head = String(decoding: (try? file.read(upToCount: 8192)) ?? Data(), as: UTF8.self)
-            try? file.close()
-            guard let match = head.firstMatch(of: /"cwd":"((?:[^"\\]|\\.)*)"/) else { continue }
-            let cwd = String(match.1).replacingOccurrences(of: "\\/", with: "/")
-            active[cwd] = max(active[cwd] ?? date, date)
-        }
-        return active
-    }
-}
 
 nonisolated enum CleanupGuard {
     static let home = NSHomeDirectory()
 
-    /// Folders AppleTree never cleans, whatever the agent says.
+    /// Folders AppleTree never cleans, whatever the plan says.
     static let protected = [
         "Documents", "Desktop", "Pictures", "Movies", "Music", ".ssh", ".gnupg", ".Trash",
         "Library/Mobile Documents", "Library/Mail", "Library/Messages", "Library/Keychains",
@@ -71,8 +48,8 @@ nonisolated enum CleanupGuard {
     ].map { home + "/" + $0 }
 
     /// The allowlist, single source of truth in Rust (`src/cleanup.rs`), read
-    /// once through the bridge. Order is the table's: the agent prompt depends
-    /// on it to list commands exactly as Rust owns them.
+    /// once through the bridge. Order is the table's: the planner prompt
+    /// depends on it to list commands exactly as Rust owns them.
     static let allowlistCommands: [String] = {
         let count = Int(bz_cleanup_allowlist_count())
         // Empty means the bridge failed: the guard then blocks every command
@@ -139,8 +116,8 @@ nonisolated enum CleanupGuard {
         }
         for dir in protected where p == dir || p.hasPrefix(dir + "/") {
             // Projects live in Documents too; their build output is still fair
-            // game, and so are Codex's chat folders (the user decides those).
-            let allowed = rebuildable.contains((p as NSString).lastPathComponent) || codexChat(p) != nil
+            // game.
+            let allowed = rebuildable.contains((p as NSString).lastPathComponent)
             if !allowed || dir.hasSuffix(".Trash") {
                 return String(localized: "In ~/\(dir.dropFirst(home.count + 1)), which AppleTree never cleans")
             }
@@ -178,30 +155,12 @@ nonisolated enum CleanupGuard {
         return nil
     }
 
-    /// The Codex app keeps each chat's files in ~/Documents/Codex/<date>/<chat>
-    /// (outputs, work). Returns that chat folder for a path at or inside one.
-    static func codexChat(_ path: String) -> String? {
-        let root = home + "/Documents/Codex/"
-        let p = (path as NSString).standardizingPath
-        guard p.hasPrefix(root) else { return nil }
-        let parts = p.dropFirst(root.count).split(separator: "/")
-        guard parts.count >= 2, parts[0].wholeMatch(of: /\d{4}-\d{2}-\d{2}/) != nil else { return nil }
-        return root + parts[0] + "/" + parts[1]
-    }
-
     /// Whether the project owning this build folder was used in the last two
     /// days: its git index (touched by every status, commit or checkout), the
-    /// project folder or the folder itself changed recently. A Codex chat
-    /// counts as used when it started or Codex worked in it since (folder
-    /// dates are no help there: Finder's .DS_Store writes bump them).
+    /// project folder or the folder itself changed recently.
     static func recentlyUsed(_ path: String, within: TimeInterval = 2 * 86400) -> Bool {
         let fm = FileManager.default
         let cutoff = Date().addingTimeInterval(-within)
-        if let chat = codexChat(path) {
-            let day = ((chat as NSString).deletingLastPathComponent as NSString).lastPathComponent
-            if let started = try? Date(day + "T23:59:59Z", strategy: .iso8601), started > cutoff { return true }
-            return CodexSessions.lastActive(since: cutoff).keys.contains { $0 == chat || $0.hasPrefix(chat + "/") }
-        }
         let url = URL(fileURLWithPath: path)
         guard rebuildable.contains(url.lastPathComponent) else { return false }
         let project = url.deletingLastPathComponent()

@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 /// Right-hand inspector: what can be reclaimed, pick, trash, rescan. While an
-/// agent cleanup is on screen, the whole panel is that run.
+/// AI cleanup is on screen, the whole panel is that run.
 struct CleanupPanel: View {
     let model: ScanModel
     /// Raises the Settings window. Needed to reach the add-provider form, which
@@ -18,8 +18,9 @@ struct CleanupPanel: View {
     /// convention already uses for anything that outlives one scan.
     @State private var picked: Set<String> = []
     @State private var confirming = false
-    /// The agent a sign-out was confirmed for, or nil.
-    @State private var signingOut: AgentKind?
+    /// Whether the planner list is open. A popover, not a `Menu`: each row
+    /// carries its own edit control, which a native menu row cannot host.
+    @State private var showingPlannerMenu = false
 
     /// The single source of truth for what Move acts on: the ticks that still
     /// resolve against the CURRENT scan. Every other read of the selection —
@@ -50,19 +51,6 @@ struct CleanupPanel: View {
         } message: {
             Text("You can put them back from the Trash until you empty it. The tools that made them rebuild them when needed.")
         }
-        .confirmationDialog(signOutTitle, isPresented: Binding(
-            get: { signingOut != nil }, set: { if !$0 { signingOut = nil } }
-        ), titleVisibility: .visible) {
-            if let kind = signingOut {
-                Button(String(localized: "Sign out of \(kind.name)"), role: .destructive) {
-                    signingOut = nil
-                    Task { await model.signOut(kind) }
-                }
-            }
-            Button("Cancel", role: .cancel) { signingOut = nil }
-        } message: {
-            Text(signOutMessage)
-        }
         // App Store Guideline 5.1.2(i): explicit permission before personal data
         // goes to a third party, "including with third-party AI". The disclosure
         // names the destination and describes the payload, and no cleanup starts
@@ -91,24 +79,6 @@ struct CleanupPanel: View {
         } message: {
             Text(model.cleanupTrash.failures.joined(separator: "\n"))
         }
-        .alert("Couldn't sign out", isPresented: Binding(
-            get: { model.signOutFailure != nil }, set: { if !$0 { model.signOutFailure = nil } }
-        )) {
-            Button("OK") { model.signOutFailure = nil }
-        } message: {
-            Text(model.signOutFailure ?? "")
-        }
-    }
-
-    /// Sign-out cannot happen mid-run: the engine would lose its planner.
-    private var signOutTitle: String {
-        guard let kind = signingOut else { return "" }
-        return String(localized: "Sign out of \(kind.name)?")
-    }
-
-    private var signOutMessage: String {
-        guard let kind = signingOut else { return "" }
-        return String(localized: "\(kind.name) forgets the account it is signed in with. The next plan needs a browser sign-in again. Nothing else on your Mac changes.")
     }
 
     private var reclaimable: some View {
@@ -158,7 +128,7 @@ struct CleanupPanel: View {
 
             Divider()
             VStack(spacing: 8) {
-                agentButton
+                primaryControls
                     .disabled(model.cleanupTrash.running)
                 Button {
                     confirming = true
@@ -179,62 +149,41 @@ struct CleanupPanel: View {
 
     /// What the primary button runs, and the menu that reaches everything else.
     ///
-    /// This used to be an `if / else if` chain whose menu was itself gated on
-    /// `ready.count > 1 || !providers.isEmpty`. On this app's most common state
-    /// — one agent signed in, no custom provider — that rendered one bare
-    /// button with no menu at all, so a signed-in agent could not be swapped or
-    /// removed. Both halves are now unconditional: exactly one primary action
-    /// for the planner in effect, and always a menu built from the one catalog,
-    /// whatever is installed.
-    @ViewBuilder private var agentButton: some View {
-        if let setup = model.agentSetup {
-            SetupProgress(setup: setup) {
-                setup.cancel()
-                model.agentSetup = nil
-            } retry: {
-                model.setUp(setup.kind)
+    /// Both halves are unconditional: exactly one primary action for the
+    /// planner in effect, and always a menu built from the one catalog,
+    /// whatever is configured.
+    @ViewBuilder private var primaryControls: some View {
+        // The onboarding line the first-run panel carried. With no planner
+        // configured the user has just arrived and does not yet know what the
+        // button will do, so the explanation sits beside it.
+        if model.preferredChoice == nil {
+            VStack(alignment: .leading, spacing: 2) {
+                Label("Let AI clean up for you", systemImage: "sparkles")
+                    .font(.headline)
+                Text(String(localized: "Add a model provider and it plans what can go from this scan."))
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-        } else {
-            // The onboarding line the first-run panel carried. With nothing
-            // runnable the user has just arrived and does not yet know what the
-            // button will do, so the explanation sits beside it — derived from
-            // the *same* resolved choice the button uses.
-            if let choice = model.preferredChoice, !choice.runnable {
-                VStack(alignment: .leading, spacing: 2) {
-                    Label("Let AI clean up for you", systemImage: "sparkles")
-                        .font(.headline)
-                    Text(onboardingLine(choice))
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(3)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            HStack(spacing: 6) {
-                primaryAction
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        HStack(spacing: 6) {
+            primaryAction
+            // The menu switches between configured planners. With none
+            // configured its only row is "Add a model provider…", which is
+            // exactly what the primary button already offers — so it is hidden
+            // rather than shown as a second way to reach the same form.
+            if model.preferredChoice != nil {
                 plannerMenu
             }
-            .disabled(model.tree == nil || model.scanning || model.cleanupTrash.running)
         }
+        .disabled(model.tree == nil || model.scanning || model.cleanupTrash.running)
     }
 
-    /// The one-click path for the planner the user picked. Copy and behaviour
-    /// stay exactly as before for each kind; only the choice of *which* kind is
-    /// now owned by the catalog rather than this view.
+    /// The one-click path for the planner the user picked.
     @ViewBuilder private var primaryAction: some View {
-        switch model.preferredChoice {
-        case .agent(let agent):
-            Button {
-                model.startAgent(agent)
-            } label: {
-                Label(String(localized: "Clean up with \(agent.kind.name)"), systemImage: "sparkles")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .help(String(localized: "\(agent.kind.name) reads this scan and suggests what can go. Nothing is removed until you say so."))
-        case .provider(let provider):
+        if let provider = model.preferredChoice?.provider {
             // A custom endpoint needs no install or sign-in: it is ready once
             // its model and key are set in Settings.
             Button {
@@ -246,35 +195,11 @@ struct CleanupPanel: View {
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
             .help(String(localized: "\(provider.displayName) reads this scan and suggests what can go. Nothing is removed until you say so."))
-        case .agentSignedOut(let kind):
-            Button {
-                model.setUp(kind)
-            } label: {
-                Label(String(localized: "Sign in to \(kind.name)"), systemImage: "person.crop.circle.badge.checkmark")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .help(String(localized: "\(kind.name) is installed but signed out. Signing in lets it plan what can go."))
-        case .agentMissing(let kind):
-            Button {
-                model.setUp(kind)
-            } label: {
-                Label(String(localized: "Set up \(kind.name)"), systemImage: "arrow.down.circle")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .help(kind == .codex ? String(localized: "Free with a ChatGPT account.")
-                                 : String(localized: "Needs a Claude Pro plan."))
-        case .none:
-            // Nothing resolves at all (the catalog is still loading). The menu
-            // beside it is built from `AgentKind.allCases`, so it stays usable.
-            //
-            // A Button, not a `SettingsLink`: SettingsLink only opens Settings,
-            // leaving the user on whichever pane was showing with no way to
-            // reach the form. This opens Model Providers with the add-provider
-            // sheet already up.
+        } else {
+            // Nothing is configured yet. A Button, not a `SettingsLink`:
+            // SettingsLink only opens Settings, leaving the user on whichever
+            // pane was showing with no way to reach the form. This opens Model
+            // Providers with the add-provider sheet already up.
             Button {
                 model.addModelProvider { openSettings() }
             } label: {
@@ -287,16 +212,15 @@ struct CleanupPanel: View {
         }
     }
 
-    /// Every planner, always reachable. This is the control whose absence the
-    /// user hit: with one agent signed in there was no menu to swap it, and no
-    /// way at all to sign it out.
+    /// Every planner, always reachable.
+    ///
+    /// A popover rather than a `Menu`: each row needs its own edit control, and
+    /// a native menu button belongs to the menu, so a second tappable target
+    /// inside a row cannot exist there. The popover also shows the provider's
+    /// model and endpoint, which a one-line menu row had nowhere to put.
     private var plannerMenu: some View {
-        Menu {
-            runSection
-            if !model.agentEnv.ready.isEmpty {
-                Divider()
-                accountSection
-            }
+        Button {
+            showingPlannerMenu.toggle()
         } label: {
             Image(systemName: "chevron.down")
         }
@@ -312,72 +236,88 @@ struct CleanupPanel: View {
         .fixedSize()
         .help(String(localized: "Choose the planner"))
         .accessibilityLabel(String(localized: "Choose the planner"))
+        .popover(isPresented: $showingPlannerMenu, arrowEdge: .bottom) {
+            plannerList
+        }
     }
 
-    /// The planners to run: everything that can start now, then what needs one
-    /// setup step, then the way to add a provider. Between them these always
-    /// list both agents, so the menu is never empty.
-    @ViewBuilder private var runSection: some View {
-        let choices = model.plannerChoices
-        ForEach(choices.filter(\.runnable)) { choice in
-            Button(choice.label) { activate(choice) }
-        }
-        let needsWork = choices.filter { !$0.runnable && $0.kind != nil }
-        if !needsWork.isEmpty {
-            Divider()
-            ForEach(needsWork) { choice in
-                Button(choice.menuLabel) { activate(choice) }
-            }
-        }
-        // A real menu row rather than a `SettingsLink`, which rendered as plain
-        // text here and could only open Settings, not the add-provider form.
-        Divider()
-        Button(String(localized: "Add a model provider…")) { model.addModelProvider { openSettings() } }
-    }
+    /// The planners to run, each with its own edit control, then the way to
+    /// manage the list. Every configured provider is listed, so switching is
+    /// always reachable.
+    @ViewBuilder private var plannerList: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(model.plannerChoices) { choice in
+                // Three sibling buttons rather than one row-sized one: the edit
+                // control must sit immediately after the title, and a button
+                // that wrapped the whole row would either swallow the pencil's
+                // click (nested buttons) or push it out to the far right, past
+                // the wider details line. Splitting the run action across the
+                // title and the details keeps both clickable while leaving the
+                // pencil exactly where it belongs.
+                VStack(alignment: .leading, spacing: 1) {
+                    HStack(spacing: 4) {
+                        Button {
+                            showingPlannerMenu = false
+                            activate(choice)
+                        } label: {
+                            Text(choice.label)
+                        }
+                        .buttonStyle(.plain)
 
-    /// Signing out is the recovery path for a wrong or stale account, and the
-    /// litigated half of the report: the app could install and sign in but had
-    /// no way back out at all.
-    @ViewBuilder private var accountSection: some View {
-        ForEach(model.agentEnv.ready) { agent in
-            Button(String(localized: "Sign out of \(agent.kind.name)"), role: .destructive) {
-                signingOut = agent.kind
+                        // Edits *this* provider rather than sending the user to
+                        // the pane to find the row: a provider is app-owned data,
+                        // so its form can be raised directly, named by id.
+                        Button {
+                            showingPlannerMenu = false
+                            model.editModelProvider(choice.provider) { openSettings() }
+                        } label: {
+                            // Smaller than the title so it reads as a control on
+                            // the name, not a second title.
+                            Image(systemName: "pencil")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.borderless)
+                        .help(String(localized: "Edit \(choice.provider.displayName)"))
+                        .accessibilityLabel(String(localized: "Edit \(choice.provider.displayName)"))
+                    }
+
+                    Button {
+                        showingPlannerMenu = false
+                        activate(choice)
+                    } label: {
+                        Text("\(choice.provider.model) · \(choice.provider.baseURL.absoluteString)")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 3)
+                .padding(.horizontal, 6)
             }
+
+            // No divider above this row: the pane it opens is where providers
+            // are added and edited, so the row reads as one more item in the
+            // same list rather than a separated section.
+            //
+            // "Manage", not "Add": the user asking to manage the providers they
+            // already have should not be shown a blank new-provider form.
+            Button(String(localized: "Manage model providers")) {
+                showingPlannerMenu = false
+                model.manageModelProviders { openSettings() }
+            }
+            .padding(.vertical, 3)
+            .padding(.horizontal, 6)
         }
+        .padding(8)
+        .frame(minWidth: 260, alignment: .leading)
     }
 
     private func activate(_ choice: PlannerChoice) {
-        switch choice {
-        case .agent(let agent): model.startAgent(agent)
-        case .provider(let provider): model.startProvider(provider)
-        // From the menu the user asked to fix an account, not to spend a run.
-        case .agentSignedOut(let kind): model.setUp(kind, startWhenReady: false)
-        case .agentMissing(let kind): model.setUp(kind, startWhenReady: false)
-        }
-    }
-
-    /// Why the primary button is not a run right now: nothing is signed in, or
-    /// nothing is installed at all.
-    ///
-    /// Derived from the same resolved choice the button uses — not from "the
-    /// first installed agent" — because those can differ: with a stored plan
-    /// naming Claude Code while only Codex is installed, the old copy read
-    /// "Sign in to Codex" beside a "Set up Claude Code" button.
-    private func onboardingLine(_ choice: PlannerChoice) -> String {
-        switch choice {
-        case .agentSignedOut(let kind):
-            return String(localized: "Sign in to \(kind.name) and it plans what can go from this scan.")
-        case .agentMissing(let kind):
-            return String(localized: "\(kind.name) reads this scan and plans what can go. \(accountLine(kind))")
-        default:
-            return String(localized: "Pick a planner and it plans what can go from this scan.")
-        }
-    }
-
-    /// What an agent's account costs, so the offer is not a surprise.
-    private func accountLine(_ kind: AgentKind) -> String {
-        kind == .codex ? String(localized: "Free with a ChatGPT account.")
-                       : String(localized: "Needs a Claude Pro plan.")
+        model.startProvider(choice.provider)
     }
 
     private func trashPicked() {
@@ -395,9 +335,9 @@ struct CleanupPanel: View {
 
 }
 
-// MARK: - Agent run
+// MARK: - The run
 
-/// The agent's work, live: its steps while it looks, the plan as it is
+/// The planner's work, live: its steps while it looks, the plan as it is
 /// written, then AppleTree's own cleanup and the space it gave back.
 private struct AgentRunView: View {
     let run: AgentRun
@@ -483,7 +423,7 @@ private struct AgentRunView: View {
                 // The run may have been cancelled or replaced during the pause;
                 // acting on a stale phase would move a run nobody is watching.
                 guard !Task.isCancelled, model.agentRun === run else { return }
-                if run.phase == .planned { run.moveToTrash() } else { run.deleteForGood(env: model.agentEnv) }
+                if run.phase == .planned { run.moveToTrash() } else { run.deleteForGood(env: model.shellEnv) }
             }
         }
     }
@@ -567,7 +507,7 @@ private struct AgentRunView: View {
 
     // MARK: Steps
 
-    /// The last few things the agent did; the newest is live.
+    /// The last few things the run did; the newest is live.
     private var steps: some View {
         VStack(alignment: .leading, spacing: 5) {
             let shown = Array(run.steps.suffix(run.phase == .thinking ? 4 : 1).enumerated())
@@ -653,7 +593,7 @@ private struct AgentRunView: View {
         case .staged:
             VStack(spacing: 8) {
                 Button {
-                    run.deleteForGood(env: model.agentEnv)
+                    run.deleteForGood(env: model.shellEnv)
                 } label: {
                     Text("Delete \(Fmt.size(run.pendingBytes)) permanently")
                         .frame(maxWidth: .infinity)
@@ -848,48 +788,5 @@ private struct Shimmer: ViewModifier {
         } else {
             content
         }
-    }
-}
-
-/// Installing or signing in, in a line the user can glance at.
-private struct SetupProgress: View {
-    let setup: AgentSetup
-    let cancel: () -> Void
-    let retry: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            switch setup.step {
-            case .installing, .signingIn:
-                HStack(spacing: 8) {
-                    ProgressView().controlSize(.small)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(setup.step == .installing ? "Installing \(setup.kind.name)" : "Sign in to \(setup.kind.name)")
-                            .font(.headline)
-                            .modifier(Shimmer(active: true))
-                        Text(setup.step == .installing ? "About 15 seconds, no password needed"
-                             : "Finish in the browser window that just opened")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer(minLength: 4)
-                    Button("Cancel", action: cancel)
-                        .buttonStyle(.plain)
-                        .foregroundStyle(.secondary)
-                }
-            case .failed(let message):
-                Text(message)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(4)
-                HStack {
-                    Button("Cancel", action: cancel)
-                    Spacer()
-                    Button("Try again", action: retry)
-                        .buttonStyle(.borderedProminent)
-                }
-            }
-        }
-        .animation(.snappy, value: setup.step)
     }
 }

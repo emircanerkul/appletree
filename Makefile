@@ -52,7 +52,7 @@ SWIFT_FLAGS := -O -parse-as-library -swift-version 6 -default-isolation MainActo
                -framework DiskArbitration -framework IOKit
 
 .DEFAULT_GOAL := help
-.PHONY: help all build engine bundle open deploy deploy-sandbox deploy-sandbox-undo release test test-planner test-drawer test-deletion test-selection test-links test-readme test-doclinks test-router test-privacy test-l10n test-mapweights test-rust icon clean
+.PHONY: help all build engine bundle open deploy deploy-sandbox deploy-sandbox-undo release test test-drawer test-deletion test-selection test-links test-readme test-doclinks test-router test-privacy test-planner-selection test-shellenv test-engine-writer test-l10n test-mapweights test-rust icon clean
 
 help:
 	@echo 'AppleTree targets:'
@@ -63,7 +63,6 @@ help:
 	@echo '  make release V=x.y.z    notarize, package dmg, publish GitHub release'
 	@echo '                          optional NOTES_FILE=path/to/notes.md'
 	@echo '  make test               guard unit tests (Swift over the Rust staticlib)'
-	@echo '  make test-planner       planner catalog, preference and sign-out tests'
 	@echo '  make test-drawer        right-drawer trash outcome and plan-group tests'
 	@echo '  make test-deletion      "Delete Permanently" and the Delete/Backspace keys'
 	@echo '  make test-selection     the multi-selection invariant and its operations'
@@ -73,6 +72,9 @@ help:
 	@echo '  make test-doclinks      document links resolve (no scheme-less paths)'
 	@echo '  make test-router        Add-a-provider opens Model Providers + its form'
 	@echo '  make test-privacy       policy reachable in-app + privacy manifest complete'
+	@echo '  make test-planner-selection  picking another planner actually switches'
+	@echo '  make test-shellenv      a failed login shell still finds brew and uv'
+	@echo '  make test-engine-writer ProviderStore is the only owner of bz.engine'
 	@echo '  make test-l10n          every .strings table has the same keys, no duplicates'
 	@echo '  make test-rust          cargo test --release'
 	@echo '  make engine             cargo build --release only'
@@ -256,16 +258,16 @@ deploy: build
 # Why this exists. Every Mac App Store build is sandboxed, and the sandbox
 # decides which features can ship at all — not a formality, and not something to
 # discover from a rejected submission. docs/appstore/app-store-metadata.md §2
-# argues that the agent-launching feature cannot survive it. This target is how
-# that claim gets checked instead of believed: build, re-sign with
+# argues about what survives it. This target is how that claim gets checked
+# instead of believed: build, re-sign with
 # `app/AppleTree.entitlements`, install to a DIFFERENT /Applications name, and let
 # the user click through the app.
 #
 # Measured result on this codebase (2026-10-06): the app launches and the scan,
-# treemap, rings, Clean Up panel and Trash actions work; the user's login shell
-# still runs but sees a container filesystem, so `command -v claude` and
-# `command -v codex` find nothing and exec of an absolute path fails with
-# "doesn't exist" — the agent feature goes quiet rather than erroring.
+# treemap, rings, Clean Up panel and the custom-provider AI path work; the
+# user's login shell still runs but sees a container filesystem, so the cleanup
+# tools it resolves through PATH are not found and exec of an absolute path
+# fails with "doesn't exist".
 #
 # Uses an ad-hoc signature. That is deliberate and sufficient for THIS question:
 # the sandbox is enforced from the entitlement, not from the certificate, so a
@@ -297,7 +299,7 @@ deploy-sandbox: build
 	@echo '    different name, so your normal install at /Applications/AppleTree.app'
 	@echo '    is untouched. Launch it and try:'
 	@echo '      - the Clean Up panel, the treemap, the rings, Delete  (expected: work)'
-	@echo '      - "Clean up with Claude Code / Codex"                  (expected: no agents found)'
+	@echo '      - "Clean up with <provider>"                           (expected: no local cleanup tool)'
 	@echo '      - the shell-command rows (brew/npm/uv/xcrun cleanups)  (expected: fail)'
 	@echo ''
 	@echo '    Then remove it with:  make deploy-sandbox-undo'
@@ -403,7 +405,7 @@ test-rust:
 # bz_cleanup_allowlist FFI (fail-closed).
 # The .strings check runs first: it is instant, and a table that drifted is a
 # bug the Swift tests cannot see, so there is no reason to compile first.
-test: engine test-l10n test-drawer test-deletion test-selection test-mapweights test-links test-readme test-doclinks test-router test-privacy
+test: engine test-l10n test-drawer test-deletion test-selection test-mapweights test-links test-readme test-doclinks test-router test-privacy test-planner-selection test-shellenv test-engine-writer
 	@mkdir -p .build
 	swiftc tests/swift/main.swift app/CleanupGuard.swift \
 	    -import-objc-header app/bz.h \
@@ -546,6 +548,54 @@ test-privacy:
 	    -o .build/privacy-tests
 	.build/privacy-tests
 
+# Picking another planner must actually switch. The Picker's `get` used to read
+# UserDefaults directly, which is not observable, so the stored value changed
+# while the checkmark stayed on the old row — the pick looked ignored. The tag
+# now lives on the @Observable ProviderStore. The store's defaults are injected,
+# so this never touches the user's real choice, which is itself asserted.
+test-planner-selection:
+	@mkdir -p .build
+	swiftc tests/swift/planner-selection.swift app/ModelProvider.swift \
+	    app/AgentSupport.swift app/PlanParsing.swift \
+	    -parse-as-library -swift-version 6 -default-isolation MainActor \
+	    -target arm64-apple-macos$(MIN_MACOS) -framework Security \
+	    -o .build/planner-selection-tests
+	.build/planner-selection-tests
+
+# The shell PATH a cleanup command runs under. A login shell that fails or
+# times out prints no BZPATH=, and the old code kept the bare Apple default —
+# under which brew and uv are not found — so every allowlisted tool row failed
+# with "command not found". The PATH decision is exercised against literal shell
+# output, and the timeout path against a real child that ignores SIGTERM, which
+# must be SIGKILLed rather than left holding the stdout pipe.
+#
+# NOTE: the test file MUST NOT be named after any app/*.swift source (see the
+# test-deletion note). `shellenv.swift` vs `app/AgentSupport.swift` is safe.
+test-shellenv:
+	@mkdir -p .build
+	swiftc tests/swift/shellenv.swift app/AgentSupport.swift app/PlanParsing.swift \
+	    app/ModelProvider.swift \
+	    -parse-as-library -swift-version 6 -default-isolation MainActor \
+	    -target arm64-apple-macos$(MIN_MACOS) -framework Security \
+	    -o .build/shellenv-tests
+	.build/shellenv-tests
+
+# One owner for bz.engine. The picker bug was a second reader of the key: a
+# Picker `get` read UserDefaults directly while the write went through
+# ProviderStore, and UserDefaults is not observable, so the checkmark never
+# followed the click. This asserts structurally that no source outside the
+# store touches the key, so the regression cannot be reintroduced quietly.
+#
+# NOTE: the test file MUST NOT be named after any app/*.swift source (see the
+# test-deletion note). `engine-writer.swift` vs `app/ModelProvider.swift` is safe.
+test-engine-writer:
+	@mkdir -p .build
+	swiftc tests/swift/engine-writer.swift \
+	    -parse-as-library -swift-version 6 -default-isolation MainActor \
+	    -target arm64-apple-macos$(MIN_MACOS) \
+	    -o .build/engine-writer-tests
+	.build/engine-writer-tests
+
 # The Settings handoff: "Add a model provider" must select the Model Providers
 # pane AND raise the add form, including when the click arrives before Settings
 # exists. NOTE the test file MUST NOT be named `settingsrouter.swift`: swiftc
@@ -561,19 +611,6 @@ test-router:
 	.build/router-tests
 	.build/doclink-tests
 	.build/readme-tests
-
-# Planner catalog and sign-out tests. Real shipping sources, no stubs, so this
-# fails if the catalog rule, the preference resolution both surfaces share, or
-# the CLI logout argv drifts. Needs Security for the provider model's Keychain
-# calls.
-test-planner:
-	@mkdir -p .build
-	swiftc tests/swift/planner.swift app/AgentSupport.swift app/AgentLocator.swift \
-	    app/ModelProvider.swift app/PlanParsing.swift \
-	    -parse-as-library -swift-version 6 -default-isolation MainActor \
-	    -target arm64-apple-macos$(MIN_MACOS) -framework Security \
-	    -o .build/planner-tests
-	.build/planner-tests
 
 # The 7 Localizable.strings tables must stay in lockstep: a key added to one
 # and forgotten in another renders English in that language, and a duplicate

@@ -63,12 +63,6 @@
 "Clean up with %@" = "%@でクリーンアップ";
 "%@ reads this scan and suggests what can go. Nothing is removed until you say so." = "%@はこのスキャンを読み取り、削除できるものを提案します。あなたが承認するまで何も削除されません。";
 "Let AI clean up for you" = "AIにクリーンアップさせましょう";
-"%@ reads this scan and plans what can go. %@" = "%@はこのスキャンを読み取り、削除できるものを計画します。%@";
-"Free with a ChatGPT account." = "ChatGPTアカウントで無料。";
-"Needs a Claude Pro plan." = "Claude Proプランが必要です。";
-"Sign in to %@ and it plans what can go from this scan." = "%@にサインインすると、このスキャンから削除できるものを計画します。";
-"Set up %@" = "%@をセットアップ";
-"Sign in to %@" = "%@にサインイン";
 "Stop" = "停止";
 "Pick what to remove" = "削除するものを選択";
 "Move %@ to Trash" = "%@をゴミ箱へ移動";
@@ -104,9 +98,6 @@
 "%@ items couldn't be cleaned." = "%@件の項目をクリーンアップできませんでした。";
 "Rescanned. The map is up to date." = "再スキャンしました。マップは最新です。";
 "Nothing needed doing." = "作業は不要でした。";
-"Installing %@" = "%@をインストール中";
-"About 15 seconds, no password needed" = "約15秒、パスワード不要";
-"Finish in the browser window that just opened" = "開いたブラウザウィンドウで完了してください";
 "Safe to remove" = "安全に削除できる";
 "Your call" = "あなたが決める";
 
@@ -138,7 +129,7 @@
 "Custom model providers" = "カスタムモデルプロバイダ";
 "Add provider" = "プロバイダを追加";
 "Connect a relay, a self-hosted server, or any other OpenAI- or Anthropic-compatible endpoint by its base URL, protocol, and models." = "中継サーバー、自己ホストのサーバー、その他のOpenAIまたはAnthropic互換エンドポイントを、ベースURL・プロトコル・モデルで接続します。";
-"No custom providers. The Clean Up panel uses Claude Code or Codex when one is installed and signed in." = "カスタムプロバイダはありません。クリーンアップパネルは、インストール済みでサインイン済みの場合はClaude CodeまたはCodexを使用します。";
+"No custom providers. Add one to let AppleTree plan a cleanup for you." = "カスタムプロバイダはありません。追加すると、AppleTree がクリーンアップを計画します。";
 "Edit" = "編集";
 "Delete" = "削除";
 "Custom model API" = "カスタムモデルAPI";
@@ -190,27 +181,11 @@
 "Nothing to remove" = "削除するものがありません";
 "Quit %@ to clean this" = "これを掃除するには %@ を終了してください";
 "Already gone" = "すでにありません";
-"A Codex chat you used in the last 2 days" = "過去2日間に使用した Codex チャットです";
 "In projects you used in the last 2 days" = "過去2日間に使用したプロジェクトの中です";
 "About %@ can go." = "約 %@ 解放できます。";
 
-/* Planner choice and agent sign-out. */
+/* Planner choice. */
 "Choose the planner" = "プランナーを選択";
-"Sign in to %@…" = "%@ にサインイン…";
-"Set up %@…" = "%@ をセットアップ…";
-"Sign out of %@" = "%@ からサインアウト";
-"Sign out of %@?" = "%@ からサインアウトしますか？";
-"Couldn't sign out" = "サインアウトできませんでした";
-"Add a model provider…" = "モデルプロバイダを追加…";
-"%@ (custom)" = "%@（カスタム）";
-"%@ (not signed in)" = "%@（未サインイン）";
-"%@ (not installed)" = "%@（未インストール）";
-"%@ is installed but signed out. Signing in lets it plan what can go." = "%@ はインストール済みですが未サインインです。サインインすると削除できるものを計画できます。";
-"%@ forgets the account it is signed in with. The next plan needs a browser sign-in again. Nothing else on your Mac changes." = "%@ はサインイン中のアカウントを忘れます。次回のプランにはブラウザでの再サインインが必要です。Mac 上の他のものは変わりません。";
-"%@ is still signed in. Sign out from a terminal, then reopen AppleTree." = "%@ はまだサインインしています。ターミナルからサインアウトして、AppleTree を開き直してください。";
-"%@ is not signed in — sign in from the Clean Up panel." = "%@ は未サインインです — 「クリーンアップ」パネルからサインインしてください。";
-"%@ is not installed — set it up from the Clean Up panel." = "%@ は未インストールです — 「クリーンアップ」パネルからセットアップしてください。";
-"Pick a planner and it plans what can go from this scan." = "プランナーを選ぶと、削除できるものを計画します。";
 
 /* Settings window tab labels. */
 "General" = "一般";
@@ -261,3 +236,12 @@
 "Send a summary of this scan to %@?" = "このスキャンの要約を %@ に送信しますか？";
 "Send and clean up" = "送信してクリーンアップ";
 "AppleTree will send %@ the paths, names, sizes and dates of the largest items in this scan — folder and file names, but never the contents of your files. They leave your Mac and are handled under that provider's own terms. Sending it is what lets a planner suggest what to remove." = "AppleTree はこのスキャンで最大の項目のパス、名前、サイズ、日付を %@ に送信します — フォルダ名とファイル名であり、ファイルの内容は決して送信しません。これらのデータは Mac を離れ、そのプロバイダー自身の規約に従って扱われます。送信することで、プランナーが削除できるものを提案できます。";
+
+"Add a model provider and it plans what can go from this scan." = "モデルプロバイダを追加すると、このスキャンから何を削除できるかを計画します。";
+
+"No planner configured." = "プランナーが構成されていません。";
+
+/* Panel planner list: one edit control per provider, and the way to
+   the pane where providers are added and edited. */
+"Edit %@" = "%@ を編集";
+"Manage model providers" = "モデルプロバイダーを管理";

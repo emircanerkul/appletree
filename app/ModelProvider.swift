@@ -3,10 +3,9 @@ import Foundation
 // Custom model providers: any OpenAI- or Anthropic-compatible endpoint by its
 // base URL, protocol, API key and model — relays, self-hosted servers (Ollama,
 // LM Studio, vLLM) or hosted gateways. The plan these endpoints return is just
-// a proposal: CleanupGuard re-checks everything, exactly as for the CLI agents,
-// and AppleTree itself performs every deletion. The endpoint never runs tools;
-// it only writes the plan, which is a strictly smaller surface than a CLI
-// agent's harness — there is nothing for it to escalate.
+// a proposal: CleanupGuard re-checks everything, and AppleTree itself performs
+// every deletion. The endpoint never runs tools; it only writes the plan, so
+// there is nothing for it to escalate.
 
 // MARK: - Provider model
 
@@ -59,14 +58,36 @@ final class ProviderStore {
 
     private(set) var providers: [LLMProvider] = []
 
+    /// Which provider is the Clean Up planner, as a `provider:<id>` tag.
+    ///
+    /// Stored here rather than read straight from `UserDefaults` at each call
+    /// site. `UserDefaults` is not observable: a Picker whose `get` read the
+    /// key directly never re-rendered when `set` wrote it, so the checkmark
+    /// stayed on the old row while the click highlighted the new one — the
+    /// selection looked like it had not taken, even though the write landed.
+    /// Publishing it from an `@Observable` store is what makes the picker, the
+    /// panel's menu and the pill on the primary button agree.
+    private(set) var engineTag: String?
+
     private static let defaultsKey = "bz.providers"
+    private static let engineKey = "bz.engine"
     nonisolated private static let servicePrefix = "com.erklab.apps.appletree."
 
-    init() {
-        if let data = UserDefaults.standard.data(forKey: Self.defaultsKey),
+    /// Where the provider list and the planner choice are read and written.
+    ///
+    /// Injectable so a test can point the store at a scratch suite instead of
+    /// the user's real preferences: `save`, `delete` and `select` all write, so
+    /// a harness that ran against `.standard` would edit the choice it is meant
+    /// to be checking.
+    private let defaults: UserDefaults
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        if let data = defaults.data(forKey: Self.defaultsKey),
            let saved = try? JSONDecoder().decode([LLMProvider].self, from: data) {
             providers = saved
         }
+        engineTag = defaults.string(forKey: Self.engineKey)
     }
 
     func save(_ provider: LLMProvider, key: String?) {
@@ -80,12 +101,24 @@ final class ProviderStore {
         providers.removeAll { $0.id == provider.id }
         persist()
         Self.deleteKey(for: provider.id)
+        // A deleted provider must not stay the selected engine, or the picker
+        // would show a row that no longer exists.
+        if engineTag == "provider:\(provider.id)" { select(engineTag: nil) }
     }
 
-    func key(for id: String) -> String? { Self.getKey(for: id) }
+    /// Record the planner choice. One writer for `bz.engine`, so the stored
+    /// value and the published one cannot drift.
+    func select(engineTag tag: String?) {
+        engineTag = tag
+        if let tag {
+            defaults.set(tag, forKey: Self.engineKey)
+        } else {
+            defaults.removeObject(forKey: Self.engineKey)
+        }
+    }
 
     private func persist() {
-        UserDefaults.standard.set(try? JSONEncoder().encode(providers), forKey: Self.defaultsKey)
+        defaults.set(try? JSONEncoder().encode(providers), forKey: Self.defaultsKey)
     }
 
     // MARK: Keychain
@@ -128,8 +161,8 @@ final class ProviderStore {
 
 // MARK: - The streaming plan request
 
-/// What a provider run reports, mapped 1:1 onto the CLI agents' event
-/// pipeline by the caller: cards as they are written, then the plan.
+/// What a provider run reports to the caller: cards as they are written, then
+/// the plan.
 nonisolated enum LLMEvent: Sendable {
     case item(PlanItemSpec)
     case plan(summary: String, items: [PlanItemSpec])

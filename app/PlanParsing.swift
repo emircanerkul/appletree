@@ -1,8 +1,8 @@
 import Foundation
 
-// The plan's data shapes and the parsing shared by every planner: CLI agents
-// and custom model providers both answer in the same JSON, and the streaming
-// parser here turns their answers into cards as they are written.
+// The plan's data shapes and the parsing the planner answers in. A custom
+// provider returns this JSON, and the streaming parser here turns its answer
+// into cards as it is written.
 
 // MARK: - The plan
 
@@ -14,9 +14,9 @@ import Foundation
 /// and `group == "safe"` for the tick — so any value that was neither exact
 /// literal (a capitalized "Safe", a stray "unsafe") landed under the
 /// reassuring "Safe to remove" heading while staying unselected. The array is
-/// what the model must answer in, but only the CLI agents enforce it: a custom
-/// provider gets `response_format: json_object` and no enum, so a near-miss is
-/// reachable in practice.
+/// what the model must answer in, but a custom provider gets
+/// `response_format: json_object` and no enum, so a near-miss is reachable in
+/// practice.
 nonisolated enum PlanGroup: String, Decodable, Sendable, Equatable {
     /// Rebuilt or re-downloaded automatically; AppleTree may tick it.
     case safe
@@ -54,9 +54,8 @@ nonisolated enum PlanGroup: String, Decodable, Sendable, Equatable {
 /// Leaving the item "unacted" is not available either: `PlanItem.init` treats
 /// every non-command item as a trash candidate, so an unknown action would be
 /// trashed by the fall-through. An unrecognized action therefore fails to
-/// decode. For a CLI planner the schema's enum already makes this unreachable;
-/// a custom provider gets `json_object` with no enum, so this is where a
-/// near-miss ("Trash", "delete", "rm") is stopped: the plan does not decode
+/// decode. A custom provider gets `json_object` with no enum, so this is where
+/// a near-miss ("Trash", "delete", "rm") is stopped: the plan does not decode
 /// and `PlanJSON.decode` returns nil, which the callers already report as an
 /// invalid plan. Nothing is trashed or run on a guessed action. Surrounding
 /// whitespace is trimmed first, exactly as `PlanGroup` does it, so a padded but
@@ -89,17 +88,6 @@ nonisolated struct PlanItemSpec: Decodable, Sendable, Equatable {
     let action: PlanAction
     let command: String
 }
-
-/// The JSON shape both agents must answer in (Claude: --json-schema, Codex:
-/// --output-schema; strict, so every field is required).
-nonisolated let planSchema = """
-{"type":"object","additionalProperties":false,"required":["summary","items"],"properties":{\
-"summary":{"type":"string"},"items":{"type":"array","items":{"type":"object","additionalProperties":false,\
-"required":["title","detail","group","bytes","paths","action","command"],"properties":{\
-"title":{"type":"string"},"detail":{"type":"string"},"group":{"type":"string","enum":["safe","ask"]},\
-"bytes":{"type":"integer"},"paths":{"type":"array","items":{"type":"string"}},\
-"action":{"type":"string","enum":["trash","command"]},"command":{"type":"string"}}}}}}
-"""
 
 /// Pulls finished item objects out of the plan JSON while it is still being
 /// written, so cards appear one by one instead of all at the end.
@@ -170,7 +158,9 @@ nonisolated struct PartialPlanParser {
 /// Decodes a finished plan out of whatever a model actually sends. Real
 /// models wrap the JSON in markdown fences or prose around it; endpoints
 /// without streaming return the whole body at once. Everything here is
-/// tolerant: the strict schema lives upstream of this point.
+/// tolerant about the wrapper and strict about the contents: the exact-literal
+/// decoders on `PlanGroup`/`PlanAction` reject an invented value rather than
+/// guessing at one.
 nonisolated enum PlanJSON {
     /// `(summary, items)` out of a decoded object, or nil when items fail.
     static func decode(_ obj: [String: Any]) -> (String, [PlanItemSpec])? {

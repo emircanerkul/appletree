@@ -56,7 +56,7 @@ Reading your disk is local. Granting Full Disk Access does not cause anything to
 **Two consequences worth knowing about, both of which are properties of macOS rather than of AppleTree:**
 
 - **You can only remove the permission while the app is closed.** macOS stops applying a revocation to a process that is already running. To take Full Disk Access away, quit AppleTree, remove its row in **System Settings → Privacy & Security → Full Disk Access**, and relaunch.
-- **Anything AppleTree launches inherits the grant for as long as it runs.** When you run an AI cleanup, the planner CLI — and any cleanup command AppleTree executes — runs as a child of AppleTree and therefore sees everything Full Disk Access allows. AppleTree limits what it hands them and which commands it will run (§5.8), but an operating-system permission cannot be handed to a child process in a reduced form. This is one reason the AI cleanup is entirely optional.
+- **Anything AppleTree launches inherits the grant for as long as it runs.** When you run an AI cleanup, any cleanup command AppleTree executes runs as a child of AppleTree and therefore sees everything Full Disk Access allows. AppleTree limits what it hands them and which commands it will run (§5.5), but an operating-system permission cannot be handed to a child process in a reduced form. This is one reason the AI cleanup is entirely optional.
 
 ---
 
@@ -76,8 +76,7 @@ Everything AppleTree remembers is stored locally in two macOS-provided places, p
 | `bz.scanRoot` | The folder you last scanned |
 | `bz.trail`, `bz.trailIndex` | Your folder history and your position in it |
 | `bz.showCleanup` | Whether the Clean Up panel is open |
-| `bz.engine`, `bz.agent` | Which AI planner you selected |
-| `bz.claudeModel` | Which Claude model to use |
+| `bz.engine` | Which AI planner you selected |
 | `bz.providers` | The model providers you configured: a name you typed, the base URL you typed, the API protocol, and the model ID |
 | `AppleLanguages` | The interface language you chose |
 
@@ -97,7 +96,7 @@ AppleTree creates `~/Library/Application Support/AppleTree/` and writes only:
 
 - `tools/package.json`, containing `{"name":"appletree-cleanup","private":true}` — an empty stand-in project so tools that expect one can run. It contains no data about you.
 
-The agent process and AppleTree's own cleanup commands are started in this folder so that they load no project settings, hooks or memory from your own projects.
+AppleTree's own cleanup commands are started in this folder so that they load no project settings, hooks or memory from your own projects.
 
 ### 4.4 Developer benchmark hook
 
@@ -123,7 +122,7 @@ The whole of §5.1 and §5.2 describes acts **you** perform — configuring a pr
 
 ### 5.1 AI cleanup, in general
 
-AppleTree offers three planners: a model provider you configure, Claude Code, or Codex. Whichever you pick, the same thing happens first — AppleTree builds a text summary of your scan and hands it to that planner.
+AppleTree's planner is a model provider you configure. AppleTree builds a text summary of your scan and hands it to that endpoint.
 
 ### 5.2 What is in that summary
 
@@ -139,17 +138,14 @@ Built from the scan you are looking at. It contains **paths, names, sizes, count
 | Names and bundle identifiers of the apps currently running | all regular apps |
 | Xcode simulator runtimes: identifier, platform and version, size, last-used date, path | 100 MB and over |
 | Xcode simulator devices: name, state, size, last-used date, UDID, folder path | 100 MB and over |
-| Codex chat folders: size, path, last-used date, the names and sizes of up to three subfolders | up to 40 |
 
-The lists are **truncated by size and by count**. Folders smaller than about 100 MB and files smaller than about 250 MB do not appear, so a summary describes the big things on your disk rather than an inventory of it. At most roughly 490 paths can be involved.
+The lists are **truncated by size and by count**. Folders smaller than about 100 MB and files smaller than about 250 MB do not appear, so a summary describes the big things on your disk rather than an inventory of it. At most roughly 450 paths can be involved.
 
 Because this is a list of paths, it necessarily includes **folder and file names**, and those can themselves be personal information — the name of a client folder, a project, a photo export. That is a deliberate part of the feature: an AI planner cannot suggest what to remove without being told what is there.
 
-Three details worth stating plainly:
+Two details worth stating plainly:
 
 **Running apps.** The list of running applications exists so AppleTree skips the caches of apps you currently have open, rather than cleaning under them. It is included in the summary so the planner makes the same judgement. A list of running apps is fairly revealing on its own; it is included because without it the planner would propose removals that break something you are using.
-
-**Codex session logs.** To tell whether a Codex chat folder was used recently, AppleTree reads the first 8 KB of each `.jsonl` file in `~/.codex/sessions` and extracts only the working-directory path recorded there, along with the file's modification date. It does not read or send the content of those conversations. This happens on your Mac, when a cleanup is prepared; the extracted paths are what can then appear in the summary.
 
 **Xcode simulator details.** Runtime identifiers, device names, UDIDs and folder paths are read from Xcode's own `simctl` tool and are only gathered when Xcode is installed with simulators present.
 
@@ -161,33 +157,11 @@ That endpoint runs no tools and is never given access to your disk. This is the 
 
 AppleTree sends your API key in the request header (`Authorization: Bearer …` or `x-api-key`) as that provider's API requires. AppleTree does not keep a copy.
 
-### 5.4 With Claude Code or Codex
-
-AppleTree launches the command-line agent you already have installed and gives it the same summary. That agent then runs on your Mac and may look further.
-
-- **Claude Code** is invoked with `--tools Bash,Read`, `--permission-mode dontAsk`, `--no-session-persistence`, and a command allowlist limited to the read-only commands `du`, `ls`, `stat`, `docker system df`, `xcrun simctl list` and `ollama list`. It has no write or edit tool.
-- **Codex** is started in a sandbox the app sets to **read-only**, with approvals disabled and no session persisted, so it cannot write to your disk either.
-
-**Be clear about what this does and does not mean.** Read-only describes the *tools* and *sandbox* the app hands the agent; it does not restrict what the agent may read. Because these processes inherit Full Disk Access (§3), an agent can read files anywhere your account can reach, and whatever it reads may become part of its conversation with **Anthropic** or **OpenAI** and be handled under their terms, not ours. AppleTree cannot restrict what the agent chooses to read, and it cannot see what the agent read.
-
-### 5.5 Fetching a model list
+### 5.4 Fetching a model list
 
 Only when you click **Fetch available models** in Settings → Model Providers, AppleTree sends `GET <base URL>/models` to the provider you are configuring, with your API key if you have entered one, so it can list the models available. Nothing is requested merely by opening the settings window. This is a convenience: an endpoint without that route simply leaves the model name to be typed in.
 
-### 5.6 Installing an agent
-
-Only when you click "Install":
-
-- **Claude Code** runs Anthropic's own installer, fetched from `https://claude.ai/install.sh`. The script is downloaded at that moment, and what it does is decided by Anthropic, not by AppleTree.
-- **Codex** downloads a pinned release tarball from `github.com/openai/codex/releases` and verifies its SHA-256 against a value compiled into AppleTree before installing anything. If the checksum does not match, nothing is installed.
-
-Both install into `~/.local/bin` under your own account; no administrator password is requested and no privileged helper is installed. The Codex download is the Apple-silicon build, so Codex installation is offered on Apple-silicon Macs only; Claude Code is installed through Anthropic's own script.
-
-### 5.7 Signing in to an agent
-
-Only when you click "Sign in": AppleTree opens your default browser to the agent's own sign-in page. **AppleTree never sees your Anthropic or OpenAI password.** The CLI stores its own credential on your Mac, and AppleTree only runs the CLI's own `status` command to check whether a sign-in exists, so it can tell you whether the agent still needs one. Signing out likewise runs only the CLI's own logout command.
-
-### 5.8 Cleanup commands run on your Mac, not by any server
+### 5.5 Cleanup commands run on your Mac, not by any server
 
 The AI planner returns a proposed plan; it does not execute anything. AppleTree checks every proposed command against a fixed allowlist of **30** permitted forms, compiled into the app: **27** tool-specific cleanups that must match to the letter — `uv cache clean`, `brew cleanup`, `docker system prune`, `pod cache clean --all` and the like — plus **three** that accept exactly one trailing argument, with no flags: `ollama rm <model>`, `xcrun simctl runtime delete <id>` and `xcrun simctl erase <udid>`. Anything else is refused rather than run. AppleTree executes the permitted commands locally, as your user, in the stand-in folder described in §4.3.
 
@@ -217,12 +191,9 @@ AppleTree talks to third parties only in the situations in §5, and only with da
 
 | Third party | When | Their policy |
 |---|---|---|
-| **Anthropic** (Claude Code) | You run an AI cleanup with Claude Code, or install or sign in to it | [anthropic.com/legal/privacy](https://www.anthropic.com/legal/privacy) |
-| **OpenAI** (Codex) | You run an AI cleanup with Codex, or install or sign in to it | [openai.com/policies/privacy-policy](https://openai.com/policies/privacy-policy/) |
-| **GitHub** | You install Codex (one pinned download, checksum-verified) | [docs.github.com/privacy](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement) |
 | **Any provider you configure** | You run an AI cleanup, or fetch a model list, against it | **You choose this destination.** Review its policy before you use it. |
 
-**On third-party protection (Apple Guideline 5.1.1(i)).** Any third party with which AppleTree shares user data is held to protections at least equal to those stated in this policy and to the standards Apple requires. Anthropic, OpenAI and GitHub are established services with published policies, linked above. For a model provider you configure yourself, you select the endpoint and control that relationship directly, so we ask you to satisfy yourself that its protections match yours; if they do not, do not use that endpoint, and use a local model instead.
+**On third-party protection (Apple Guideline 5.1.1(i)).** Any third party with which AppleTree shares user data is held to protections at least equal to those stated in this policy and to the standards Apple requires. For the model provider you configure yourself, you select the endpoint and control that relationship directly, so we ask you to satisfy yourself that its protections match yours; if they do not, do not use that endpoint, and use a local model instead.
 
 ---
 
@@ -254,7 +225,7 @@ All of it is on your Mac, and all of it is yours to remove:
 
 ### 8.3 Data held by third parties
 
-AppleTree cannot delete transcripts from Anthropic or OpenAI, because it has no access to your account there. To exercise your rights over those, contact the provider directly and delete the conversation in your account with them. Claude Code is run with `--no-session-persistence`, so it does not keep a local session log of the cleanup run.
+AppleTree cannot delete transcripts from a provider you configured, because it has no access to your account there. To exercise your rights over those, contact that provider directly and delete the conversation in your account with them.
 
 ---
 
@@ -296,8 +267,6 @@ AppleTree is a general-purpose utility and is not directed at children. We do no
 
 - **API keys** are stored only in the macOS Keychain, never in preference files, logs or caches, and are never written to disk in plain text by AppleTree.
 - **Network requests** use Apple's App Transport Security, so connections to endpoints you configure must be protected by TLS. AppleTree declares `NSAllowsLocalNetworking` and nothing broader: plain HTTP is permitted to local addresses, so a model on your own Mac or LAN works without a certificate, while requests to public hosts remain HTTPS-only. AppleTree does not disable certificate validation.
-- **The Codex download** is pinned to a specific release and verified against a SHA-256 checksum compiled into the app before anything is installed.
-- **Agent launches** use an empty working folder and, for Codex, a read-only sandbox, so an agent does not load project settings, hooks or memory from your own projects.
 - **No remote content is loaded into the interface.** AppleTree's UI is built from your local disk; there is no update feed, no remote-configuration channel and no web view.
 
 No security measure is perfect. If you believe you have found a vulnerability, please report it to **security@appletree.apps.erklab.com** rather than opening a public issue. We aim to acknowledge reports within five working days.

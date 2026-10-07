@@ -63,12 +63,6 @@
 "Clean up with %@" = "Limpiar con %@";
 "%@ reads this scan and suggests what can go. Nothing is removed until you say so." = "%@ lee este escaneo y sugiere qué puede irse. No se elimina nada hasta que lo digas.";
 "Let AI clean up for you" = "Deja que la IA limpie por ti";
-"%@ reads this scan and plans what can go. %@" = "%@ lee este escaneo y planifica qué puede irse. %@";
-"Free with a ChatGPT account." = "Gratis con una cuenta de ChatGPT.";
-"Needs a Claude Pro plan." = "Requiere un plan Claude Pro.";
-"Sign in to %@ and it plans what can go from this scan." = "Inicia sesión en %@ y planificará qué puede irse de este escaneo.";
-"Set up %@" = "Configurar %@";
-"Sign in to %@" = "Iniciar sesión en %@";
 "Stop" = "Detener";
 "Pick what to remove" = "Elige qué eliminar";
 "Move %@ to Trash" = "Mover %@ a la Papelera";
@@ -104,9 +98,6 @@
 "%@ items couldn't be cleaned." = "No se pudieron limpiar %@ elementos.";
 "Rescanned. The map is up to date." = "Reescaneado. El mapa está actualizado.";
 "Nothing needed doing." = "No hizo falta nada.";
-"Installing %@" = "Instalando %@";
-"About 15 seconds, no password needed" = "Unos 15 segundos, sin contraseña";
-"Finish in the browser window that just opened" = "Termina en la ventana del navegador que se acaba de abrir";
 "Safe to remove" = "Seguro de eliminar";
 "Your call" = "Es tu decisión";
 
@@ -139,7 +130,7 @@
 "Custom model providers" = "Proveedores de modelos personalizados";
 "Add provider" = "Añadir proveedor";
 "Connect a relay, a self-hosted server, or any other OpenAI- or Anthropic-compatible endpoint by its base URL, protocol, and models." = "Conecta un relé, un servidor propio o cualquier otro endpoint compatible con OpenAI o Anthropic mediante su URL base, protocolo y modelos.";
-"No custom providers. The Clean Up panel uses Claude Code or Codex when one is installed and signed in." = "No hay proveedores personalizados. El panel Limpiar usa Claude Code o Codex cuando hay uno instalado y con sesión iniciada.";
+"No custom providers. Add one to let AppleTree plan a cleanup for you." = "No hay proveedores personalizados. Añada uno para que AppleTree planifique una limpieza por usted.";
 "Edit" = "Editar";
 "Delete" = "Eliminar";
 "Custom model API" = "API de modelo personalizada";
@@ -191,27 +182,11 @@
 "Nothing to remove" = "Nada que eliminar";
 "Quit %@ to clean this" = "Cierra %@ para limpiar esto";
 "Already gone" = "Ya no existe";
-"A Codex chat you used in the last 2 days" = "Un chat de Codex que usaste en los últimos 2 días";
 "In projects you used in the last 2 days" = "En proyectos que usaste en los últimos 2 días";
 "About %@ can go." = "Se puede liberar aprox. %@";
 
-/* Planner choice and agent sign-out. */
+/* Planner choice. */
 "Choose the planner" = "Elegir el planificador";
-"Sign in to %@…" = "Iniciar sesión en %@…";
-"Set up %@…" = "Configurar %@…";
-"Sign out of %@" = "Cerrar la sesión de %@";
-"Sign out of %@?" = "¿Cerrar la sesión de %@?";
-"Couldn't sign out" = "No se pudo cerrar la sesión";
-"Add a model provider…" = "Añadir un proveedor de modelo…";
-"%@ (custom)" = "%@ (personalizado)";
-"%@ (not signed in)" = "%@ (sesión no iniciada)";
-"%@ (not installed)" = "%@ (no instalado)";
-"%@ is installed but signed out. Signing in lets it plan what can go." = "%@ está instalado pero sin sesión iniciada. Al iniciarla podrá planificar qué se puede eliminar.";
-"%@ forgets the account it is signed in with. The next plan needs a browser sign-in again. Nothing else on your Mac changes." = "%@ olvida la cuenta con la que ha iniciado sesión. El próximo plan necesitará iniciar sesión en el navegador otra vez. Nada más cambia en tu Mac.";
-"%@ is still signed in. Sign out from a terminal, then reopen AppleTree." = "%@ sigue con la sesión iniciada. Cierra la sesión desde un terminal y vuelve a abrir AppleTree.";
-"%@ is not signed in — sign in from the Clean Up panel." = "%@ no tiene la sesión iniciada: inicia sesión desde el panel Limpieza.";
-"%@ is not installed — set it up from the Clean Up panel." = "%@ no está instalado: configúralo desde el panel Limpieza.";
-"Pick a planner and it plans what can go from this scan." = "Elige un planificador y planificará qué se puede eliminar.";
 
 /* Settings window tab labels. */
 "General" = "General";
@@ -262,3 +237,12 @@
 "Send a summary of this scan to %@?" = "¿Enviar un resumen de este análisis a %@?";
 "Send and clean up" = "Enviar y limpiar";
 "AppleTree will send %@ the paths, names, sizes and dates of the largest items in this scan — folder and file names, but never the contents of your files. They leave your Mac and are handled under that provider's own terms. Sending it is what lets a planner suggest what to remove." = "AppleTree enviará a %@ las rutas, nombres, tamaños y fechas de los elementos más grandes de este análisis — nombres de carpetas y archivos, pero nunca el contenido de sus archivos. Estos datos salen de su Mac y se rigen por las condiciones propias de ese proveedor. Enviarlos es lo que permite a un planificador sugerir qué eliminar.";
+
+"Add a model provider and it plans what can go from this scan." = "Añada un proveedor de modelos y planificará qué puede eliminarse de este análisis.";
+
+"No planner configured." = "No hay ningún planificador configurado.";
+
+/* Panel planner list: one edit control per provider, and the way to
+   the pane where providers are added and edited. */
+"Edit %@" = "Editar %@";
+"Manage model providers" = "Gestionar proveedores de modelos";

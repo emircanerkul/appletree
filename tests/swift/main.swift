@@ -11,8 +11,7 @@
 // Tests therefore place scratch fixtures inside the workspace
 // (~/Documents/...), which is itself inside the guard's protected Documents
 // root — the T6 smoke pattern. Rule checks that need no fixtures are probed
-// read-only against the real home; blockReason never writes. CODEX_HOME is
-// pointed at scratch.
+// read-only against the real home; blockReason never writes.
 
 import Foundation
 
@@ -44,9 +43,6 @@ let ws = URL(fileURLWithPath: CommandLine.arguments[0])
 // below — exit() skips defer blocks.
 try? fm.removeItem(atPath: ws)
 try? fm.createDirectory(atPath: ws, withIntermediateDirectories: true)
-// CodexSessions reads CODEX_HOME per call; point it at scratch.
-setenv("CODEX_HOME", ws + "/codex-home/sessions", 1)
-try? fm.createDirectory(atPath: ws + "/codex-home/sessions", withIntermediateDirectories: true)
 try? fm.createDirectory(atPath: ws + "/node_modules/react", withIntermediateDirectories: true)
 try? "x".write(toFile: ws + "/node_modules/react/index.js", atomically: true, encoding: .utf8)
 

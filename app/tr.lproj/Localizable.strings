@@ -63,12 +63,6 @@
 "Clean up with %@" = "%@ ile temizle";
 "%@ reads this scan and suggests what can go. Nothing is removed until you say so." = "%@ bu taramayı okur ve nelerin gidebileceğini önerir. Siz onaylamadan hiçbir şey kaldırılmaz.";
 "Let AI clean up for you" = "Yapay zekâ sizin için temizlesin";
-"%@ reads this scan and plans what can go. %@" = "%@ bu taramayı okur ve nelerin gidebileceğini planlar. %@";
-"Free with a ChatGPT account." = "ChatGPT hesabıyla ücretsiz.";
-"Needs a Claude Pro plan." = "Claude Pro planı gerekir.";
-"Sign in to %@ and it plans what can go from this scan." = "%@ hesabınıza giriş yapın, bu taramadan nelerin gidebileceğini planlar.";
-"Set up %@" = "%@ kur";
-"Sign in to %@" = "%@ hesabına giriş yap";
 "Stop" = "Durdur";
 "Pick what to remove" = "Nelerin kaldırılacağını seçin";
 "Move %@ to Trash" = "%@ Çöp Kutusu'na Taşı";
@@ -104,9 +98,6 @@
 "%@ items couldn't be cleaned." = "%@ öge temizlenemedi.";
 "Rescanned. The map is up to date." = "Yeniden tarandı. Harita güncel.";
 "Nothing needed doing." = "Yapılacak bir şey gerekmedi.";
-"Installing %@" = "%@ yükleniyor";
-"About 15 seconds, no password needed" = "Yaklaşık 15 saniye, parola gerekmez";
-"Finish in the browser window that just opened" = "Yeni açılan tarayıcı penceresinde tamamlayın";
 "Safe to remove" = "Güvenle kaldırılabilir";
 "Your call" = "Karar sizin";
 
@@ -138,7 +129,7 @@
 "Custom model providers" = "Özel model sağlayıcıları";
 "Add provider" = "Sağlayıcı Ekle";
 "Connect a relay, a self-hosted server, or any other OpenAI- or Anthropic-compatible endpoint by its base URL, protocol, and models." = "Bir aktarıcıyı, kendi barındırdığınız sunucunuzu ya da başka herhangi bir OpenAI veya Anthropic uyumlu uç noktayı temel URL'si, protokolü ve modelleriyle bağlayın.";
-"No custom providers. The Clean Up panel uses Claude Code or Codex when one is installed and signed in." = "Özel sağlayıcı yok. Temizleme paneli, kurulu ve giriş yapılmış olduğunda Claude Code veya Codex'i kullanır.";
+"No custom providers. Add one to let AppleTree plan a cleanup for you." = "Özel sağlayıcı yok. AppleTree'nin sizin için bir temizlik planlamasını sağlamak üzere bir tane ekleyin.";
 "Edit" = "Düzenle";
 "Delete" = "Sil";
 "Custom model API" = "Özel model API'si";
@@ -190,27 +181,11 @@
 "Nothing to remove" = "Kaldırılacak bir şey yok";
 "Quit %@ to clean this" = "Bunu temizlemek için %@ uygulamasından çıkın";
 "Already gone" = "Zaten yok";
-"A Codex chat you used in the last 2 days" = "Son 2 günde kullandığınız bir Codex sohbeti";
 "In projects you used in the last 2 days" = "Son 2 günde kullandığınız projelerde";
 "About %@ can go." = "Yaklaşık %@ kaldırılabilir.";
 
-/* Planner choice and agent sign-out. */
+/* Planner choice. */
 "Choose the planner" = "Planlayıcıyı seç";
-"Sign in to %@…" = "%@ oturumunu aç…";
-"Set up %@…" = "%@ uygulamasını kur…";
-"Sign out of %@" = "%@ oturumunu kapat";
-"Sign out of %@?" = "%@ oturumu kapatılsın mı?";
-"Couldn't sign out" = "Oturum kapatılamadı";
-"Add a model provider…" = "Model sağlayıcı ekle…";
-"%@ (custom)" = "%@ (özel)";
-"%@ (not signed in)" = "%@ (oturum açık değil)";
-"%@ (not installed)" = "%@ (kurulu değil)";
-"%@ is installed but signed out. Signing in lets it plan what can go." = "%@ kurulu ama oturum açık değil. Oturum açmak, nelerin kaldırılabileceğini planlamasını sağlar.";
-"%@ forgets the account it is signed in with. The next plan needs a browser sign-in again. Nothing else on your Mac changes." = "%@, oturum açtığı hesabı unutur. Bir sonraki plan için tarayıcıdan yeniden oturum açmanız gerekir. Mac'inizde başka hiçbir şey değişmez.";
-"%@ is still signed in. Sign out from a terminal, then reopen AppleTree." = "%@ hâlâ oturum açık. Bir terminalden oturumu kapatın, sonra AppleTree'yi yeniden açın.";
-"%@ is not signed in — sign in from the Clean Up panel." = "%@ oturum açık değil — Temizleme panelinden oturum açın.";
-"%@ is not installed — set it up from the Clean Up panel." = "%@ kurulu değil — Temizleme panelinden kurun.";
-"Pick a planner and it plans what can go from this scan." = "Bir planlayıcı seçin, bu taramadan nelerin kaldırılabileceğini planlasın.";
 
 /* Settings window tab labels. */
 "General" = "Genel";
@@ -261,3 +236,12 @@
 "Send a summary of this scan to %@?" = "Bu taramanın özeti %@ adresine gönderilsin mi?";
 "Send and clean up" = "Gönder ve temizle";
 "AppleTree will send %@ the paths, names, sizes and dates of the largest items in this scan — folder and file names, but never the contents of your files. They leave your Mac and are handled under that provider's own terms. Sending it is what lets a planner suggest what to remove." = "AppleTree, bu taramadaki en büyük öğelerin yollarını, adlarını, boyutlarını ve tarihlerini %@ adresine gönderir — klasör ve dosya adları, ancak asla dosyalarınızın içeriği. Bu veriler Mac'inizden ayrılır ve ilgili sağlayıcının kendi koşullarına tabidir. Gönderilmesi, bir planlayıcının neyin kaldırılabileceğini önerebilmesini sağlar.";
+
+"Add a model provider and it plans what can go from this scan." = "Bir model sağlayıcı ekleyin, bu taramadan nelerin kaldırılabileceğini planlasın.";
+
+"No planner configured." = "Yapılandırılmış planlayıcı yok.";
+
+/* Panel planner list: one edit control per provider, and the way to
+   the pane where providers are added and edited. */
+"Edit %@" = "%@ düzenle";
+"Manage model providers" = "Model sağlayıcılarını yönet";

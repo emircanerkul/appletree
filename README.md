@@ -75,28 +75,23 @@ folders compete for the nearest tile together.
 `node_modules`, Rust `target`, Xcode DerivedData and more — so they can be
 moved to the Trash in one pass.
 
-**AI cleanup, using your own agent.** Click "Clean up with Claude Code" (or
-Codex) and the agent plans what can go while the treemap highlights those
-folders. AppleTree performs the cleanup itself, in two steps you approve: move
-to the Trash, then delete permanently. If no agent is installed, one click
-installs and signs in to Codex (free with a ChatGPT account) or Claude Code.
+**AI cleanup, using a model you choose.** Configure a provider in Settings →
+Model Providers and click "Clean up with …"; it plans what can go while the
+treemap highlights those folders. AppleTree performs the cleanup itself, in two
+steps you approve: move to the Trash, then delete permanently.
 
 **Every planner stays reachable.** The Clean Up button carries a menu listing
-all of them: each installed agent, each custom provider, the agents that still
-need an install or a sign-in, and the account actions. Signing in to one agent
-therefore never hides or disables the others — switch planners at any time, and
-sign an agent out again from the same menu when you want to change account.
-Settings → General lists the same choices as one "Clean Up planner" row, and
-names whatever the picked one still needs. Both surfaces read one list, so the
-planner Settings shows is always the one the panel runs.
+every configured provider, plus the row that adds another. Switching is always
+one click, and Settings → General lists the same choices as one "Clean Up
+planner" row. Both surfaces read one list, so the planner Settings shows is
+always the one the panel runs.
 
 **Or plan with any model.** Settings → Model Providers connects any OpenAI- or
 Anthropic-compatible endpoint — a relay, a self-hosted server (Ollama, LM
 Studio) or a gateway — by its base URL, protocol and model. API keys are held in
-the Keychain, never in preferences. Such an endpoint receives the scan summary
-and nothing else: it runs no tools and never reads your disk, so it is the
-option to pick if you want file contents to stay local. AppleTree still performs
-and re-checks every deletion itself.
+the Keychain, never in preferences. The endpoint receives the scan summary and
+nothing else: it runs no tools and never reads your disk, so file contents stay
+local. AppleTree still performs and re-checks every deletion itself.
 
 **Scan when AppleTree opens.** Off by default. The first launch shows the empty
 home screen with a one-time checkbox to turn launch scanning on; whatever you
@@ -110,8 +105,8 @@ with a synced Finder-style outline list, or DaisyDisk-style rings: click a
 folder to zoom in, the middle to go back.
 
 **Seven languages.** English, Türkçe, Deutsch, Français, Español, 简体中文 and
-日本語, selected in Settings. The agent prompt stays in English while the
-interface follows your choice.
+日本語, selected in Settings. The prompt sent to the planner stays in English
+while the interface follows your choice.
 
 **Native, and quiet.** AppKit and SwiftUI throughout, with the Liquid Glass
 design on macOS 26 and later. Live progress while scanning, an optional
@@ -199,15 +194,14 @@ affects the bytes, which match exactly.
 
 ## AI cleanup
 
-Nothing here can write to your disk. The planner is invited only to read: a CLI
-agent is given inspection commands (`du`, `ls`, `stat`, `docker system df`,
-`xcrun simctl list`, `ollama list`) and `Read`, with no write or edit tool, and
-a custom model provider gets no tools at all. The planner writes a plan, and
-AppleTree then acts on that plan behind its own checks, whatever the plan says:
+Nothing here can write to your disk. The planner is invited only to read the
+scan summary: a custom model provider gets no tools at all. It writes a plan,
+and AppleTree then acts on that plan behind its own checks, whatever the plan
+says:
 
-- Only paths inside your home folder, never Documents, Desktop, Photos, iCloud Drive, Mail, keychains or `~/.ssh` (build output such as `node_modules` inside them is allowed, and so are the Codex app's chat folders in `~/Documents/Codex`), never a git repository, and never a whole folder such as `~/Library/Caches`
+- Only paths inside your home folder, never Documents, Desktop, Photos, iCloud Drive, Mail, keychains or `~/.ssh` (build output such as `node_modules` inside them is allowed), never a git repository, and never a whole folder such as `~/Library/Caches`
 - Only each tool's own cleanup commands (`uv cache clean`, `brew cleanup`, `npm cache clean` and similar, plus `xcrun simctl` for Xcode simulator runtimes and device data), with no shell syntax
-- Codex chats and projects you used in the last 2 days are left alone
+- Projects you used in the last 2 days are left alone
 - Caches belonging to apps that are open are skipped until you quit them
 - "Delete permanently" removes only what this cleanup moved to the Trash
 
@@ -215,9 +209,9 @@ AppleTree then acts on that plan behind its own checks, whatever the plan says:
 
 AppleTree asks for Full Disk Access so the scan can read every folder on the
 disk, including the system-protected ones that normally stay out of reach.
-Everything it launches — the agent CLIs and each allowlisted cleanup command —
-inherits that same grant while it runs. The agent CLIs' own sandbox settings
-are a CLI-level policy, not an OS guarantee for anything they spawn.
+Every allowlisted cleanup command it runs inherits that same grant while it
+runs; what that command does with it is the tool's own behaviour, not a policy
+AppleTree sets.
 
 Cleanup commands (`uv cache clean`, `brew cleanup` and so on) are resolved
 through the shell's PATH, by design: these tools live in Homebrew, `~/.local/bin`,
@@ -227,28 +221,16 @@ cleanup invocations are ever run, but what runs is whatever the PATH resolves �
 the trust in your own PATH is residual.
 
 There is no telemetry. AppleTree contacts the network only when you explicitly
-ask it to: installing or signing in to an agent, fetching a model list, or
-running an AI cleanup. **Moving folders to the Trash yourself — from the map,
-the rings, the list or the Clean Up panel — is entirely local and sends
-nothing.**
+ask it to: fetching a model list, or running an AI cleanup. **Moving folders to
+the Trash yourself — from the map, the rings, the list or the Clean Up panel —
+is entirely local and sends nothing.**
 
-When you do run an AI cleanup, AppleTree itself sends the planner a *summary* of
-the scan, never file contents: the largest folder and file paths with their
-sizes (up to a few hundred entries), your home path, the scan root, and which
-apps are currently running. This holds for every planner.
-
-The two kinds of planner differ in what else can reach the network, and the
-difference is worth knowing:
-
-- **A custom model provider** receives that summary over HTTP and nothing else.
-  It runs no tools and never sees the disk, so with a provider you connect
-  yourself, file contents are never sent.
-- **A CLI agent (Claude Code or Codex)** is a full agent with a `Read` tool, and
-  AppleTree cannot restrict what it chooses to read. AppleTree hands it the same
-  summary, but the agent can inspect further on its own, and what it reads
-  becomes part of its conversation with Anthropic or OpenAI. Codex runs in a
-  read-only sandbox and Claude Code is held by a tool allowlist, so neither can
-  write — but that is a CLI-level policy, not a guarantee about what they read.
+When you do run an AI cleanup, AppleTree sends the planner a *summary* of the
+scan, never file contents: the largest folder and file paths with their sizes
+(up to a few hundred entries), your home path, the scan root, and which apps are
+currently running. A custom model provider receives that summary over HTTP and
+nothing else: it runs no tools and never sees the disk, so file contents are
+never sent.
 
 Either way, AppleTree performs and re-checks every deletion itself.
 
@@ -278,7 +260,7 @@ rebuild; the build warns when it has to fall back to ad-hoc for this reason.
 ## JSON CLI for agents and scripts
 
 An optional, read-only CLI uses the same scan engine without opening the GUI
-or launching an AI agent:
+or running an AI cleanup:
 
 ```sh
 cargo build --locked --release --features cli --bin appletree

@@ -3,8 +3,7 @@ import SwiftUI
 // Settings (Cmd+,): language, the planner used by the Clean Up panel, and
 // custom model providers — any OpenAI- or Anthropic-compatible endpoint by
 // its base URL, protocol and key. Provider plans arrive over plain HTTPS;
-// AppleTree's own guards and two-step delete are identical for them and for
-// the CLI agents.
+// AppleTree's own guards and two-step delete are AppleTree's own.
 
 // MARK: - Providers
 
@@ -34,7 +33,7 @@ struct ProvidersView: View {
                 .font(.callout)
                 .foregroundStyle(.secondary)
             if store.providers.isEmpty {
-                Text("No custom providers. The Clean Up panel uses Claude Code or Codex when one is installed and signed in.")
+                Text("No custom providers. Add one to let AppleTree plan a cleanup for you.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .padding(.vertical, 20)
@@ -66,6 +65,22 @@ struct ProvidersView: View {
             guard pending > handledRequest else { return }
             handledRequest = pending
             editing = .new
+        }
+        // Honour any pending "edit this provider", then drain them. The router
+        // hands the id and its token out together and clears the queue, so this
+        // cannot pair a token with the wrong provider, cannot drop one of two
+        // requests made in quick succession, and cannot replay a request on a
+        // later appearance of this view — which is what would otherwise raise a
+        // form the user never asked for on first show.
+        //
+        // Resolved through the store, so a request naming a provider that has
+        // since been deleted opens nothing rather than a form for something
+        // that no longer exists.
+        .onChange(of: router.editProviderRequests, initial: true) { _, _ in
+            for request in router.takePendingEditRequests() {
+                guard let provider = store.providers.first(where: { $0.id == request.id }) else { continue }
+                editing = .existing(provider)
+            }
         }
     }
 }
@@ -327,50 +342,42 @@ struct GeneralSettingsView: View {
 /// It lists the same catalog the Clean Up panel's menu does, so the planner
 /// Settings shows and the one the panel runs cannot disagree — they used to
 /// keep separate fallback rules (Settings preferred the first provider, the
-/// panel preferred a ready agent), which is how the two surfaces could point at
+/// panel preferred a ready provider), which is how the two surfaces could point at
 /// different engines while both looked correct.
-///
-/// Every entry is always listed, signed in or not: hiding a signed-out agent
-/// was the other half of the report, since a planner you cannot select is a
-/// planner you cannot switch to.
 private struct PlannerSettingsView: View {
     /// Re-read when model providers are added, edited or deleted.
     @State private var store = ProviderStore.shared
-    /// The environment lookup finishes asynchronously; until then the agents
-    /// show as "not signed in" rather than flickering in.
-    @State private var agents = AgentEnvironment()
 
     private var choices: [PlannerChoice] {
-        PlannerChoice.catalog(agents: agents, providers: store.providers)
+        PlannerChoice.catalog(providers: store.providers)
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Picker("Clean Up planner", selection: Binding(
-                get: {
-                    PlannerChoice.preferredID(
-                        stored: UserDefaults.standard.string(forKey: "bz.engine"),
-                        in: choices
-                    ) ?? "claude"
-                },
-                set: { (value: String) in UserDefaults.standard.set(value, forKey: "bz.engine") }
-            )) {
-                ForEach(choices) { choice in
-                    Text(choice.settingsLabel).tag(choice.id)
+            if choices.isEmpty {
+                Text("No planner configured.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            } else {
+                Picker("Clean Up planner", selection: Binding(
+                    get: {
+                        PlannerChoice.preferredID(stored: store.engineTag, in: choices)
+                            ?? choices[0].id
+                    },
+                    // Written through the store, which publishes it: a direct
+                    // `UserDefaults.set` left the Picker reading a value it
+                    // could not observe, so the checkmark never moved.
+                    set: { (value: String) in store.select(engineTag: value) }
+                )) {
+                    ForEach(choices) { choice in
+                        Text(choice.settingsLabel).tag(choice.id)
+                    }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
             Text("Which AI proposes what can go from the scan. Nothing is removed without your say.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            if let id = PlannerChoice.preferredID(
-                stored: UserDefaults.standard.string(forKey: "bz.engine"), in: choices
-            ), let note = choices.first(where: { $0.id == id })?.readinessNote {
-                Text(note)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
         }
-        .task { agents = await AgentLocator.find() }
     }
 }

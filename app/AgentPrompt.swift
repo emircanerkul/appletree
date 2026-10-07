@@ -3,7 +3,7 @@ import Foundation
 import Observation
 import SwiftUI
 
-// MARK: - What the agent is told
+// MARK: - What the planner is told
 
 nonisolated enum AgentPrompt {
     /// The flat tree orders siblings by size and includes descendants in
@@ -58,7 +58,8 @@ nonisolated enum AgentPrompt {
         commands at all. Only check what you really cannot judge from the tables, batched (one \
         `du -sk a b c` beats several), at most 3 commands.
 
-        Return a cleanup plan as JSON (the schema is enforced):
+        Return a cleanup plan as JSON. The reply is requested in JSON mode only, so these field \
+        names and shapes are what gives it structure; follow them exactly:
         - summary: one short sentence, e.g. "About 44 GB of caches and build output can go."
         - items, largest first, at most 12. Each item:
           - title: 2-5 plain words ("uv package cache", "Old Playwright browsers").
@@ -80,8 +81,8 @@ nonisolated enum AgentPrompt {
         Never include: ~/Documents, ~/Desktop, ~/Pictures, the Photos library, ~/Movies, ~/Music, Mail, \
         Messages, iCloud Drive (~/Library/Mobile Documents), keychains, ~/.ssh, dotfile configs, source \
         code, git repositories themselves, or files of the running apps below. Build output inside \
-        projects (node_modules, target, .next, dist, DerivedData) is fine, and so are the Codex chat \
-        folders and Xcode simulators listed at the end.
+        projects (node_modules, target, .next, dist, DerivedData) is fine, and so are the Xcode \
+        simulators listed at the end.
 
         ## Apps running now
         \(running.joined(separator: ", "))
@@ -104,18 +105,11 @@ nonisolated enum AgentPrompt {
         return md
     }
 
-    /// Big folders the scan alone can't explain: Xcode's simulators (runtime
-    /// images live outside the home folder and go only through `simctl`) and
-    /// the Codex app's chat folders, which sit in the otherwise off-limits
-    /// ~/Documents. Listed with what the agent needs to plan them.
-    static func appData(tree: Tree) -> String {
-        // simctl and Codex's logs are independent: look them up side by side.
-        let sims = OutputText()
-        let done = DispatchGroup()
-        DispatchQueue.global(qos: .userInitiated).async(group: done) { sims.set(Data(simulators().utf8)) }
-        let chats = codexChats(tree: tree)
-        done.wait()
-        return sims.value + chats
+    /// Big folders the scan alone can't explain: Xcode's simulators, whose
+    /// runtime images live outside the home folder and go only through
+    /// `simctl`. Listed with what the planner needs to plan them.
+    static func appData() -> String {
+        simulators()
     }
 
     private static func ago(_ date: Date?) -> String {
@@ -127,12 +121,12 @@ nonisolated enum AgentPrompt {
     private static func simulators() -> String {
         // Run simctl straight from the selected Xcode: /usr/bin/xcrun would
         // offer to install the command line tools on a Mac without them.
-        let developer = AgentLocator.run("/usr/bin/xcode-select", ["-p"]).out
+        let developer = ShellRunner.run("/usr/bin/xcode-select", ["-p"]).output
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let simctl = developer + "/usr/bin/simctl"
         guard !developer.isEmpty, FileManager.default.isExecutableFile(atPath: simctl) else { return "" }
         func json(_ args: [String]) -> [String: Any] {
-            let text = AgentLocator.run(simctl, args, timeout: 10).out
+            let text = ShellRunner.run(simctl, args, timeout: 10).output
             return (try? JSONSerialization.jsonObject(with: Data(text.utf8))) as? [String: Any] ?? [:]
         }
         func date(_ any: Any?) -> Date? { (any as? String).flatMap { try? Date($0, strategy: .iso8601) } }
@@ -179,45 +173,6 @@ nonisolated enum AgentPrompt {
         }
         if !devices.isEmpty {
             md += "\n| Size | Device | Last used | UDID | Folder |\n|---:|---|---|---|---|\n" + devices
-        }
-        return md
-    }
-
-    private static func codexChats(tree: Tree) -> String {
-        let root = NSHomeDirectory() + "/Documents/Codex"
-        guard let codex = tree.node(at: root) else { return "" }
-        var chats: [(node: Int, path: String)] = []
-        for day in tree.children(codex).map(Int.init) {
-            guard tree.alloc[day] >= 100_000_000 else { break }
-            let dayPath = root + "/" + tree.name(day)
-            for chat in tree.children(day).map(Int.init) {
-                guard tree.alloc[chat] >= 100_000_000 else { break }
-                let path = dayPath + "/" + tree.name(chat)
-                if tree.isDir(chat), CleanupGuard.codexChat(path) == path { chats.append((chat, path)) }
-            }
-        }
-        guard !chats.isEmpty else { return "" }
-        chats.sort { tree.alloc[$0.node] > tree.alloc[$1.node] }
-
-        var md = """
-
-        ## Codex chat folders
-
-        The Codex app keeps each chat's files in ~/Documents/Codex/<date>/<chat>: `outputs` holds what \
-        the chat produced (exports, downloads, renders), `work` its scratch files. Nothing recreates \
-        them, so group "ask", action "trash". One item per chat over 1 GB, titled from the chat name \
-        with its date in the detail; smaller ones may share one item. The chat folder or its \
-        `outputs`/`work` subfolders are valid paths. AppleTree keeps chats used in the last 2 days.
-
-        | Size | Chat | Last used | Inside |
-        |---:|---|---|---|
-
-        """
-        let sessions = CodexSessions.lastActive()
-        for (node, path) in chats.prefix(40) {
-            let used = sessions.filter { $0.key == path || $0.key.hasPrefix(path + "/") }.values.max()
-            let inside = tree.children(node).prefix(3).map { "\(tree.name(Int($0))) \(Fmt.size(tree.alloc[Int($0)]))" }
-            md += "| \(Fmt.size(tree.alloc[node])) | \(path) | \(used.map(ago) ?? "unknown") | \(inside.joined(separator: ", ")) |\n"
         }
         return md
     }

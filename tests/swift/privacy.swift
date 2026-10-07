@@ -37,6 +37,72 @@ func check(_ name: String, _ condition: Bool, _ detail: String = "") {
     }
 }
 
+/// The body of `func name`, from its opening brace to the matching close.
+///
+/// This exists because a textual count of `guard consentsToSending()` proves
+/// only that the string occurs somewhere in the file: `startProvider` could be
+/// left ungated while any other, textually identical guard satisfied the count.
+/// Brace-scoping the search to the function's own body is what makes the
+/// assertion about THIS entry point.
+///
+/// The returned body is CODE only: string literal contents and comments are
+/// stripped, so a `guard` that appears inside a message string or a commented
+/// line — braces and all — cannot be mistaken for a real gate.
+func functionBody(_ name: String, in source: String) -> String? {
+    guard let signature = source.range(of: "func \(name)") else { return nil }
+    var i = signature.upperBound
+    var bodyStart: String.Index?
+    while i < source.endIndex {
+        let c = source[i]
+        if c == "{" { bodyStart = source.index(after: i); break }
+        // A `=` or `;` before `{` means this is a declaration without a body.
+        if c == "=" || c == ";" { return nil }
+        i = source.index(after: i)
+    }
+    guard let start = bodyStart else { return nil }
+    var depth = 1
+    var j = start
+    var code = ""
+    while j < source.endIndex {
+        let c = source[j]
+        if c == "\"" {
+            j = source.index(after: j)
+            while j < source.endIndex {
+                if source[j] == "\\" { j = source.index(after: j); if j < source.endIndex { j = source.index(after: j) }; continue }
+                if source[j] == "\"" { break }
+                j = source.index(after: j)
+            }
+            if j < source.endIndex { j = source.index(after: j) }
+            code += "\"\""
+            continue
+        }
+        if c == "/", j < source.index(before: source.endIndex) {
+            let next = source[source.index(after: j)]
+            if next == "/" {
+                while j < source.endIndex, source[j] != "\n" { j = source.index(after: j) }
+                continue
+            }
+            if next == "*" {
+                j = source.index(after: j)
+                while j < source.endIndex, !(source[j] == "*" && source.index(after: j) < source.endIndex && source[source.index(after: j)] == "/") {
+                    j = source.index(after: j)
+                }
+                j = source.index(after: j)
+                if j < source.endIndex { j = source.index(after: j) }
+                continue
+            }
+        }
+        if c == "{" { depth += 1 }
+        if c == "}" {
+            depth -= 1
+            if depth == 0 { return code }
+        }
+        code.append(c)
+        j = source.index(after: j)
+    }
+    return nil
+}
+
 @main
 enum PrivacyTests {
     static func main() {
@@ -147,19 +213,20 @@ enum PrivacyTests {
               cleanup.contains("pendingConsentDestination"),
               "a dialog that does not say where the data goes cannot grant permission")
 
-        // The gate must sit in Model, on BOTH start paths. Gating the buttons
-        // would leave restart, Settings and install-and-run open.
+        // The gate must sit in Model, INSIDE `startProvider`'s own body.
         //
-        // Counted as `guard consentsToSending()`, not `consentsToSending()`:
-        // the plain identifier also matches the function's own definition, so
-        // the looser count is satisfied by a single guard. That is not
-        // hypothetical — the first version of this test passed with startAgent's
-        // guard deleted.
-        check("startProvider is gated",
-              model.contains("func startProvider") && model.contains("guard consentsToSending()"))
-        let gateCount = model.components(separatedBy: "guard consentsToSending()").count - 1
-        check("BOTH start paths are gated", gateCount >= 2,
-              "found \(gateCount) guard(s): one leaves the other entry point ungated")
+        // A textual count of the guard across the whole file proves nothing:
+        // it passes with `startProvider` ungated whenever exactly one other
+        // textually identical guard exists anywhere in Model.swift. Scoping the
+        // search to the function's brace-matched body is what pins the gate to
+        // the one entry point every path (panel button, planner menu, Settings'
+        // start, restart) funnels through.
+        let startBody = functionBody("startProvider", in: model)
+        check("startProvider's body was found", startBody != nil,
+              "the assertion below cannot be evaluated without it")
+        check("the start path is gated inside startProvider's own body",
+              startBody?.contains("guard consentsToSending()") == true,
+              "the guard must be in func startProvider, not merely somewhere in Model.swift")
         check("consent is recorded, not asked every time",
               model.contains("bz.cleanupConsent"))
         check("declining is possible and leaves the app usable",
@@ -192,8 +259,8 @@ enum PrivacyTests {
         check("UserDefaults is declared", declared["NSPrivacyAccessedAPICategoryUserDefaults"] != nil)
 
         // DDA9.1 ("display timestamps to the person") forbids sending anything
-        // derived off-device, and AppleTree sends simulator and Codex dates in
-        // the scan summary. Declaring it would be a false statement.
+        // derived off-device, and AppleTree sends Xcode simulator dates in the
+        // scan summary. Declaring it would be a false statement.
         check("FileTimestamp does NOT claim DDA9.1",
               !(declared["NSPrivacyAccessedAPICategoryFileTimestamp"] ?? []).contains("DDA9.1"),
               "AppleTree sends timestamp-derived dates off-device, which DDA9.1 forbids")

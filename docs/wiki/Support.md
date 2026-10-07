@@ -73,14 +73,14 @@ That is how macOS behaves: it stops applying a revocation to a process that is a
 
 It needs a finished scan. Scan a drive first — the panel lists reclaimable folders from that scan, so with no scan there is nothing to offer. If the drawer is already open the button stays usable so you can close it.
 
-### The AI cleanup needs a Claude Pro plan, or does nothing
+### The AI cleanup does nothing, or the button only offers to add a provider
 
-Two different situations:
+The AI cleanup needs a model provider you configure. Open **Settings → Model
+Providers** and add any OpenAI- or Anthropic-compatible endpoint — a relay, a
+self-hosted server (Ollama, LM Studio) or a gateway — with its base URL,
+protocol and model. A local endpoint keeps everything on your Mac.
 
-- **Claude Code** needs a Claude Pro subscription or better. If you see "Needs a Claude Pro plan", the agent is installed but the account is not eligible.
-- **Codex** is free with a ChatGPT account.
-
-Either way, the AI cleanup is optional. The Clean Up panel's own cache detection works with no agent and no provider configured at all — it has no AI dependency.
+Either way, the AI cleanup is optional. The Clean Up panel's own cache detection works with no provider configured at all — it has no AI dependency.
 
 ### Do I have to give the AI my files?
 

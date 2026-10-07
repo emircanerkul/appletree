@@ -62,12 +62,6 @@
 "Clean up with %@" = "Clean up with %@";
 "%@ reads this scan and suggests what can go. Nothing is removed until you say so." = "%@ reads this scan and suggests what can go. Nothing is removed until you say so.";
 "Let AI clean up for you" = "Let AI clean up for you";
-"%@ reads this scan and plans what can go. %@" = "%@ reads this scan and plans what can go. %@";
-"Free with a ChatGPT account." = "Free with a ChatGPT account.";
-"Needs a Claude Pro plan." = "Needs a Claude Pro plan.";
-"Sign in to %@ and it plans what can go from this scan." = "Sign in to %@ and it plans what can go from this scan.";
-"Set up %@" = "Set up %@";
-"Sign in to %@" = "Sign in to %@";
 "Stop" = "Stop";
 "Pick what to remove" = "Pick what to remove";
 "Move %@ to Trash" = "Move %@ to Trash";
@@ -103,9 +97,6 @@
 "%@ items couldn't be cleaned." = "%@ items couldn't be cleaned.";
 "Rescanned. The map is up to date." = "Rescanned. The map is up to date.";
 "Nothing needed doing." = "Nothing needed doing.";
-"Installing %@" = "Installing %@";
-"About 15 seconds, no password needed" = "About 15 seconds, no password needed";
-"Finish in the browser window that just opened" = "Finish in the browser window that just opened";
 "Safe to remove" = "Safe to remove";
 "Your call" = "Your call";
 "Free space" = "Free space";
@@ -136,7 +127,7 @@
 "Custom model providers" = "Custom model providers";
 "Add provider" = "Add provider";
 "Connect a relay, a self-hosted server, or any other OpenAI- or Anthropic-compatible endpoint by its base URL, protocol, and models." = "Connect a relay, a self-hosted server, or any other OpenAI- or Anthropic-compatible endpoint by its base URL, protocol, and models.";
-"No custom providers. The Clean Up panel uses Claude Code or Codex when one is installed and signed in." = "No custom providers. The Clean Up panel uses Claude Code or Codex when one is installed and signed in.";
+"No custom providers. Add one to let AppleTree plan a cleanup for you." = "No custom providers. Add one to let AppleTree plan a cleanup for you.";
 "Edit" = "Edit";
 "Delete" = "Delete";
 "Custom model API" = "Custom model API";
@@ -186,27 +177,11 @@
 "Nothing to remove" = "Nothing to remove";
 "Quit %@ to clean this" = "Quit %@ to clean this";
 "Already gone" = "Already gone";
-"A Codex chat you used in the last 2 days" = "A Codex chat you used in the last 2 days";
 "In projects you used in the last 2 days" = "In projects you used in the last 2 days";
 "About %@ can go." = "About %@ can go.";
 
-/* Planner choice and agent sign-out. */
+/* Planner choice. */
 "Choose the planner" = "Choose the planner";
-"Sign in to %@…" = "Sign in to %@…";
-"Set up %@…" = "Set up %@…";
-"Sign out of %@" = "Sign out of %@";
-"Sign out of %@?" = "Sign out of %@?";
-"Couldn't sign out" = "Couldn't sign out";
-"Add a model provider…" = "Add a model provider…";
-"%@ (custom)" = "%@ (custom)";
-"%@ (not signed in)" = "%@ (not signed in)";
-"%@ (not installed)" = "%@ (not installed)";
-"%@ is installed but signed out. Signing in lets it plan what can go." = "%@ is installed but signed out. Signing in lets it plan what can go.";
-"%@ forgets the account it is signed in with. The next plan needs a browser sign-in again. Nothing else on your Mac changes." = "%@ forgets the account it is signed in with. The next plan needs a browser sign-in again. Nothing else on your Mac changes.";
-"%@ is still signed in. Sign out from a terminal, then reopen AppleTree." = "%@ is still signed in. Sign out from a terminal, then reopen AppleTree.";
-"%@ is not signed in — sign in from the Clean Up panel." = "%@ is not signed in — sign in from the Clean Up panel.";
-"%@ is not installed — set it up from the Clean Up panel." = "%@ is not installed — set it up from the Clean Up panel.";
-"Pick a planner and it plans what can go from this scan." = "Pick a planner and it plans what can go from this scan.";
 
 /* Settings window tab labels. */
 "General" = "General";
@@ -257,3 +232,12 @@
 "Send a summary of this scan to %@?" = "Send a summary of this scan to %@?";
 "Send and clean up" = "Send and clean up";
 "AppleTree will send %@ the paths, names, sizes and dates of the largest items in this scan — folder and file names, but never the contents of your files. They leave your Mac and are handled under that provider's own terms. Sending it is what lets a planner suggest what to remove." = "AppleTree will send %@ the paths, names, sizes and dates of the largest items in this scan — folder and file names, but never the contents of your files. They leave your Mac and are handled under that provider's own terms. Sending it is what lets a planner suggest what to remove.";
+
+"Add a model provider and it plans what can go from this scan." = "Add a model provider and it plans what can go from this scan.";
+
+"No planner configured." = "No planner configured.";
+
+/* Panel planner list: one edit control per provider, and the way to
+   the pane where providers are added and edited. */
+"Edit %@" = "Edit %@";
+"Manage model providers" = "Manage model providers";

@@ -24,7 +24,7 @@ final class PlanItem: Identifiable {
     var trashed: [URL] = []
     var trashedBytes: UInt64 = 0
 
-    /// Size from the scan where it can be measured, else the agent's figure.
+    /// Size from the scan where it can be measured, else the plan's figure.
     let bytes: UInt64
     /// Its folders in the scan the plan was made from, for the treemap.
     let nodes: [Int]
@@ -80,16 +80,14 @@ final class PlanItem: Identifiable {
             for path in asked {
                 if let why = CleanupGuard.blockReason(path: path) {
                     reason = reason ?? why
-                } else if CleanupGuard.codexChat(path) == nil, let app = CleanupGuard.runningOwner(of: [path]) {
+                } else if let app = CleanupGuard.runningOwner(of: [path]) {
                     reason = reason ?? String(localized: "Quit \(app) to clean this")
                 } else if !FileManager.default.fileExists(atPath: path) {
                     reason = reason ?? String(localized: "Already gone")
                 } else if CleanupGuard.recentlyUsed(path) {
                     // Never break what the user is working on right now.
                     recent += 1
-                    reason = reason ?? (CleanupGuard.codexChat(path) != nil
-                        ? String(localized: "A Codex chat you used in the last 2 days")
-                        : String(localized: "In projects you used in the last 2 days"))
+                    reason = reason ?? String(localized: "In projects you used in the last 2 days")
                 } else {
                     kept.append(path)
                 }
@@ -120,16 +118,14 @@ final class AgentRun {
     /// → `staged` → Delete permanently → `done`.
     enum Phase: Equatable { case thinking, planned, trashing, staged, deleting, done, failed(String) }
 
-    /// Nil when the plan comes from a custom provider over HTTP.
-    let agent: InstalledAgent?
-    /// Nil when the plan comes from a CLI agent. The endpoint never runs
-    /// tools — it only writes the plan; the guards and the two-step delete
-    /// below are identical for both sources.
-    let provider: LLMProvider?
-    /// What the panel calls the planner: the CLI agent's or the provider's name.
-    var displayName: String { agent?.kind.name ?? provider?.displayName ?? "The assistant" }
+    /// The endpoint that produced this plan. It never runs tools — it only
+    /// writes the plan; the guards and the two-step delete below are
+    /// AppleTree's own and are unchanged by where the plan came from.
+    let provider: LLMProvider
+    /// What the panel calls the planner.
+    var displayName: String { provider.displayName }
     private(set) var phase: Phase = .thinking
-    /// What the agent has done so far, in plain words; the last one is live.
+    /// What the run has done so far, in plain words; the last one is live.
     private(set) var steps: [String] = ["Reading your scan"]
     private(set) var summary = ""
     private(set) var items: [PlanItem] = []
@@ -140,15 +136,13 @@ final class AgentRun {
     /// fill and accent ring.
     private(set) var current: UUID?
 
-    private var process: Process?
     private let scanRoot: String
     private let tree: Tree
     private let onFinish: () -> Void
     private var preparationTask: Task<Void, Never>?
 
-    init(agent: InstalledAgent?, env: AgentEnvironment, tree: Tree, scanRoot: String,
-         known: [CleanupItem], provider: LLMProvider? = nil, onFinish: @escaping () -> Void) {
-        self.agent = agent
+    init(provider: LLMProvider, tree: Tree, scanRoot: String,
+         known: [CleanupItem], onFinish: @escaping () -> Void) {
         self.provider = provider
         self.scanRoot = scanRoot
         self.tree = tree
@@ -160,14 +154,14 @@ final class AgentRun {
             guard !Task.isCancelled else { return }
             let input = await Task.detached(priority: .userInitiated) {
                 AgentPrompt.build(tree: tree, scanRoot: scanRoot, known: known, running: running)
-                + AgentPrompt.appData(tree: tree)
+                + AgentPrompt.appData()
             }.value
             // Closing or replacing a run while its prompt was being built
-            // must not launch an agent after cancellation.
+            // must not start a request after cancellation.
             guard !Task.isCancelled, let self else { return }
             preparationTask = nil
             step("Asking \(displayName) what can go")
-            start(input: input, env: env)
+            startProvider(input: input, provider: self.provider)
         }
     }
 
@@ -203,17 +197,9 @@ final class AgentRun {
         withAnimation(.snappy) { steps.append(text) }
     }
 
-    /// `defaults write com.erklab.apps.appletree bz.claudeModel haiku` to try another.
-    private static var claudeModel: String {
-        ProcessInfo.processInfo.environment["BZ_CLAUDE_MODEL"]
-            ?? UserDefaults.standard.string(forKey: "bz.claudeModel") ?? "sonnet"
-    }
-
     func cancel() {
         preparationTask?.cancel()
         preparationTask = nil
-        process?.terminate()
-        process = nil
         planClient?.cancel()
         planClient = nil
     }
@@ -222,91 +208,7 @@ final class AgentRun {
     /// from the HTTP response into the same event pipeline.
     private var planClient: LLMPlanClient?
 
-    // MARK: Agent process
-
-    private func start(input: String, env: AgentEnvironment) {
-        if let provider { startProvider(input: input, provider: provider); return }
-        guard let agent else { return }
-        let folder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("AppleTree", isDirectory: true)
-        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: agent.path)
-        // An empty working folder: no project settings, hooks or memory load.
-        process.currentDirectoryURL = folder
-        var environment = ProcessInfo.processInfo.environment
-        environment["PATH"] = env.path
-        process.environment = environment
-
-        switch agent.kind {
-        case .claude:
-            process.arguments = [
-                "-p", "--setting-sources", "project", "--output-format", "stream-json", "--verbose",
-                "--include-partial-messages", "--model", Self.claudeModel, "--effort", "low",
-                "--tools", "Bash,Read", "--permission-mode", "dontAsk", "--no-session-persistence",
-                "--allowedTools", "Bash(du:*)", "Bash(ls:*)", "Bash(stat:*)", "Bash(docker system df:*)",
-                "Bash(xcrun simctl list:*)", "Bash(ollama list:*)", "Read",
-                "--json-schema", planSchema,
-            ]
-        case .codex:
-            // The app server, not `codex exec`: only it streams the answer as
-            // it is written, so cards can appear one by one.
-            process.arguments = ["app-server"]
-        }
-
-        let stdin = Pipe(), stdout = Pipe(), stderr = Pipe()
-        process.standardInput = stdin
-        process.standardOutput = stdout
-        process.standardError = stderr
-
-        // Main queue, not Tasks: events must land in the order they were read.
-        let writer = stdin.fileHandleForWriting
-        let reader = AgentStreamReader(kind: agent.kind, prompt: input, folder: folder.path,
-                                       write: { data in try? writer.write(contentsOf: data) },
-                                       done: { [weak process] in process?.terminate() }) { [weak self] event in
-            DispatchQueue.main.async { MainActor.assumeIsolated { self?.handle(event) } }
-        }
-        // The run ends once the process has exited and all its output is read.
-        let ended = DispatchGroup()
-        ended.enter(); ended.enter()
-        stdout.fileHandleForReading.readabilityHandler = { handle in
-            let data = handle.availableData
-            if data.isEmpty {
-                handle.readabilityHandler = nil
-                ended.leave()
-            } else {
-                reader.feed(data)
-            }
-        }
-        let errTail = ErrTail()
-        stderr.fileHandleForReading.readabilityHandler = { handle in
-            let data = handle.availableData
-            if data.isEmpty { handle.readabilityHandler = nil } else { errTail.feed(data) }
-        }
-        process.terminationHandler = { _ in ended.leave() }
-        ended.notify(queue: .main) { [weak self] in
-            let status = process.terminationStatus
-            let tail = errTail.last
-            MainActor.assumeIsolated { self?.processEnded(status: status, stderr: tail) }
-        }
-        do {
-            try process.run()
-        } catch {
-            phase = .failed("Couldn't start \(displayName): \(error.localizedDescription)")
-            return
-        }
-        self.process = process
-        if agent.kind == .claude {
-            let data = Data(input.utf8)
-            DispatchQueue.global(qos: .userInitiated).async {
-                try? writer.write(contentsOf: data)
-                try? writer.close()
-            }
-        } else {
-            reader.begin()
-        }
-    }
+    // MARK: Asking the endpoint
 
     /// Custom provider: stream the plan over HTTP. No process, no PATH, no
     /// working folder — the endpoint only ever sees the prompt text (folder
@@ -337,27 +239,6 @@ final class AgentRun {
         }
     }
 
-    private func handle(_ event: AgentStreamReader.Event) {
-        guard phase == .thinking else { return }
-        switch event {
-        case .activity(let text):
-            step(text)
-        case .item(let spec):
-            withAnimation(.snappy) { items.append(PlanItem(spec: spec, tree: tree)) }
-        case .restart:
-            withAnimation(.snappy) { items = [] }
-        case .plan(let summary, let specs):
-            self.summary = summary
-            adopt(specs)
-            finishPlanning()
-        case .failed(let message):
-            // A CLI run that dies after streaming cards still finishes
-            // planning with what arrived; a provider whose JSON never
-            // decoded strictly gets the same grace.
-            if !items.isEmpty { finishPlanning() } else { phase = .failed(message) }
-        }
-    }
-
     /// Make the final plan authoritative while preserving the ticks a user
     /// already made on cards it agrees with.
     ///
@@ -383,18 +264,6 @@ final class AgentRun {
         }
     }
 
-    private func processEnded(status: Int32, stderr: String) {
-        process = nil
-        guard phase == .thinking else { return }
-        if !items.isEmpty {
-            finishPlanning()
-        } else if status != 0 {
-            phase = .failed(stderr.isEmpty ? "\(displayName) stopped (exit \(status))." : stderr)
-        } else {
-            phase = .failed("\(displayName) didn't return a plan.")
-        }
-    }
-
     private func finishPlanning() {
         planSeconds = -startedAt.timeIntervalSinceNow
         items.sort { $0.bytes > $1.bytes }
@@ -404,7 +273,7 @@ final class AgentRun {
         withAnimation(.snappy) { phase = .planned }
     }
 
-    // MARK: Cleaning (AppleTree does this, not the agent)
+    // MARK: Cleaning (AppleTree does this, not the planner)
 
     /// Demo recordings only: walk through both steps without touching disk.
     private let dryRun = ProcessInfo.processInfo.environment["BZ_DEMO_DRYRUN"] != nil
@@ -490,7 +359,7 @@ final class AgentRun {
     /// Step two: delete permanently what step one trashed, and run the tools'
     /// own cache cleanups. Only this run's items; the rest of the Trash stays.
     /// Everything runs at once: folder deletes spread over every core.
-    func deleteForGood(env: AgentEnvironment) {
+    func deleteForGood(env: ShellEnvironment) {
         guard phase == .staged else { return }
         phase = .deleting
         let work = targets.filter { $0.status == .inTrash || ($0.isCommand && $0.status == .waiting) }
@@ -660,7 +529,7 @@ final class AgentRun {
     }
 }
 
-/// Keeps the last line of an agent's stderr for error messages.
+/// Keeps the last line of a cleanup command's stderr for error messages.
 nonisolated final class ErrTail: @unchecked Sendable {
     private let lock = NSLock()
     private var text = ""

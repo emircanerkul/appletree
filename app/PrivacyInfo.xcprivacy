@@ -32,8 +32,8 @@
 		  3B52.1, not DDA9.1. Both describe file-timestamp access, but DDA9.1
 		  ("display timestamps to the person") forbids sending anything derived
 		  off-device, and AppleTree does: an AI cleanup sends Xcode simulator
-		  last-used dates and Codex session dates in the scan summary, and those
-		  are derived from file timestamps. 3B52.1 covers metadata of files the
+		  last-used dates in the scan summary, and those are derived from file
+		  timestamps. 3B52.1 covers metadata of files the
 		  user specifically granted access to — the folder they chose to scan, or
 		  the whole disk they granted Full Disk Access for — and carries no
 		  off-device restriction. DDA9.1 would be a false declaration.

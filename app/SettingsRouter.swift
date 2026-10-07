@@ -22,6 +22,13 @@ final class SettingsRouter {
         case providers
     }
 
+    /// One "edit this provider" request: the id it names, together with the
+    /// ordinal that ordered it.
+    struct EditProviderRequest: Equatable, Sendable {
+        let token: Int
+        let id: String
+    }
+
     /// The pane on screen. Bound by the Settings `TabView`.
     var tab: Tab = .general
 
@@ -35,9 +42,48 @@ final class SettingsRouter {
     /// moment.
     private(set) var addProviderRequests = 0
 
+    /// "Edit this provider" requests not yet delivered, oldest first.
+    ///
+    /// A queue of self-contained values, not an id slot plus a separate counter.
+    /// The slot form had the id and the token in two properties a consumer read
+    /// at different moments: two requests in flight bumped the counter and
+    /// overwrote the id, so the latest token could be paired with the wrong
+    /// provider — or the first request lost outright.
+    ///
+    /// Consumed-once (`takePendingEditRequests`) is also what stops a form
+    /// opening unprompted: a fresh view cannot replay a request that was already
+    /// delivered, and there is no stale token to trip over on first appearance.
+    private(set) var editProviderRequests: [EditProviderRequest] = []
+
+    /// Ordinal of the next edit request. Monotonic and never reset, so two
+    /// requests can never share a token even after the queue has drained.
+    private var nextEditToken = 0
+
     /// Ask for the Model Providers pane, with the add-provider form open.
     func requestAddProvider() {
         tab = .providers
         addProviderRequests += 1
+    }
+
+    /// Ask for the Model Providers pane, with no form raised.
+    ///
+    /// Deliberately not `requestAddProvider`: the user asked to *manage* the
+    /// providers they already have, and raising a blank new-provider form over
+    /// that list would answer a question they did not ask.
+    func requestManageProviders() {
+        tab = .providers
+    }
+
+    /// Ask for the Model Providers pane with provider `id`'s own form open.
+    func requestEditProvider(id: String) {
+        tab = .providers
+        nextEditToken += 1
+        editProviderRequests.append(EditProviderRequest(token: nextEditToken, id: id))
+    }
+
+    /// Take every undelivered edit request and clear them, oldest first.
+    func takePendingEditRequests() -> [EditProviderRequest] {
+        defer { editProviderRequests = [] }
+        return editProviderRequests
     }
 }

@@ -11,7 +11,7 @@ final class TreemapNSView: NSView {
         didSet { if model !== oldValue { relayout() } }
     }
 
-    /// Folders an agent plan would remove: lit while the rest dims.
+    /// Folders a plan would remove: lit while the rest dims.
     var highlights: [Int] = [] { didSet { if highlights != oldValue { litRects = nil } } }
     /// Their rects in the current layout, found once per change, not per frame.
     private var litRects: [CGRect]?
@@ -429,7 +429,7 @@ final class TreemapNSView: NSView {
             }
         }
         // Every picked node, with the primary stroked thicker. Drawn after the
-        // dimming pass so a picked tile reads as chosen even while an agent plan
+        // dimming pass so a picked tile reads as chosen even while a plan
         // highlights a different area.
         //
         // The selected node's OWN shape only. The rings light a folder's whole

@@ -76,8 +76,7 @@ struct ContentView: View {
         }
         .toolbar { toolbar }
         .task {
-            await model.refreshAgents()
-            model.openPanelAfterLaunchScan()
+            await model.refreshShellEnvironment()
         }
         // A drive plugged in or ejected while the window is open: keep the
         // scan pickers (toolbar menu and idle overlay) in step with the Mac.
@@ -85,9 +84,8 @@ struct ContentView: View {
             for: NSWorkspace.didMountNotification)) { _ in model.refreshDrives() }
         .onReceive(NotificationCenter.default.publisher(
             for: NSWorkspace.didUnmountNotification)) { _ in model.refreshDrives() }
-        // An agent run or the setup offer always shows in the panel.
+        // A cleanup run always shows in the panel.
         .onChange(of: model.agentRun == nil) { if model.agentRun != nil { showCleanup = true } }
-        .onChange(of: model.panelRequests) { showCleanup = true }
         // Settings also answers the launch-scan question. Without this the
         // offer would linger on an already-open home screen until a relaunch,
         // and the user would be asked something they just decided.

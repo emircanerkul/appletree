@@ -58,9 +58,6 @@ servers of its own, so the interesting surface is small and specific:
 - What a model provider you configured yourself does with the scan summary it
   receives. That is your relationship with that provider; see
   [docs/appstore/privacy-policy.md](docs/appstore/privacy-policy.md).
-- Third-party coding agents (Claude Code, Codex). Report those to their own
-  projects — AppleTree only invokes them with a read-only, tool-restricted
-  command line.
 - Cosmetic issues, feature requests and ordinary bugs. Those belong in the
   issue tracker.
 

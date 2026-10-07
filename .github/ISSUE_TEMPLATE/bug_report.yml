@@ -115,8 +115,6 @@ body:
       description: Only relevant to the Clean Up panel.
       options:
         - Not using a planner
-        - Claude Code
-        - Codex
         - A custom model provider
         - Not sure
     validations:

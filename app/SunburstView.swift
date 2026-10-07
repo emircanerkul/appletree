@@ -23,7 +23,7 @@ final class SunburstNSView: NSView {
         didSet { if model !== oldValue { relayout() } }
     }
 
-    /// Folders an agent plan would remove: lit while the rest dims.
+    /// Folders a plan would remove: lit while the rest dims.
     var highlights: [Int] = [] { didSet { if highlights != oldValue { litSegments = nil } } }
 
     private var segments: [SBSegment] = []

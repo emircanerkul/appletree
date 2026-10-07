@@ -336,9 +336,11 @@ final class ScanModel {
         // Whole disk by default: the user-data volume of the boot volume group.
         return "/System/Volumes/Data"
     }()
-    /// Coding agents found on this Mac (Claude Code, Codex) and the user's PATH.
-    var agentEnv = AgentEnvironment()
-    /// The agent cleanup on screen, if any.
+    /// The user's shell PATH, for the allowlisted cleanup commands. Tools live
+    /// in Homebrew, ~/.local/bin and nvm, none of which an app launched by
+    /// Finder has on its own PATH.
+    var shellEnv = ShellEnvironment()
+    /// The cleanup on screen, if any.
     var agentRun: AgentRun?
     /// A cleanup the user asked for, held until they acknowledge what is about
     /// to be sent off this Mac.
@@ -350,10 +352,10 @@ final class ScanModel {
     /// the destination or described the payload.
     ///
     /// Nothing starts while this is non-nil. Every entry point — the panel's
-    /// primary button, its planner menu, Settings' start, a restart, and the
-    /// install-and-run path — funnels through `startAgent`/`startProvider`, and
-    /// both refuse to run until `grantCleanupConsent()` is called. Gating the
-    /// buttons instead would leave the other three paths open.
+    /// primary button, its planner menu, Settings' start and a restart —
+    /// funnels through `startProvider`, which refuses to run until
+    /// `grantCleanupConsent()` is called. Gating the buttons instead would
+    /// leave the other paths open.
     var pendingConsent = false
     /// Who the held-back run would send to, so the dialog can name the
     /// destination. Guideline 5.1.2(i) is about *explicit permission*, and a
@@ -365,55 +367,36 @@ final class ScanModel {
     /// Whether the user has ever granted this, so the dialog is a one-time
     /// decision rather than a toll gate on every cleanup.
     private static let consentKey = "bz.cleanupConsent"
-    /// An agent being installed or signed in from the panel.
-    var agentSetup: AgentSetup?
-    /// The first scan after launch opens the Clean Up panel once.
-    private var panelOpenedAfterLaunch = false
-
-    /// Custom providers, for the panel's picker menu. Shared store: settings
-    /// edits land here immediately, no refresh wiring needed.
-    var providerStore: ProviderStore { ProviderStore.shared }
-
-    /// The planner for the Clean Up panel. `bz.engine` names it: a CLI agent
-    /// ("claude", "codex") or a custom provider ("provider:<id>").
-    var preferredAgent: InstalledAgent? { preferredChoice?.installed }
 
     /// The provider picked in Settings, when `bz.engine` names one.
-    var preferredProvider: LLMProvider? { preferredChoice?.providerValue }
+    var preferredProvider: LLMProvider? { preferredChoice?.provider }
 
-    /// The whole choice in effect, so a caller that must react to its *kind*
-    /// (the panel's primary action, sign-out state) does not have to re-derive
-    /// it from two optionals that are each only half the answer.
+    /// The whole choice in effect, so a caller that must react to whether a
+    /// planner exists at all does not have to re-derive it.
     var preferredChoice: PlannerChoice? {
         let choices = plannerChoices
         if let id = defaultPlannerID, let match = choices.first(where: { $0.id == id }) { return match }
-        return choices.first { $0.runnable }
+        return choices.first
     }
 
     /// Every planner the user may choose, in the order it is offered — the one
     /// owner of that list, read by the panel's menu and by Settings → General.
     var plannerChoices: [PlannerChoice] {
-        PlannerChoice.catalog(agents: agentEnv, providers: ProviderStore.shared.providers)
+        PlannerChoice.catalog(providers: ProviderStore.shared.providers)
     }
 
     /// The planner in effect — one resolution, read by both the panel and
-    /// Settings, which each used to keep their own fallback chain (the panel
-    /// preferred a ready agent, Settings preferred the first provider, so the
-    /// row Settings showed and the engine the panel ran could disagree).
-    /// `bz.agent` is the legacy fallback for installs that never wrote
-    /// `bz.engine`; it can be retired once no release reads it.
+    /// Settings, which each used to keep their own fallback chain. The stored
+    /// tag comes from `ProviderStore`, which publishes it, so a pick in either
+    /// surface is visible to the other. A stale tag from an older install
+    /// simply fails to resolve and the first configured provider leads.
     var defaultPlannerID: String? {
-        PlannerChoice.preferredID(
-            stored: UserDefaults.standard.string(forKey: "bz.engine")
-                ?? UserDefaults.standard.string(forKey: "bz.agent"),
-            in: plannerChoices
-        )
+        PlannerChoice.preferredID(stored: ProviderStore.shared.engineTag, in: plannerChoices)
     }
 
     /// Start the cleanup with whatever the user picked in Settings.
     func startCleanup() {
         if let provider = preferredProvider { startProvider(provider) }
-        else if let agent = preferredAgent { startAgent(agent) }
     }
 
     /// Everything the scan pickers list: the whole disk, the home folder, then
@@ -447,10 +430,8 @@ final class ScanModel {
 
     /// Whether a cleanup may start right now.
     ///
-    /// ONE rule for both entry kinds. `startProvider` previously checked only
-    /// `!scanning` while `startAgent` also checked `!cleanupTrash.running`, so
-    /// whether a second run was refused depended on which planner the user
-    /// picked — a divergence with no reason behind it.
+    /// A plan belongs to the scan that produced it, so a run and a scan cannot
+    /// overlap; the guard is one rule, not one per entry point.
     private var canStartCleanup: Bool { tree != nil && !scanning && !cleanupTrash.running }
 
     func startProvider(_ provider: LLMProvider) {
@@ -459,26 +440,12 @@ final class ScanModel {
             askForConsent(destination: provider.displayName) { [weak self] in self?.startProvider(provider) }
             return
         }
-        UserDefaults.standard.set("provider:\(provider.id)", forKey: "bz.engine")
+        // Through the store, so the record and the published value agree and
+        // every surface reading it re-renders.
+        ProviderStore.shared.select(engineTag: "provider:\(provider.id)")
         agentRun?.cancel()
-        let run = AgentRun(agent: nil, env: agentEnv, tree: tree, scanRoot: scanRoot,
-                           known: cleanup, provider: provider) { [weak self] in
-            guard let self, !self.scanning else { return }
-            self.startScan()
-        }
-        withAnimation(.snappy) { agentRun = run }
-    }
-
-    func startAgent(_ agent: InstalledAgent) {
-        guard canStartCleanup, let tree else { return }
-        guard consentsToSending() else {
-            askForConsent(destination: agent.kind.name) { [weak self] in self?.startAgent(agent) }
-            return
-        }
-        UserDefaults.standard.set(agent.kind.rawValue, forKey: "bz.engine")
-        UserDefaults.standard.set(agent.kind.rawValue, forKey: "bz.agent")
-        agentRun?.cancel()
-        let run = AgentRun(agent: agent, env: agentEnv, tree: tree, scanRoot: scanRoot, known: cleanup) { [weak self] in
+        let run = AgentRun(provider: provider, tree: tree, scanRoot: scanRoot,
+                           known: cleanup) { [weak self] in
             guard let self, !self.scanning else { return }
             self.startScan()
         }
@@ -535,94 +502,35 @@ final class ScanModel {
         openSettings()
     }
 
-    /// After the launch scan: open the panel on the Clean Up button or the
-    /// setup offer. Nothing goes to an agent until the user clicks.
+    /// Open Settings on Model Providers without raising a form.
     ///
-    /// The Clean Up drawer is **off by default** and this no longer opens it.
-    /// It used to: every launch scan ended by force-opening a right-hand panel
-    /// the user had not asked for, which put an AI cleanup offer in front of
-    /// someone who only wanted to look at their disk. The panel is now opened
-    /// only by the toolbar's Clean Up toggle or by starting a run, so the disk
-    /// view is what the app opens on.
-    func openPanelAfterLaunchScan() {
-        guard !panelOpenedAfterLaunch, agentEnv.loaded, tree != nil, !scanning,
-              !cleanupTrash.running, agentRun == nil else { return }
-        panelOpenedAfterLaunch = true
-        // QA only: BZ_QA_SETUP=claude|codex presses the setup button. A
-        // configured provider needs no sign-in, so it is not "not set up".
-        // The panel is shown first, because that button lives inside it.
-        if preferredAgent == nil, preferredProvider == nil,
-           let kind = ProcessInfo.processInfo.environment["BZ_QA_SETUP"].flatMap(AgentKind.init) {
-            panelRequests += 1
-            setUp(kind)
-        }
+    /// For the panel's "Manage model providers": the user already has providers
+    /// and wants that list, so a blank new-provider sheet would sit in the way
+    /// of what they asked for.
+    func manageModelProviders(openSettings: @escaping () -> Void) {
+        SettingsRouter.shared.requestManageProviders()
+        openSettings()
     }
 
-    /// Run the same cleanup again: whatever produced this run (CLI agent or
-    /// provider), re-planned from the current scan.
+    /// Open Settings on Model Providers with this provider's own form raised.
+    func editModelProvider(_ provider: LLMProvider, openSettings: @escaping () -> Void) {
+        SettingsRouter.shared.requestEditProvider(id: provider.id)
+        openSettings()
+    }
+
+    /// Run the same cleanup again, re-planned from the current scan.
     func restart(_ run: AgentRun) {
-        if let provider = run.provider { startProvider(provider) }
-        else if let agent = run.agent { startAgent(agent) }
+        startProvider(run.provider)
     }
 
-    /// Bumped to ask the window to open the Clean Up panel.
-    var panelRequests = 0
-
-    /// Re-read which agents exist and which are signed in, then publish it.
+    /// Re-read the user's shell PATH, then publish it.
     ///
-    /// Returns the discovered environment so a caller can act on what was found
-    /// (the sign-out path checks the session really ended). Launch and sign-out
-    /// both land here, so a readiness change cannot be applied two slightly
-    /// different ways.
-    @discardableResult
-    func refreshAgents() async -> AgentEnvironment {
-        let env = await AgentLocator.find()
-        agentEnv = env
-        return env
+    /// Launch and every cleanup run both land here, so the PATH the command
+    /// rows use cannot be applied two slightly different ways.
+    func refreshShellEnvironment() async {
+        shellEnv = await ShellRunner.find()
     }
 
-    /// Install or sign in to an agent, then (by default) run the plan with it.
-    ///
-    /// `startWhenReady` is false for the menu's account section: there the user
-    /// asked to fix the account, not to spend a run, so the panel must not
-    /// launch an agent they did not ask for.
-    func setUp(_ kind: AgentKind, startWhenReady: Bool = true) {
-        agentSetup?.cancel()
-        let installed = agentEnv.agents.first { $0.kind == kind }
-        agentSetup = AgentSetup(kind: kind, installed: installed, envPath: agentEnv.path) { [weak self] env in
-            guard let self else { return }
-            agentEnv = env
-            agentSetup = nil
-            if startWhenReady, let agent = env.ready.first(where: { $0.kind == kind }) { startAgent(agent) }
-        }
-    }
-
-    /// True while a cleanup is on screen or running, when signing out would
-    /// pull the engine out from under live work.
-    var signOutBlocked: Bool { agentRun != nil || cleanupTrash.running }
-
-    /// Set when a sign-out did not take; shown once and cleared.
-    var signOutFailure: String?
-
-    /// Sign an agent out through its own CLI, then re-read readiness.
-    ///
-    /// The account belongs to the CLI, not to AppleTree: the app only invokes
-    /// the tool's own logout and reports what the environment says afterwards.
-    /// It runs off the main actor because the CLI is a process.
-    func signOut(_ kind: AgentKind) async {
-        guard !signOutBlocked, agentSetup == nil else { return }
-        guard let agent = agentEnv.agents.first(where: { $0.kind == kind }) else { return }
-        let path = agent.path, envPath = agentEnv.path
-        _ = await Task.detached(priority: .userInitiated) {
-            AgentLocator.signOut(kind, path: path, envPath: envPath)
-        }.value
-        let env = await refreshAgents()
-        // Trust the re-read, not the exit status: a CLI that reports success
-        // while still holding a session must not be shown as signed out.
-        if env.ready.contains(where: { $0.kind == kind }) {
-            signOutFailure = String(localized: "\(kind.name) is still signed in. Sign out from a terminal, then reopen AppleTree.")
-        }
-    }
     /// A tree has been shown at least once, so the views exist (see ContentView).
     var hasShownTree = false
 
@@ -1283,7 +1191,6 @@ final class ScanModel {
                 // Node IDs only belong to the scan that produced them.
                 guard self.tree === tree else { return }
                 cleanup = found
-                openPanelAfterLaunchScan()
             }
             NSLog("BZ scan done: %llu nodes, %llu unreadable dirs", UInt64(tree.count), tree.errors)
         }

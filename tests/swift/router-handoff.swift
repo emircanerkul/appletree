@@ -81,6 +81,54 @@ enum RouterHandoffTests {
         router.requestAddProvider()
         check("and requesting the form moves it", router.tab == .providers)
 
+        // --- Managing the list raises no form ---------------------------------
+        // "Manage model providers" is not "Add": the user asked for the list
+        // they already have, so a blank new-provider sheet must NOT appear. The
+        // add counter is the observable that proves it did not.
+        router.tab = .general
+        let beforeManage = router.addProviderRequests
+        router.requestManageProviders()
+        check("managing selects the Model Providers pane",
+              router.tab == .providers, "tab is \(router.tab)")
+        check("managing does not raise the add-provider form",
+              router.addProviderRequests == beforeManage,
+              "counter moved \(beforeManage) -> \(router.addProviderRequests)")
+
+        // --- Editing names one provider, carried with its token ---------------
+        router.tab = .general
+        router.requestEditProvider(id: "acme")
+        check("editing selects the Model Providers pane",
+              router.tab == .providers, "tab is \(router.tab)")
+        let firstEdit = router.takePendingEditRequests()
+        check("editing delivers exactly one request",
+              firstEdit.count == 1, "got \(firstEdit.count)")
+        check("editing records which provider",
+              firstEdit.first?.id == "acme", "got \(firstEdit.first?.id ?? "nil")")
+        check("editing's counter matches the delivered token",
+              firstEdit.first?.token == 1, "got \(String(describing: firstEdit.first?.token))")
+        // Consumed-once: the request must not survive its delivery, or a view
+        // appearing later would replay it and open a form nobody asked for.
+        check("a delivered edit request is not delivered again",
+              router.takePendingEditRequests().isEmpty,
+              "a replay would re-open the form on first appearance")
+
+        // Two requests before the consumer runs must BOTH survive, and must
+        // keep their own ids. The old id-slot-plus-counter form lost the first
+        // and could pair the latest token with the wrong provider.
+        router.requestEditProvider(id: "beta")
+        router.requestEditProvider(id: "gamma")
+        let both = router.takePendingEditRequests()
+        check("two quick requests both survive",
+              both.map(\.id) == ["beta", "gamma"], "got \(both.map(\.id))")
+        check("their tokens are distinct and ordered",
+              both.map(\.token) == [2, 3] || both[0].token < both[1].token,
+              "got \(both.map(\.token))")
+        check("taking them clears the queue", router.takePendingEditRequests().isEmpty)
+
+        // Managing the list must not have raised an edit request either.
+        check("managing raised no edit request",
+              router.takePendingEditRequests().isEmpty)
+
         print("\(passed) passed, \(failed) failed")
         exit(failed == 0 ? 0 : 1)
     }
