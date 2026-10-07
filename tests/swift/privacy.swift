@@ -293,6 +293,69 @@ enum PrivacyTests {
               "AppleTree has no accounts, analytics or servers")
         check("tracking is declared false", (manifest["NSPrivacyTracking"] as? Bool) == false)
 
+        // --- 5. The policy's factual claims still match the code --------------
+        //
+        // §5.2 and §5.5 are statements of fact about what the app sends and
+        // refuses. They are prose, so nothing type-checks them, and they have
+        // already drifted twice: `app/AgentPrompt.swift`'s §5.2 limits are read
+        // from the source and the working notes say to re-check them by hand
+        // (which is exactly what failed when the simulator section became
+        // scan-conditional), and §5.5's block list did not mention the
+        // signed-app-bundle rule when it was added.
+        //
+        // These pin the load-bearing parts against the code that decides them,
+        // so the next change to either must update the policy deliberately.
+
+        let guardSource = (try? String(contentsOf: root.appendingPathComponent("app/CleanupGuard.swift"),
+                                       encoding: .utf8)) ?? ""
+        let promptSource = (try? String(contentsOf: root.appendingPathComponent("app/AgentPrompt.swift"),
+                                        encoding: .utf8)) ?? ""
+
+        // §5.5 enumerates what cleanup refuses; every reason it names must exist
+        // in the guard, and every refusal reason the guard can produce must be
+        // named in the policy. A new rule added without a policy line is a
+        // promise the document does not keep.
+        check("§5.5 names the signed-app-bundle rule",
+              policy.contains("signed app bundle"),
+              "CleanupGuard can refuse this, so the policy must say so")
+        check("the guard really has the bundle rule",
+              guardSource.contains("Inside a signed app bundle"),
+              "the policy claim must be backed by code")
+        for rule in ["Library/Caches", "git repository", "last two days"] {
+            check("§5.5 still mentions the \(rule) rule", policy.contains(rule),
+                  "the guard enforces it, so the policy must disclose it")
+        }
+
+        // §5.2 must state that the summary is bounded by what was scanned. This
+        // is the claim that went stale: the simulator rows are conditional on
+        // coverage now, so a policy implying "always sent" would be false.
+        check("§5.2 states the summary is limited to the scanned folder",
+              policy.contains("actually covered"),
+              "AgentPrompt.appData(tree:) only offers paths the scan reached")
+        check("appData still takes the scanned tree",
+              promptSource.contains("appData(tree:"),
+              "reverting to appData() would re-send unscanned simulator paths")
+
+        // The §5.2 counts are read from the prompt's own prefixes; if one is
+        // retuned the policy's numbers must move with it.
+        for (count, label) in [(250, "largest folders"), (80, "largest files"), (120, "rebuildable caches")] {
+            check("§5.2's \(label) limit matches the code (\(count))",
+                  promptSource.contains("prefix(\(count))") && policy.contains("up to \(count)"),
+                  "the document and AgentPrompt.swift disagree")
+        }
+        // The 30-form allowlist §5.5 quotes: 27 exact + 3 one-argument.
+        let allowlistSource = (try? String(contentsOf: root.appendingPathComponent("src/cleanup.rs"),
+                                           encoding: .utf8)) ?? ""
+        let exactForms = allowlistSource.components(separatedBy: "pub const ALLOWLIST").count > 1
+            ? allowlistSource
+                .components(separatedBy: "pub const ALLOWLIST")[1]
+                .components(separatedBy: "];")[0]
+                .components(separatedBy: "\"").count / 2
+            : 0
+        check("§5.5's allowlist count matches Rust (\(exactForms) exact forms)",
+              exactForms == 27 && policy.contains("**27**"),
+              "the policy quotes 27 exact forms; Rust has \(exactForms)")
+
         print("\(passed) passed, \(failed) failed")
         exit(failed == 0 ? 0 : 1)
     }

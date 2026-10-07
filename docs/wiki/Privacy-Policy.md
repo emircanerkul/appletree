@@ -139,6 +139,8 @@ Built from the scan you are looking at. It contains **paths, names, sizes, count
 | Xcode simulator runtimes: identifier, platform and version, size, last-used date, path | 100 MB and over |
 | Xcode simulator devices: name, state, size, last-used date, UDID, folder path | 100 MB and over |
 
+Every row describes a folder **the scan you are looking at actually covered**. A scan of one folder describes that folder: the two Xcode simulator rows appear only when the simulator files fall inside what you scanned — a whole-disk scan, or the folder they live in — and not, for example, when you scanned only `/Applications`. Nothing outside your scan is added to the summary.
+
 The lists are **truncated by size and by count**. Folders smaller than about 100 MB and files smaller than about 250 MB do not appear, so a summary describes the big things on your disk rather than an inventory of it. At most roughly 450 paths can be involved.
 
 Because this is a list of paths, it necessarily includes **folder and file names**, and those can themselves be personal information — the name of a client folder, a project, a photo export. That is a deliberate part of the feature: an AI planner cannot suggest what to remove without being told what is there.
@@ -165,7 +167,7 @@ Only when you click **Fetch available models** in Settings → Model Providers, 
 
 The AI planner returns a proposed plan; it does not execute anything. AppleTree checks every proposed command against a fixed allowlist of **30** permitted forms, compiled into the app: **27** tool-specific cleanups that must match to the letter — `uv cache clean`, `brew cleanup`, `docker system prune`, `pod cache clean --all` and the like — plus **three** that accept exactly one trailing argument, with no flags: `ollama rm <model>`, `xcrun simctl runtime delete <id>` and `xcrun simctl erase <udid>`. Anything else is refused rather than run. AppleTree executes the permitted commands locally, as your user, in the stand-in folder described in §4.3.
 
-These commands **delete cache and build output**, not documents. AppleTree blocks any path under your Documents, Desktop, Pictures, Movies, Music, `.ssh`, `.gnupg`, Keychain, Mail, Messages, Photos and cloud-storage folders, and it refuses any command containing a shell metacharacter, so a command cannot be chained into something else.
+These commands **delete cache and build output**, not documents. AppleTree blocks any path under your Documents, Desktop, Pictures, Movies, Music, `.ssh`, `.gnupg`, Keychain, Mail, Messages, Photos and cloud-storage folders. It also blocks anything inside a **signed app bundle** — an installed application is one sealed unit, and removing a folder from inside it invalidates the app's signature, so an application's own files are never offered even though they may look like caches. It refuses any command containing a shell metacharacter, so a command cannot be chained into something else. Within your home folder it also refuses a whole shared folder such as `~/Library/Caches`, accepts only named subfolders, skips a git repository, and leaves projects you used in the last two days alone.
 
 Everything the planner proposes appears in the Clean Up panel before anything happens, split into **"Safe to remove"** and **"Your call"**. Items the planner marks for your judgement are not removed until you approve them, and you can deselect any item. Nothing in this section runs without that approval.
 
