@@ -38,6 +38,20 @@ struct ProvidersView: View {
                     .foregroundStyle(.secondary)
                     .padding(.vertical, 20)
             } else {
+                // The rows carry no horizontal inset of their own.
+                //
+                // A List indents its rows inside whatever padding the pane
+                // already applies, so the pane's 20pt and the list's own margin
+                // stacked: the header and caption sat at 20pt while the rows
+                // started 16pt further in and the buttons stopped 16pt short of
+                // the "Add provider" button's right edge. That is the extra
+                // left/right padding this pane used to show.
+                //
+                // `.listStyle(.plain)` drops most of it; the measured residue is
+                // a further 8pt on each side that `.contentMargins` does not
+                // remove on macOS, so it is taken back by the row insets. The
+                // residue is the same at 420pt and at the 560pt maximum width,
+                // so this is not a width-specific fudge.
                 List(store.providers) { provider in
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
@@ -50,7 +64,9 @@ struct ProvidersView: View {
                         Button("Edit") { editing = .existing(provider) }
                         Button("Delete", role: .destructive) { store.delete(provider) }
                     }
+                    .listRowInsets(EdgeInsets(top: 6, leading: -8, bottom: 6, trailing: -8))
                 }
+                .listStyle(.plain)
             }
         }
         .padding(20)
