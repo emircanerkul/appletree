@@ -1,5 +1,57 @@
 # Changelog
 
+## 1.0.1 — 2026-10-07
+
+One planner instead of three, and four fixes that each removed a way the app
+could show you something it could not act on.
+
+**One planner, and it is the one you configure.** The bundled CLI agents
+(Claude Code, Codex) are gone. The sandbox rehearsal settled the question the
+App Store notes had only argued: a sandboxed build cannot exec an unbundled
+program at all, so the feature could never ship there, and its one-click setup
+downloaded a binary that build could not run. Rather than ship two planners with
+different abilities, AppleTree has one — a model provider you configure, which
+is plain outbound HTTPS on both distribution routes. `AgentLocator`,
+`AgentSetup` and the Claude/Codex output parsing are removed; the allowlisted
+tool cleanups survive unchanged, and the planner picker keeps its single
+observable owner so the checkmark still follows the choice.
+
+**Cleanup no longer offers a folder inside an app.** An Applications scan
+proposed Bitwarden's and Openship's bundled `node_modules`, then refused both as
+"Outside your home folder" — cards you could not select, for folders you never
+scanned. Those folders are shipped, not rebuilt: an app loads them at runtime,
+and removing one makes `codesign` report *"a sealed resource is missing or
+invalid"*. The guard now refuses anything inside a signed app bundle for that
+reason, which also closed a real hole rather than only a confusing message:
+`~/Library/Application Support/…/Raycast.app/…/node_modules` sits inside the
+home folder, so it was permitted and actionable. Recognition and the planner
+prompt no longer propose bundle internals at all.
+
+**A cleanup says what it scanned, and nothing else.** An Applications scan also
+planned Xcode's simulator runtimes from `/System/Library/AssetsV2/…` — genuinely
+reclaimable, but a plan headed "Here's the plan" for Applications, listing two
+folders from outside it. The simulator rows now appear only when the scan
+covered them, so a whole-disk scan still offers them and a folder scan describes
+that folder.
+
+**The Clean Up panel no longer proposes work it cannot do.** One consequence
+worth stating: an Applications scan now offers nothing at all, where it used to
+offer two unselectable cards. Those bytes are not safely reclaimable, so an
+empty plan is the honest answer.
+
+**Fixes.** The Model Providers pane indented its rows inside the pane's own
+padding, so they sat 16pt right of the header and the buttons stopped 16pt short
+of "Add provider". Two test suites (`test-readme`, `test-doclinks`) compiled but
+never ran, so 66 assertions had never executed. And `make release` republished a
+GitHub release as a side effect of wanting a dmg; packaging is now `make
+package`, which publishes nothing.
+
+**Privacy policy.** §5.2 and §5.5 are statements of fact about what the app
+sends and refuses, and both had drifted from the code — §5.5 did not mention the
+new signed-app-bundle rule, and §5.2 still implied the simulator details were
+always sent. Both are corrected, and the claims are now asserted against the
+sources that decide them, so the next change to either must update the policy.
+
 ## 1.0.0 — 2026-10-06
 
 First Mac App Store release.
