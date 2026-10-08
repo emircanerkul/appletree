@@ -96,9 +96,17 @@ local. AppleTree still performs and re-checks every deletion itself.
 **Scan when AppleTree opens.** Off by default. The first launch shows the empty
 home screen with a one-time checkbox to turn launch scanning on; whatever you
 choose is saved and the offer is never shown again. Change it later in
-Settings → General. A whole-disk scan is never started without Full Disk Access:
-picking **Macintosh HD** without the grant shows the permission card first,
-while Home, Applications and a specific drive scan straight away.
+Settings → General.
+
+**Full Disk Access**, in the Developer-ID build, is required for a whole-disk
+scan: picking **Macintosh HD** without the grant shows the permission card
+first, while Home, Applications and a specific drive scan straight away. The
+**Mac App Store build never asks for it** — Full Disk Access cannot lift App
+Sandbox (measured: the same TCC grant applied to both builds, and only the
+unsandboxed one could read the protected paths), so that build reaches your
+files by asking you to pick a folder once in the open panel. The
+security-scoped bookmark that creates covers the folder and everything below
+it, which is what makes a whole-disk scan work there.
 
 **Two ways to see the disk.** A cushion-shaded treemap colored by file type,
 with a synced Finder-style outline list, or DaisyDisk-style rings: click a
@@ -219,11 +227,19 @@ says:
 
 ## Trust, privacy and permissions
 
-AppleTree asks for Full Disk Access so the scan can read every folder on the
-disk, including the system-protected ones that normally stay out of reach.
-Every allowlisted cleanup command it runs inherits that same grant while it
-runs; what that command does with it is the tool's own behaviour, not a policy
-AppleTree sets.
+**Developer-ID build.** AppleTree asks for Full Disk Access so the scan can read
+every folder on the disk, including the system-protected ones that normally stay
+out of reach. Every allowlisted cleanup command it runs inherits that same grant
+while it runs; what that command does with it is the tool's own behaviour, not a
+policy AppleTree sets.
+
+**Mac App Store build.** No Full Disk Access is requested, because it cannot
+lift App Sandbox. Instead the app asks you to choose a folder in the open panel;
+the security-scoped bookmark that creates lets it enumerate, Trash and delete
+inside that folder, and it is held only for the session you granted it in. That
+build also runs no cleanup commands at all — a sandboxed process cannot launch
+another tool — so the planner offers folder moves only. `bz.scopedBookmark` in
+the preference domain is where the chosen folder is recorded.
 
 Cleanup commands (`npm cache clean`, `brew cleanup` and so on) are resolved
 through the shell's PATH, by design: these tools live in Homebrew, `~/.local/bin`,

@@ -67,6 +67,57 @@ clean` (npm's folder also holds `_npx` and `_logs`), `yarn cache clean`,
 `uv cache prune` and `pnpm store prune` (both remove only unreferenced entries),
 and the `brew`/`gem`/`go`/`conda`/`docker`/`xcrun simctl` forms.
 
+**The Clean Up panel says which tool a cache belongs to.** The JSON CLI's
+candidate objects gain an additive `tool` field (`"pnpm"`, `"Homebrew"`,
+`"Cargo"`, …) beside the unchanged `category`, and the panel row and the planner
+prompt now name the tool too instead of only "Caches, rebuilt or re-downloaded
+when needed". `category` keeps reporting `tool_caches` for every row, so an
+existing consumer of that key is unaffected; a consumer that asserts an exact
+candidate key-set would need updating, and none in-repo does.
+
+### Fixed in the 2026-10-08 audit
+
+Six defects of one shape — a predicate that answered a question adjacent to the
+real one — found by re-reading the whole repository rather than the last commit.
+`make test` was green throughout, which is why they survived.
+
+- **A scan of `/Users` offered every app's live cache.** The home was recognised
+  only when the `Users` directory was a direct child of the scan root, which
+  cannot hold when the root *is* `/Users`; `~/Library/Caches` and `~/.cache`
+  became candidates. The panel's Move does not re-check the guard (your tick is
+  the authorization), so that row could really be trashed.
+- **A folder scan missed the cache it was pointed at.** The shape rules compared
+  a bare parent *name*, but a scan root's name is its whole path — so scanning
+  `~/Library/Developer/Xcode` never saw the 2.0 GB `DerivedData` inside it.
+- **The sandbox scan gate asked the wrong question.** It named the targets it
+  considered gated rather than testing whether the held grant covered the target,
+  so a folder you picked yourself — the only route to files outside the
+  container — scanned with no access and reported "Nothing large to clean up".
+- **Recognition and authorization disagreed on the default whole-disk target.**
+  24 of 57 candidates were refused by the guard and still handed to the planner.
+  The guard now judges every path in one spelling, and `Cleanup.find` filters the
+  list so the two owners cannot drift again.
+- **The engine stopped at `PATH_MAX`.** Paths longer than 1024 bytes lost their
+  whole tail silently (`complete: false`, one error): on a 1830-byte-deep fixture
+  the old code found 33 directories and no leaf, the new one finds 60 and the
+  leaf. Deep build trees are exactly where this happens. The walk descends by
+  `openat(2)` now.
+- **`make test` never ran the Rust suite.** `test-rust` was not a prerequisite
+  and there is no CI, so all 31 engine tests were skipped by the only gate there
+  is, while `make help` advertised them twice under a heading claiming the
+  opposite.
+
+Also fixed: the rings drew real arcs for 0-byte siblings and overran the circle
+by 30 %; a click in the map's blank space selected the whole-disk root instead of
+clearing; every markdown table reused the first table's column alignment; an
+unclosed HTML block could eat the rest of a document; the treemap's click and
+hover disagreed about which node was under the pointer; `Tree::path` panicked on
+a node whose subtree had been removed; and trashing the one unreadable folder
+left the scan flagged partial forever.
+
+`make test` now runs 802 assertions across 20 suites with no failures, and the
+Rust suite grew 31 → 36 tests.
+
 ## 1.0.1 — 2026-10-07
 
 One planner instead of three, and four fixes that each removed a way the app

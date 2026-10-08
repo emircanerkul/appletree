@@ -687,7 +687,7 @@ test-cli: engine
 # pins the entitlement the route depends on (without
 # `files.bookmarks.app-scope` bookmark creation fails outright, error 256) and
 # the state contract the scan path reads: no bookmark grants nothing, a corrupt
-# one fails safe, `forget()` really clears it, and a repeated `begin()` does not
+# one fails safe, `forget()` really clears it, and a repeated `hold()` does not
 # leak the process-wide extension. The bookmark round-trip itself needs the
 # sandbox and the entitlement, so the user's own click is its end-to-end
 # evidence.

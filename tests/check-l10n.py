@@ -309,6 +309,18 @@ def main() -> int:
     else:
         print("  all defined in the tables")
 
+    # The other direction: a key no Swift surface references. Reported rather
+    # than failed, because a key can legitimately be looked up from somewhere
+    # this scanner does not read — but an unreferenced key is usually a string
+    # that stopped being shown, and every translator still maintains it. Silence
+    # here is why `'Or'` and `'%@ · %@'` sat in all seven tables long after
+    # nothing displayed them.
+    unused = sorted(k for k in reference if k not in used)
+    if unused:
+        print(f"  note: {len(unused)} key(s) defined in every table but referenced by no Swift surface:")
+        for k in unused[:10]:
+            print(f"      ? {k[:80]}")
+
     print()
     if problems:
         print(f"FAIL: {problems} problem(s)")
