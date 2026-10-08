@@ -83,16 +83,26 @@ thread_local! {
 /// The descriptor belongs to the caller: this reads through it and does **not**
 /// close it, so `walk` owns the lifetime and closes it once — including on the
 /// early-return paths, which a `close` here would make a double close.
-pub(crate) fn read_dir_bulk(fd: c_int, s: &mut Scratch, progress: &Progress) -> Option<bool> {
+pub(crate) fn read_dir_bulk(path: &CStr, s: &mut Scratch, progress: &Progress) -> Option<bool> {
     s.entries.clear();
     s.names.clear();
     if s.buf.is_empty() {
         s.buf = vec![0u8; BUF_SIZE];
     }
-    if fd < 0 {
+    // One `open(2)`, or a component-by-component descent when the accumulated
+    // path is too long for a single call. Exactly one descriptor is live per
+    // running walk; see `open_dir_path`.
+    let Some(fd) = open_dir_path(path) else {
         progress.errors.fetch_add(1, Ordering::Relaxed);
+        if std::env::var_os("BZ_LOG_ERRORS").is_some() {
+            eprintln!(
+                "[bz] skip {} ({})",
+                path.to_string_lossy(),
+                std::io::Error::last_os_error()
+            );
+        }
         return None;
-    }
+    };
 
     let mut attrlist = AttrList {
         bitmapcount: ATTR_BIT_MAP_COUNT,
@@ -135,6 +145,11 @@ pub(crate) fn read_dir_bulk(fd: c_int, s: &mut Scratch, progress: &Progress) -> 
             off += len;
         }
     }
+    // The descriptor is this function's own: opened above, closed here on every
+    // path out. Missing this close leaked one descriptor per directory visited —
+    // measured, the walk held 16,382 of them, and against the 256 a GUI app gets
+    // a whole-disk scan collapsed to ~1.3 GB.
+    unsafe { libc::close(fd) };
     Some(complete)
 }
 
@@ -305,16 +320,15 @@ impl Shared<'_> {
 pub(crate) fn walk<'s>(
     scope: &rayon::Scope<'s>,
     shared: &'s Shared<'s>,
-    dir_fd: c_int,
+    path: CString,
     dir_idx: u32,
 ) {
     // Nothing below runs another job on this thread (spawn only queues), so
     // the borrow can't nest.
     SCRATCH.with_borrow_mut(|s| {
         let progress = shared.progress;
-        let Some(complete) = read_dir_bulk(dir_fd, s, progress) else {
+        let Some(complete) = read_dir_bulk(&path, s, progress) else {
             shared.mark_incomplete(dir_idx);
-            unsafe { libc::close(dir_fd) };
             return;
         };
         let Scratch { entries, names, .. } = s;
@@ -322,7 +336,6 @@ pub(crate) fn walk<'s>(
             if !complete {
                 shared.mark_incomplete(dir_idx);
             }
-            unsafe { libc::close(dir_fd) };
             return;
         }
 
@@ -370,8 +383,7 @@ pub(crate) fn walk<'s>(
         for (i, e) in entries.iter().enumerate() {
             if e.descend() {
                 let idx = base + i as u32;
-                let name = &names[start..e.name_end as usize];
-                // Descend by `openat(2)` on the directory we already hold open,
+                // Descend by name, opened relative to the parent.
                 // not by rebuilding an absolute path.
                 //
                 // The absolute form was capped at `PATH_MAX`: `open(2)` rejects a
@@ -382,11 +394,29 @@ pub(crate) fn walk<'s>(
                 // (audit RE-3). Build trees (`node_modules`, Rust/Go targets,
                 // `Library/Caches`) are exactly where that depth occurs.
                 //
-                // The fd also removes a rename race the absolute form had: the
-                // parent stays open across the child's whole walk, so the walk
-                // cannot be redirected by a path component being replaced.
-                match open_at(dir_fd, name) {
-                    Some(child_fd) => scope.spawn(move |sc| walk(sc, shared, child_fd, idx)),
+                // **Capture a path, never a descriptor.** `scope.spawn` only
+                // *queues*: it neither blocks nor bounds the queue, so anything
+                // the closure captures stays alive until a worker runs that
+                // task. Capturing an fd therefore parks one descriptor per
+                // PENDING child, and a wide directory parks hundreds.
+                //
+                // Measured against the **256** a GUI app is given
+                // (`launchctl limit maxfiles`; a shell gets 1048575, which is why
+                // every CLI check and benchmark missed this): the fd-capturing
+                // form peaked at 254, and at 6524 with the limit raised. Against
+                // 256 a whole-disk scan collapsed to 17–66 GB of a 163 GB volume
+                // with 9,000–18,000 unreadable folders — a different total every
+                // run, because which allocation fails first depends on
+                // scheduling. Capturing a path peaks at one descriptor per
+                // RUNNING task (measured: 9, i.e. the worker count plus the
+                // root), which is what makes the scan stable.
+                //
+                // `PATH_MAX` is handled where the path is *consumed*
+                // (`open_dir_path`), not here: the path stays within the cap
+                // because that function descends component by component when a
+                // single `open(2)` would fail.
+                match child_path(&path, &names[start..e.name_end as usize]) {
+                    Some(child) => scope.spawn(move |sc| walk(sc, shared, child, idx)),
                     None => {
                         progress.errors.fetch_add(1, Ordering::Relaxed);
                         shared.mark_incomplete(idx);
@@ -395,44 +425,92 @@ pub(crate) fn walk<'s>(
             }
             start = e.name_end as usize;
         }
-        // Every child has its own descriptor now (the name lookup happened on
-        // this one), so the parent's can go.
-        unsafe { libc::close(dir_fd) };
     });
 }
 
-/// Open `name` under the already-open directory `dir_fd`, as a directory.
-///
-/// `O_NOFOLLOW` keeps a symlinked child from being followed, which matches the
-/// absolute-path walk this replaces (`lib.rs::scan` opens the root the same
-/// way). The caller owns the returned descriptor and closes it.
-pub(crate) fn open_at(dir_fd: c_int, name: &[u8]) -> Option<c_int> {
-    let name = CString::new(name).ok()?;
-    let fd = unsafe {
-        libc::openat(
-            dir_fd,
-            name.as_ptr(),
-            libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
-        )
-    };
-    (fd >= 0).then_some(fd)
+/// Append `name` to `dir`, as the walk builds each child's location.
+pub(crate) fn child_path(dir: &CStr, name: &[u8]) -> Option<CString> {
+    let dir = dir.to_bytes();
+    let mut p = Vec::with_capacity(dir.len() + name.len() + 2);
+    p.extend_from_slice(dir);
+    if dir.last() != Some(&b'/') {
+        p.push(b'/');
+    }
+    p.extend_from_slice(name);
+    CString::new(p).ok()
 }
 
-/// Open an absolute directory path, for the root of a walk.
+/// Open a directory by absolute path, descending component by component when a
+/// single `open(2)` cannot.
 ///
-/// The one place a path is turned into a descriptor; everything below goes
-/// through `open_at`. `O_NOFOLLOW` matches the child rule, and the caller owns
-/// the descriptor.
-pub(crate) fn open_dir(path: &CStr) -> Option<c_int> {
-    let fd = unsafe {
+/// `PATH_MAX` is 1024 bytes, and `open(2)` fails with `ENAMETOOLONG` past it, so
+/// a walk that rebuilds absolute paths loses every subtree deeper than that: one
+/// error counter, `complete = false`, no explanation. Measured on a
+/// 3424-byte-deep fixture, `find` reached the leaf at depth 81 while the engine
+/// stopped at 24 (audit RE-3).
+///
+/// **At most one descriptor is live at a time.** The deep branch walks down from
+/// `/` with `openat(2)`, closing each parent as its child opens, so a path of any
+/// depth costs one descriptor rather than one per component. That is what lets
+/// the walk keep its descriptor-per-running-task budget and still reach deep
+/// trees inside the 256 a GUI app is allowed.
+fn open_dir_path(path: &CStr) -> Option<c_int> {
+    let direct = unsafe {
         libc::open(
             path.as_ptr(),
             libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
         )
     };
-    (fd >= 0).then_some(fd)
+    if direct >= 0 {
+        return Some(direct);
+    }
+    if std::io::Error::last_os_error().raw_os_error() != Some(libc::ENAMETOOLONG) {
+        return None;
+    }
+    // Deep path: descend from the root, one descriptor at a time.
+    let root = CString::new("/").ok()?;
+    let mut fd = unsafe {
+        libc::open(root.as_ptr(), libc::O_RDONLY | libc::O_DIRECTORY | libc::O_CLOEXEC)
+    };
+    if fd < 0 {
+        return None;
+    }
+    // Intermediate components are followed WITHOUT `O_NOFOLLOW`.
+    //
+    // `/var` is a symlink to `private/var`, and so are other standard macOS
+    // paths (`/tmp`, `/etc`), so refusing to follow them would make the descent
+    // fail on an ordinary absolute path — measured: it stopped at the very first
+    // `/var` component of a temp directory and reported "Not a directory". The
+    // symlink policy that matters is the LAST component's, which is what the
+    // single-`open` fast path above enforces with `O_NOFOLLOW`, and what the gas
+    // below applies only to the final step.
+    //
+    // `open(2)` on the full path already resolved every component exactly as the
+    // kernel would, so following intermediates here matches that behaviour
+    // instead of inventing a stricter rule for deep trees.
+    let components: Vec<&[u8]> = path
+        .to_bytes()
+        .split(|&b| b == b'/')
+        .filter(|c| !c.is_empty())
+        .collect();
+    let last = components.len().saturating_sub(1);
+    for (i, component) in components.iter().enumerate() {
+        let name = CString::new(*component).ok()?;
+        let mut flags = libc::O_RDONLY | libc::O_DIRECTORY | libc::O_CLOEXEC;
+        if i == last {
+            flags |= libc::O_NOFOLLOW;
+        }
+        let next = unsafe { libc::openat(fd, name.as_ptr(), flags) };
+        // Close the parent whether or not the child opened: exactly one
+        // descriptor is live outside this loop.
+        unsafe { libc::close(fd) };
+        if next < 0 {
+            return None;
+        }
+        fd = next;
+    }
+    Some(fd)
 }
-
 /// Each directory's children form one run of equal parents: `(parent, first, len)`.
 ///
 /// The grouping is by **adjacent equal parent**, which is exactly what the walk
@@ -1243,3 +1321,4 @@ mod tests {
         bz_free(h);
     }
 }
+
