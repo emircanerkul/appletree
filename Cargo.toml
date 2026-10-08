@@ -1,6 +1,6 @@
 [package]
 name = "appletree"
-version = "1.0.1"
+version = "1.1.0"
 edition = "2021"
 # The SOURCE licence, unchanged: inherited BlitzTree history is MIT, everything
 # on top of it is CC BY-NC-SA 4.0. Buying the app on the Mac App Store grants

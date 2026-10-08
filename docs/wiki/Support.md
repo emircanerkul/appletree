@@ -51,13 +51,37 @@ The same links are in the app under **Help**.
 
 ### AppleTree found less space than Finder, or less than my disk's capacity
 
-Expected, and not a bug. Three separate reasons, in order of how much they usually explain:
+Expected, and not a bug. Four separate reasons, in order of how much they usually explain:
 
-1. **Full Disk Access is not granted.** Root-only system data is invisible to *every* tool without it, not just AppleTree. Grant it in **System Settings → Privacy & Security → Full Disk Access** and rescan.
-2. **APFS volume sharing.** Several volumes on one container report the same free space, because they draw on one shared pool. The app shows what the filesystem reports.
-3. **Purgeable space and snapshots.** macOS does not count Time Machine local snapshots or purgeable space as free, and neither does AppleTree. `diskutil apfs listSnapshots /` shows the former.
+1. **"Macintosh HD" in System Settings is not one volume.** macOS splits the boot
+   disk into a *volume group*: the sealed read-only **System** volume, your
+   **Data** volume, and three more for boot staging, swap and recovery. AppleTree
+   scans the Data volume — where your files actually are — and names it
+   "Macintosh HD". The other four are separate volumes macOS keeps outside it, so
+   they are not part of the scan:
 
-The app is explicit about this: when a whole-disk scan cannot read everything, it reports the coverage rather than quietly presenting a smaller number as the truth.
+   | Volume | Typical size |
+   | --- | --- |
+   | Macintosh HD - Data | yours — this is what AppleTree scans |
+   | Preboot | 10–25 GB |
+   | Macintosh HD (System) | ~14 GB |
+   | VM (swap) | 5–15 GB, grows with memory pressure |
+   | Recovery | ~3 GB |
+
+   On a 245 GB Mac that is roughly **50 GB** the app never walks, and it is the
+   single largest reason the numbers differ. `diskutil apfs list` lists all five
+   with their sizes.
+2. **Full Disk Access is not granted.** Root-only system data is invisible to *every* tool without it, not just AppleTree. Grant it in **System Settings → Privacy & Security → Full Disk Access** and rescan.
+3. **APFS volume sharing.** Several volumes on one container report the same free space, because they draw on one shared pool. The app shows what the filesystem reports.
+4. **Purgeable space and snapshots.** macOS does not count Time Machine local snapshots or purgeable space as free, and neither does AppleTree. `diskutil apfs listSnapshots /` shows the former.
+
+**"Free space" in the panel includes purgeable space**, so it reads higher than
+Finder's or `df`'s figure. Measured on one 245 GB Mac: the panel showed 35.27 GB
+while the real available space was 25.91 GB. The panel answers "how much could
+macOS free if it needed to"; Finder answers "how much is free right now".
+
+The app is explicit about this: when a whole-disk scan cannot read everything, it
+reports the coverage rather than quietly presenting a smaller number as the truth.
 
 ### Why does scanning my whole disk ask for Full Disk Access?
 

@@ -1,6 +1,15 @@
 # Changelog
 
-## Unreleased
+## 1.1.0 — 2026-10-08
+
+**The scan no longer comes back short.** A file descriptor was leaked for every
+directory visited — 1,012,423 of them on a whole-disk walk — until the process
+hit its limit. A GUI app is allowed 256 descriptors (`launchctl limit maxfiles`)
+while a shell gets 1,048,575, so the app died partway through a scan and reported
+whatever it had reached when allocations started failing: **a different total
+every time**, anywhere from 17 GB to 158 GB. Measured on a 245 GB Mac, the same
+whole-disk scan now reports 157.98 GB with 750 unreadable folders, stable across
+runs, and holds 9 descriptors instead of 254.
 
 Cleanup works in the App Store build. The blocker was never only the shell: a
 sandboxed app cannot reach the user's caches by *file access* either, so the
@@ -115,8 +124,8 @@ hover disagreed about which node was under the pointer; `Tree::path` panicked on
 a node whose subtree had been removed; and trashing the one unreadable folder
 left the scan flagged partial forever.
 
-`make test` now runs 802 assertions across 20 suites with no failures, and the
-Rust suite grew 31 → 36 tests.
+`make test` runs 812 assertions across 20 suites with no failures, and the Rust
+suite grew 31 → 36 tests.
 
 ## 1.0.1 — 2026-10-07
 
