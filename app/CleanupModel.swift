@@ -8,8 +8,23 @@ nonisolated struct CleanupItem: Identifiable, Sendable {
     let path: String
     let display: String
     let kind: String
+    /// The tool that owns this cache (uv, Cargo, pnpm, pip, Homebrew, …), when a
+    /// `CACHE_RULES` row identified it. Nil for a shape-recognised folder.
+    let tool: String?
     let bytes: UInt64
     var id: Int { node }
+
+    /// What to show beside the size: the tool's name when the row carries one,
+    /// else the generic label.
+    ///
+    /// One computed property for both audiences — the panel row and the planner
+    /// prompt's "What" column — so the two cannot describe the same candidate
+    /// differently, which is how they both ended up showing one generic string
+    /// for pnpm, pip and Homebrew alike (audit L2/SW-10).
+    var label: String {
+        guard let tool, !tool.isEmpty else { return kind }
+        return "\(tool) — \(kind)"
+    }
 }
 
 nonisolated enum Cleanup {
@@ -45,7 +60,9 @@ nonisolated enum Cleanup {
             var display = tree.displayPath(node)
             if display.hasPrefix(home) { display = "~" + display.dropFirst(home.count) }
             return CleanupItem(node: node, path: path, display: display,
-                               kind: tree.cleanupDescription(index), bytes: tree.alloc[node])
+                               kind: tree.cleanupDescription(index),
+                               tool: tree.cleanupTool(index),
+                               bytes: tree.alloc[node])
         }
     }
 }

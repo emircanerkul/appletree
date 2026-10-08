@@ -149,7 +149,7 @@ nonisolated enum AgentPrompt {
         if !known.isEmpty {
             md += "\n## Recognised by AppleTree as rebuildable\n\n| Size | Path | What |\n|---:|---|---|\n"
             for item in known.prefix(120) {
-                md += "| \(Fmt.size(item.bytes)) | \(item.path) | \(item.kind) |\n"
+                md += "| \(Fmt.size(item.bytes)) | \(item.path) | \(item.label) |\n"
             }
         }
         md += "\n## Largest folders\n\n| Size | Files | Path |\n|---:|---:|---|\n"

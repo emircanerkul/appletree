@@ -22,6 +22,9 @@ struct Flat {
     tree: Tree,
     cleanup_nodes: Vec<u32>,
     cleanup_descriptions: Vec<CString>,
+    /// The owning tool's name per candidate, when a `CACHE_RULES` row matched.
+    /// Empty for shape-recognised folders, which carry no identity.
+    cleanup_tools: Vec<CString>,
 }
 
 fn with_cleanup(tree: Tree) -> Flat {
@@ -29,6 +32,7 @@ fn with_cleanup(tree: Tree) -> Flat {
         tree,
         cleanup_nodes: Vec::new(),
         cleanup_descriptions: Vec::new(),
+        cleanup_tools: Vec::new(),
     };
     flat.refresh_cleanup();
     flat
@@ -53,6 +57,16 @@ impl Flat {
                 .iter()
                 .map(|c| CString::new(c.kind.description()).expect("static cleanup label has no NUL")),
         );
+        // The identity table's whole purpose: say *which* tool a candidate
+        // belongs to. `description()` is deliberately generic and stays the
+        // published panel label, so the name travels beside it. An empty
+        // string means "no row matched" — the shape rules have no identity to
+        // carry — which is why this is a string rather than a nullable pointer
+        // the caller could confuse with an out-of-range index.
+        self.cleanup_tools.clear();
+        self.cleanup_tools.extend(candidates.iter().map(|c| {
+            CString::new(c.kind.tool().unwrap_or("")).expect("static tool name has no NUL")
+        }));
     }
 }
 
@@ -176,6 +190,26 @@ pub unsafe extern "C" fn bz_cleanup_description(h: *mut BzScan, index: u64) -> *
     h.flat
         .as_ref()
         .and_then(|f| f.cleanup_descriptions.get(index as usize))
+        .map_or(std::ptr::null(), |s| s.as_ptr())
+}
+
+/// The tool that owns candidate `index`, or an empty string when none does.
+///
+/// Index is a candidate-list index, not a tree node index; the pointer is valid
+/// until `bz_free`. Additive to the published surface: `bz_cleanup_description`
+/// keeps returning the generic panel label, and this answers the narrower
+/// question the `CACHE_RULES` table exists for — *which* tool a cache belongs
+/// to. Without it the panel and the planner prompt both showed one string for
+/// pnpm, pip, Homebrew, Cargo and the rest (audit L2/SW-10).
+///
+/// # Safety
+/// `h` must be a live scan handle, with no concurrent mutation or free.
+#[no_mangle]
+pub unsafe extern "C" fn bz_cleanup_tool(h: *mut BzScan, index: u64) -> *const c_char {
+    let h = unsafe { &*h };
+    h.flat
+        .as_ref()
+        .and_then(|f| f.cleanup_tools.get(index as usize))
         .map_or(std::ptr::null(), |s| s.as_ptr())
 }
 
@@ -351,8 +385,17 @@ mod tests {
                     assert_eq!(nodes[i], candidate.node);
                     let label = unsafe { CStr::from_ptr(bz_cleanup_description(h, i as u64)) };
                     assert_eq!(label.to_str().unwrap(), candidate.kind.description());
+                    // The tool identity travels beside the generic label, and
+                    // is empty exactly when no `CACHE_RULES` row matched.
+                    let tool = unsafe { CStr::from_ptr(bz_cleanup_tool(h, i as u64)) };
+                    assert_eq!(tool.to_str().unwrap(), candidate.kind.tool().unwrap_or(""));
+                    if identity && bytes > 0 {
+                        assert_eq!(tool.to_str().unwrap(), "Cargo");
+                    }
                 }
                 assert!(unsafe { bz_cleanup_description(h, expected.len() as u64) }.is_null());
+                // Out of range: null, not a stale entry.
+                assert!(unsafe { bz_cleanup_tool(h, expected.len() as u64) }.is_null());
             }
         }
     }
@@ -423,7 +466,12 @@ mod tests {
             progress: Arc::new(Progress::default()),
             done: Arc::new(AtomicBool::new(true)),
             result: Arc::new(std::sync::Mutex::new(None)),
-            flat: Some(Box::new(Flat { tree, cleanup_nodes: Vec::new(), cleanup_descriptions: Vec::new() })),
+            flat: Some(Box::new(Flat {
+                tree,
+                cleanup_nodes: Vec::new(),
+                cleanup_descriptions: Vec::new(),
+                cleanup_tools: Vec::new(),
+            })),
         }
     }
 

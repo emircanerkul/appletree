@@ -248,6 +248,84 @@ func run() async {
         }
         try? fm.removeItem(at: homeRoot)
         try? fm.removeItem(at: outsideRoot)
+
+        // --- L2/SW-10: the tool identity reaches the panel and the prompt -----
+        //
+        // `Kind::tool()` and the identity table exist so a `tool_caches` row can
+        // say *which* tool it is, but the FFI carried only the generic
+        // `description()`, so the panel row and the planner prompt's "What"
+        // column both read "Caches, rebuilt or re-downloaded when needed" for
+        // pnpm, pip, Homebrew and Cargo alike. The CLI had the field; these two
+        // surfaces did not.
+        //
+        // The fixture is a real pip-shaped cache — `Library/Caches/pip/http-v2` —
+        // built under the real home so the guard permits it.
+        do {
+            let home = URL(fileURLWithPath: AppEnvironment.realHome)
+            let pip = home.appendingPathComponent("Library/Caches/pip")
+            let httpv2 = pip.appendingPathComponent("http-v2")
+            try? fm.createDirectory(at: httpv2, withIntermediateDirectories: true)
+            try? Data(count: 60_000_000).write(to: httpv2.appendingPathComponent("blob"))
+
+            // Scan the cache's PARENT: the scan root itself is never a candidate,
+            // so a scan rooted at `pip` could not offer it.
+            let c = home.appendingPathComponent("Library/Caches").path
+            guard let handle = c.withCString({ bz_scan_start($0) }) else {
+                check("the identity fixture scan started", false, "bz_scan_start failed")
+                try? fm.removeItem(at: pip)
+                return
+            }
+            var done: Int32 = 0
+            var f: UInt64 = 0, d: UInt64 = 0, b: UInt64 = 0
+            while done == 0 {
+                bz_progress(handle, &f, &d, &b, &done)
+                if done == 0 { usleep(5_000) }
+            }
+            guard let scan = Tree(handle: handle) else {
+                check("the identity fixture produced a tree", false, "no tree for \(c)")
+                bz_free(handle)
+                try? fm.removeItem(at: pip)
+                return
+            }
+            let items = Cleanup.find(in: scan)
+            let pipItem = items.first { $0.path.hasSuffix("/Library/Caches/pip") }
+            check("a table row's candidate carries its tool name",
+                  pipItem?.tool == "pip",
+                  "tool=\(pipItem?.tool ?? "nil")")
+            check("the panel and prompt label names the tool",
+                  pipItem?.label.contains("pip") == true,
+                  "label=\(pipItem?.label ?? "nil")")
+            check("the generic kind string is still carried",
+                  pipItem?.kind == "Caches, rebuilt or re-downloaded when needed",
+                  "kind=\(pipItem?.kind ?? "nil")")
+            // A shape-recognised folder has no tool, and its label stays generic.
+            let modules = home.appendingPathComponent(".drawer-identity-\(pid)/node_modules")
+            try? fm.createDirectory(at: modules, withIntermediateDirectories: true)
+            try? Data(count: 60_000_000).write(to: modules.appendingPathComponent("blob"))
+            let m = modules.path
+            if let h2 = m.withCString({ bz_scan_start($0) }) {
+                done = 0
+                while done == 0 {
+                    bz_progress(h2, &f, &d, &b, &done)
+                    if done == 0 { usleep(5_000) }
+                }
+                if let t2 = Tree(handle: h2) {
+                    let shapeItem = Cleanup.find(in: t2).first { $0.path.hasSuffix("/node_modules") }
+                    check("a shape-recognised folder reports no tool",
+                          shapeItem?.tool == nil, "tool=\(shapeItem?.tool ?? "nil")")
+                    check("its label is the generic kind string",
+                          shapeItem?.label == shapeItem?.kind,
+                          "label=\(shapeItem?.label ?? "nil")")
+                } else {
+                    check("the shape fixture produced a tree", false, "no tree")
+                    bz_free(h2)
+                }
+            } else {
+                check("the shape fixture scan started", false, "bz_scan_start failed")
+            }
+            try? fm.removeItem(at: modules.deletingLastPathComponent())
+            try? fm.removeItem(at: pip)
+        }
     }
 }
 

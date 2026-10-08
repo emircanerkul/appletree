@@ -86,6 +86,18 @@ nonisolated final class Tree: @unchecked Sendable {
         return String(cString: label)
     }
 
+    /// The tool owning candidate `index`, or nil when it was recognised by
+    /// shape rather than by a `CACHE_RULES` row.
+    ///
+    /// The identity table exists to say *which* tool a cache belongs to; the
+    /// description above is deliberately generic and stays the published panel
+    /// label, so this is the narrower question (audit L2/SW-10).
+    func cleanupTool(_ index: Int) -> String? {
+        guard let name = bz_cleanup_tool(handle, UInt64(index)) else { return nil }
+        let tool = String(cString: name)
+        return tool.isEmpty ? nil : tool
+    }
+
     /// The node at an absolute path, if the scan covered it. NSString
     /// normalization and the "/System/Volumes/Data" root-refix happen here;
     /// the engine resolves the already-refixed path against the name blob.

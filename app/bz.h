@@ -28,6 +28,10 @@ uint64_t bz_cleanup_count(BzScan *h);
 const uint32_t *bz_cleanup_nodes(BzScan *h);
 // index is a candidate-list index, not a tree node index. NULL out of range.
 const char *bz_cleanup_description(BzScan *h, uint64_t index);
+// The tool that owns candidate `index` (uv, Cargo, pnpm, pip, Homebrew, …), or
+// an empty string when the candidate was recognised by shape rather than by a
+// CACHE_RULES row. Same indexing contract and lifetime as the description.
+const char *bz_cleanup_tool(BzScan *h, uint64_t index);
 
 // The only cleanup commands AppleTree may run (S6), single source of truth.
 // Static data: valid for the program's lifetime, never freed. Read

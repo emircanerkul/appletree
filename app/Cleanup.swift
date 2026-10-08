@@ -105,7 +105,7 @@ struct CleanupPanel: View {
                         Text(item.display)
                             .lineLimit(1)
                             .truncationMode(.head)
-                        Text(item.kind)
+                        Text(item.label)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
