@@ -155,6 +155,100 @@ func run() async {
           "reason=\(direct.first?.reason ?? "nil") — the menu would refuse /Applications again")
     if let trashed = direct.first?.trashed { try? fm.removeItem(at: trashed) }
     try? fm.removeItem(at: outsideRoot)
+
+    // --- the cross-owner contract: recognition may not over-offer ------------
+    //
+    // `src/cleanup.rs` owns RECOGNITION and `CleanupGuard` owns AUTHORIZATION,
+    // and the module doc states the rule that ties them: recognition must never
+    // nominate a folder the guard refuses. Rust can only approximate the guard
+    // (it has the tree, not the guard's lists), so the contract is enforced
+    // where both answers exist — `Cleanup.find`, which is the only list the
+    // panel and the planner prompt read.
+    //
+    // This is the test that would have caught the whole class: on the app's
+    // default whole-disk target, 24 of 57 nominees were refused (mostly under
+    // `/opt` and `/private/tmp`), and every one of them was handed to the
+    // planner as "recognised by AppleTree as rebuildable" (audit SW-4).
+    //
+    // It runs on the real engine over a small real directory, and asserts the
+    // invariant directly rather than restating the rules: every item the list
+    // returns must pass the guard.
+    //
+    // The fixture is tiny on purpose — a `node_modules` just over threshold —
+    // so the test stays fast and deterministic. It lives under the REAL home,
+    // because that is what `CleanupGuard.home` measures against: a fixture in
+    // `/tmp` is "Outside your home folder" and the engine correctly offers
+    // nothing, which is a different question from the one this asserts.
+    do {
+        // Two fixtures, because the contract has two directions and they need
+        // different locations:
+        //
+        //   - a `node_modules` under the REAL home is recognized AND permitted,
+        //     so it must survive the filter;
+        //   - a `node_modules` under `/tmp` is recognized by name but refused by
+        //     the guard as "Outside your home folder", so it must be filtered
+        //     out.
+        //
+        // The second is the shape this contract exists for: on the app's default
+        // whole-disk target, 24 of 57 nominees were refused (mostly under `/opt`
+        // and `/private/tmp`) and every one was handed to the planner as
+        // "recognised as rebuildable" (audit SW-4). A fixture under the home
+        // alone cannot exercise it — `~/node_modules` is legitimately allowed.
+        let pid = ProcessInfo.processInfo.processIdentifier
+        let homeRoot = URL(fileURLWithPath: AppEnvironment.realHome)
+            .appendingPathComponent(".drawer-crossowner-\(pid)")
+        let outsideRoot = URL(fileURLWithPath: "/tmp")
+            .appendingPathComponent(".drawer-crossowner-\(pid)")
+        for root in [homeRoot, outsideRoot] {
+            let modules = root.appendingPathComponent("node_modules")
+            try? fm.createDirectory(at: modules, withIntermediateDirectories: true)
+            // Real bytes, so each candidate clears MIN_BYTES (50 MB).
+            try? Data(count: 60_000_000).write(to: modules.appendingPathComponent("blob"))
+        }
+
+        for (label, root, shouldSurvive) in [("home", homeRoot, true), ("outside", outsideRoot, false)] {
+            let c = root.path
+            guard let handle = c.withCString({ bz_scan_start($0) }) else {
+                check("the cross-owner \(label) fixture scan started", false, "bz_scan_start failed")
+                continue
+            }
+            var done: Int32 = 0
+            var files: UInt64 = 0, dirs: UInt64 = 0, bytes: UInt64 = 0
+            while done == 0 {
+                bz_progress(handle, &files, &dirs, &bytes, &done)
+                if done == 0 { usleep(5_000) }
+            }
+            guard let scan = Tree(handle: handle) else {
+                check("the cross-owner \(label) fixture produced a tree", false, "no tree for \(c)")
+                // Only here does this test own the handle: on the success path
+                // `Tree` owns it and frees it in `deinit`, so freeing it again
+                // would be a double free (which crashed this suite).
+                bz_free(handle)
+                continue
+            }
+            let items = Cleanup.find(in: scan)
+            let modules = root.appendingPathComponent("node_modules").path
+            // The invariant, over whatever the engine actually returned.
+            let refused = items.filter { CleanupGuard.blockReason(path: $0.path) != nil }
+            check("every item Cleanup.find returns passes the guard (\(label))",
+                  refused.isEmpty,
+                  "recognition over-offered \(refused.count): \(refused.prefix(3).map(\.path))")
+            if shouldSurvive {
+                check("an authorized home fixture survives the filter",
+                      items.contains(where: { $0.path == modules }),
+                      "the filter is too aggressive — a permitted folder vanished")
+            } else {
+                check("the guard refuses the outside-home fixture",
+                      CleanupGuard.blockReason(path: modules) != nil,
+                      "the fixture does not exercise a refusal")
+                check("the refused outside-home fixture is dropped",
+                      !items.contains(where: { $0.path == modules }),
+                      "a refused folder reached the panel and the planner prompt")
+            }
+        }
+        try? fm.removeItem(at: homeRoot)
+        try? fm.removeItem(at: outsideRoot)
+    }
 }
 
 @main

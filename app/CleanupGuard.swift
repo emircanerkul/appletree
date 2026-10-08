@@ -154,13 +154,55 @@ nonisolated enum CleanupGuard {
         return nil
     }
 
+    /// The boot volume group's Data volume prefix, dropped so the same place has
+    /// one spelling for every comparison below.
+    ///
+    /// `/System/Volumes/Data` is the writable volume behind `/` and the app's
+    /// default scan target, so most paths a whole-disk scan produces carry it
+    /// while `home` (`AppEnvironment.realHome`) and the guard's own lists are
+    /// spelled without it. Only the prefix goes, and only at the head: a
+    /// component that merely *reads* "System/Volumes/Data" deeper in a path is
+    /// an ordinary folder name.
+    ///
+    /// The same fold is what `ScopedAccess.spellings` performs for the bookmark
+    /// side and what `volume_prefix` performs in `src/cleanup.rs`; three readers
+    /// of one fact, each judging paths in the volume's own spelling.
+    static func foldingDataVolume(_ path: String) -> String {
+        let prefix = "/System/Volumes/Data"
+        guard path.hasPrefix(prefix) else { return path }
+        let rest = path.dropFirst(prefix.count)
+        // `/System/Volumes/Data` alone is the volume, i.e. `/`.
+        return rest.isEmpty ? "/" : String(rest)
+    }
+
     /// Why a path may not be touched, or nil when it may.
     static func blockReason(path: String) -> String? {
-        // Resolve before matching: `trashItem` follows a symlink in the last
-        // component, so a link pointing into a protected folder must be
-        // judged by where it lands, not what it is called (S3). This also
-        // expands ~ itself, but with the same home the guard checks below.
-        let p = ((path as NSString).resolvingSymlinksInPath as NSString).standardizingPath
+        // Canonical form first, then judge. Two steps, both needed:
+        //
+        // 1. `resolvingSymlinksInPath` resolves a symlink in the LAST component
+        //    the way `trashItem` will, so a link pointing into a protected folder
+        //    is judged by where it lands rather than what it is called (S3).
+        // 2. The `/System/Volumes/Data` prefix is dropped unconditionally.
+        //
+        // Step 2 is not redundant. `resolvingSymlinksInPath` folds the Data
+        // prefix only for components that really are firmlinks, and the result
+        // depends on what happens to exist: it folds `Data/Users`,
+        // `Data/Library` and `Data/private` but NOT `Data/opt`, because `/opt`
+        // is a symlink to `private/opt` rather than a firmlink. On the app's
+        // DEFAULT scan target (`/System/Volumes/Data`) that made the guard refuse
+        // `Data/opt/homebrew/...` as "Outside your home folder" while allowing
+        // the identical path spelled `/opt/homebrew/...` — the same rule giving
+        // two answers for one place. Measured: 24 of the 57 folders Rust
+        // nominated on this machine's whole-disk scan were refused, and
+        // `Data/private/tmp/*` was refused although `/private/tmp` is not the
+        // user's home either way (audit SW-4).
+        //
+        // The fold must match what `src/cleanup.rs` reasons in, and that owner
+        // already treats the prefix as transparent (`volume_prefix`). Doing it
+        // here as well is what makes the two agree, and the agreement is the
+        // point: recognition must not offer what authorization refuses.
+        let resolved = ((path as NSString).resolvingSymlinksInPath as NSString).standardizingPath
+        let p = Self.foldingDataVolume(resolved)
         // Reason strings are user-visible safety communication (T7): routed
         // through String(localized:), keys in all 7 .lproj tables.
         //
@@ -172,7 +214,20 @@ nonisolated enum CleanupGuard {
         if enclosingBundle(p) != nil { return String(localized: "Inside a signed app bundle") }
         guard p.hasPrefix(home + "/") else { return String(localized: "Outside your home folder") }
         let rel = p.dropFirst(home.count + 1)
-        guard rel.split(separator: "/").count >= 2 || rel.hasPrefix("."), !tooBroad.contains(p) else {
+        // A direct child of the home is offered only when the tool recreates it.
+        //
+        // The rule exists to refuse the home's own broad folders (`~/Downloads`,
+        // `~/Library`) that had they been reachable would take unrelated data
+        // with them. But it refused by SHAPE — "one component, no leading dot" —
+        // and that swept up the home's own build output: `~/node_modules` and
+        // `~/target` are exactly what `rebuildable` names, the Rust engine
+        // nominates them by name, and `PlanItem.init` then built a card the guard
+        // had already refused, so it could never be selected (audit SW-4).
+        // Asking the rebuildable set is the same question the `protected` loop
+        // below already asks, and it keeps every broad root refused.
+        let depth = rel.split(separator: "/").count
+        let isRebuildable = rebuildable.contains((p as NSString).lastPathComponent)
+        guard (depth >= 2 || rel.hasPrefix(".") || isRebuildable), !tooBroad.contains(p) else {
             return String(localized: "Too broad: other apps keep live data here")
         }
         // Whole persistence folders: no named subfolder inside is ever fair game (S1).

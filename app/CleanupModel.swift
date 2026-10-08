@@ -15,11 +15,33 @@ nonisolated struct CleanupItem: Identifiable, Sendable {
 nonisolated enum Cleanup {
     /// The Rust engine selects candidates for both the panel and JSON CLI.
     /// Swift only supplies presentation paths; rules and labels live in cleanup.rs.
+    ///
+    /// **The guard filters the list, so the two owners cannot disagree.** The
+    /// module contract in `src/cleanup.rs` is that recognition never nominates
+    /// what authorization refuses, and Rust approximates that from the tree it
+    /// has. This is where the other owner's *answer* is available, so it is
+    /// where the contract is enforced rather than merely intended: every
+    /// consumer of this list — the panel, the planner prompt
+    /// (`AgentPrompt.build(known:)`) and the sizes on the cards — sees only
+    /// folders `CleanupGuard` would permit.
+    ///
+    /// Measured before this: on the app's default whole-disk target, 24 of 57
+    /// nominees were refused by the guard, most of them under `/opt` and
+    /// `/private/tmp` (outside the home by any measure), and all of them were
+    /// handed to the planner as "recognised as rebuildable" (audit SW-4). A
+    /// planner card for one of those is created already blocked and can never be
+    /// selected, which is the "Move that can only fail" the module doc forbids.
+    ///
+    /// Filtering here rather than in the prompt keeps one list: a second,
+    /// guard-filtered copy for the planner would let the panel and the prompt
+    /// drift apart again, which is the shape of the bug being fixed.
     static func find(in tree: Tree) -> [CleanupItem] {
         let home = AppEnvironment.realHome
-        return (0..<tree.cleanupCount).map { index in
+        return (0..<tree.cleanupCount).compactMap { index in
             let node = Int(tree.cleanupNode(index))
             let path = tree.path(node)
+            // The guard is the authority; recognition may not over-offer.
+            guard CleanupGuard.blockReason(path: path) == nil else { return nil }
             var display = tree.displayPath(node)
             if display.hasPrefix(home) { display = "~" + display.dropFirst(home.count) }
             return CleanupItem(node: node, path: path, display: display,
