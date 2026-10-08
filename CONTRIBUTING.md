@@ -14,6 +14,71 @@ agree to those terms.
    reasonable.
 4. Open a pull request with a clear description of what changed and why.
 
+## Releasing
+
+`make test` is the gate: it runs the Rust engine tests, every Swift suite, the
+JSON CLI contract and the l10n check. There is no CI, so nothing else runs them —
+run it before tagging.
+
+```sh
+make test                 # must be green; also runs `cargo test --release`
+```
+
+**Version lives in one place.** `Cargo.toml`'s `version` is read by the Makefile
+for `CFBundleVersion` and `CFBundleShortVersionString`, so the app bundle and the
+CLI both report it. `Cargo.lock` records it too, and `--locked` builds fail until
+it is regenerated — that failure is the reminder, not a problem to route around:
+
+```sh
+# 1. Edit Cargo.toml's version; move CHANGELOG's "Unreleased" section under the
+#    new "## X.Y.Z — YYYY-MM-DD" heading.
+# 2. Regenerate the lock (no --locked here; that is what needs updating):
+cargo build --offline --release
+# 3. Verify both artifacts agree, then confirm --locked works again:
+make build && /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" \
+    build/AppleTree.app/Contents/Info.plist
+cargo build --locked --release
+# 4. Commit, then tag with notes (annotated tags are the convention here):
+git commit -am "release: vX.Y.Z"
+git tag -a vX.Y.Z -m "AppleTree X.Y.Z" -m "<what changed, in the changelog's voice>"
+git push origin main --follow-tags
+```
+
+### Packaging a DMG (Developer ID route)
+
+```sh
+make package              # build -> notarize (if possible) -> staple -> AppleTree.dmg
+```
+
+It signs with **Developer ID Application** when one is installed, then **Apple
+Development**, then ad-hoc. Only the first can be notarized, and `make package`
+**skips notarization silently** when it is absent: the DMG is still produced, but
+Gatekeeper rejects it (`spctl --assess --type execute` says "rejected"). Check
+which identity was used before shipping:
+
+```sh
+codesign -dvv build/AppleTree.app 2>&1 | grep '^Authority='
+```
+
+- `Authority=Developer ID Application: ...` -> notarization ran; the DMG is
+  distributable and `SHA256SUMS.txt` is written for the download page.
+- `Authority=Apple Development: ...` or `Signature=adhoc` -> **local use only.**
+
+Notarization needs stored credentials once:
+
+```sh
+xcrun notarytool store-credentials appletree-notary \
+    --apple-id <apple-id> --team-id <TEAM_ID> --password <app-specific-password>
+```
+
+### App Store route
+
+`make package` does **not** produce a submittable artifact. That route needs an
+Apple Distribution certificate, an embedded provisioning profile, and the sandbox
+entitlements in `app/AppleTree.entitlements`. `make deploy-sandbox` installs a
+rehearsal build locally to check behaviour under the sandbox before paying a
+review cycle; see `docs/appstore/app-store-metadata.md` section 3.
+
 ## Contribution License — please read carefully
 
 AppleTree is distributed under a dual license:
