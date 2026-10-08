@@ -77,29 +77,20 @@ thread_local! {
     pub(crate) static SCRATCH: RefCell<Scratch> = RefCell::default();
 }
 
-/// Read all entries of one directory in bulk into `s`. None if it can't be
-/// opened, else whether every entry was read.
-pub(crate) fn read_dir_bulk(path: &CStr, s: &mut Scratch, progress: &Progress) -> Option<bool> {
+/// Read all entries of the directory behind `fd` in bulk into `s`. None if it
+/// can't be read, else whether every entry was read.
+///
+/// The descriptor belongs to the caller: this reads through it and does **not**
+/// close it, so `walk` owns the lifetime and closes it once — including on the
+/// early-return paths, which a `close` here would make a double close.
+pub(crate) fn read_dir_bulk(fd: c_int, s: &mut Scratch, progress: &Progress) -> Option<bool> {
     s.entries.clear();
     s.names.clear();
     if s.buf.is_empty() {
         s.buf = vec![0u8; BUF_SIZE];
     }
-    let fd = unsafe {
-        libc::open(
-            path.as_ptr(),
-            libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
-        )
-    };
     if fd < 0 {
         progress.errors.fetch_add(1, Ordering::Relaxed);
-        if std::env::var_os("BZ_LOG_ERRORS").is_some() {
-            eprintln!(
-                "[bz] skip {} ({})",
-                path.to_string_lossy(),
-                std::io::Error::last_os_error()
-            );
-        }
         return None;
     }
 
@@ -144,7 +135,6 @@ pub(crate) fn read_dir_bulk(path: &CStr, s: &mut Scratch, progress: &Progress) -
             off += len;
         }
     }
-    unsafe { libc::close(fd) };
     Some(complete)
 }
 
@@ -307,28 +297,24 @@ impl Shared<'_> {
     }
 }
 
-pub(crate) fn child_path(dir: &CStr, name: &[u8]) -> Option<CString> {
-    let dir = dir.to_bytes();
-    let mut p = Vec::with_capacity(dir.len() + name.len() + 2);
-    p.extend_from_slice(dir);
-    if dir.last() != Some(&b'/') {
-        p.push(b'/');
-    }
-    p.extend_from_slice(name);
-    CString::new(p).ok()
-}
-
-pub(crate) fn walk<'s>(    scope: &rayon::Scope<'s>,
+/// Walk one directory, given its **open descriptor**.
+///
+/// The descriptor is owned by this call and closed before it returns, on every
+/// path. Descending by fd rather than by absolute path is what removes the
+/// `PATH_MAX` cap (see the descent in the loop below).
+pub(crate) fn walk<'s>(
+    scope: &rayon::Scope<'s>,
     shared: &'s Shared<'s>,
-    path: CString,
+    dir_fd: c_int,
     dir_idx: u32,
 ) {
     // Nothing below runs another job on this thread (spawn only queues), so
     // the borrow can't nest.
     SCRATCH.with_borrow_mut(|s| {
         let progress = shared.progress;
-        let Some(complete) = read_dir_bulk(&path, s, progress) else {
+        let Some(complete) = read_dir_bulk(dir_fd, s, progress) else {
             shared.mark_incomplete(dir_idx);
+            unsafe { libc::close(dir_fd) };
             return;
         };
         let Scratch { entries, names, .. } = s;
@@ -336,6 +322,7 @@ pub(crate) fn walk<'s>(    scope: &rayon::Scope<'s>,
             if !complete {
                 shared.mark_incomplete(dir_idx);
             }
+            unsafe { libc::close(dir_fd) };
             return;
         }
 
@@ -383,8 +370,23 @@ pub(crate) fn walk<'s>(    scope: &rayon::Scope<'s>,
         for (i, e) in entries.iter().enumerate() {
             if e.descend() {
                 let idx = base + i as u32;
-                match child_path(&path, &names[start..e.name_end as usize]) {
-                    Some(child) => scope.spawn(move |sc| walk(sc, shared, child, idx)),
+                let name = &names[start..e.name_end as usize];
+                // Descend by `openat(2)` on the directory we already hold open,
+                // not by rebuilding an absolute path.
+                //
+                // The absolute form was capped at `PATH_MAX`: `open(2)` rejects a
+                // path longer than 1024 bytes, so any tree deeper than that lost
+                // its whole tail silently — one error counter, `complete = false`,
+                // and no explanation. Measured on a 3424-byte-deep fixture: `find`
+                // reached the leaf at depth 81 while the engine stopped at 24
+                // (audit RE-3). Build trees (`node_modules`, Rust/Go targets,
+                // `Library/Caches`) are exactly where that depth occurs.
+                //
+                // The fd also removes a rename race the absolute form had: the
+                // parent stays open across the child's whole walk, so the walk
+                // cannot be redirected by a path component being replaced.
+                match open_at(dir_fd, name) {
+                    Some(child_fd) => scope.spawn(move |sc| walk(sc, shared, child_fd, idx)),
                     None => {
                         progress.errors.fetch_add(1, Ordering::Relaxed);
                         shared.mark_incomplete(idx);
@@ -393,10 +395,57 @@ pub(crate) fn walk<'s>(    scope: &rayon::Scope<'s>,
             }
             start = e.name_end as usize;
         }
+        // Every child has its own descriptor now (the name lookup happened on
+        // this one), so the parent's can go.
+        unsafe { libc::close(dir_fd) };
     });
 }
 
+/// Open `name` under the already-open directory `dir_fd`, as a directory.
+///
+/// `O_NOFOLLOW` keeps a symlinked child from being followed, which matches the
+/// absolute-path walk this replaces (`lib.rs::scan` opens the root the same
+/// way). The caller owns the returned descriptor and closes it.
+pub(crate) fn open_at(dir_fd: c_int, name: &[u8]) -> Option<c_int> {
+    let name = CString::new(name).ok()?;
+    let fd = unsafe {
+        libc::openat(
+            dir_fd,
+            name.as_ptr(),
+            libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+        )
+    };
+    (fd >= 0).then_some(fd)
+}
+
+/// Open an absolute directory path, for the root of a walk.
+///
+/// The one place a path is turned into a descriptor; everything below goes
+/// through `open_at`. `O_NOFOLLOW` matches the child rule, and the caller owns
+/// the descriptor.
+pub(crate) fn open_dir(path: &CStr) -> Option<c_int> {
+    let fd = unsafe {
+        libc::open(
+            path.as_ptr(),
+            libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+        )
+    };
+    (fd >= 0).then_some(fd)
+}
+
 /// Each directory's children form one run of equal parents: `(parent, first, len)`.
+///
+/// The grouping is by **adjacent equal parent**, which is exactly what the walk
+/// produces — a directory's entries are appended under one lock, so its children
+/// occupy consecutive indices. That makes the walk's own invariant load-bearing:
+/// if any child were appended out of order, or a whole directory's batch were
+/// dropped between two others, the same parent would appear in two runs and
+/// `link` would build a `children` array that is short by one entry — silently
+/// orphaning a node with no error and no assertion (audit RE-6).
+///
+/// `finish` therefore checks the invariant in test builds: every node's parent
+/// must be at a lower index (children follow their parent), and re-grouping the
+/// arrays must not lose anyone. The check is below, in `finish`.
 fn runs(parents: &[u32]) -> Vec<(u32, u32, u32)> {
     let mut out = Vec::new();
     let mut i = 1;
@@ -408,9 +457,64 @@ fn runs(parents: &[u32]) -> Vec<(u32, u32, u32)> {
     out
 }
 
+/// True when every node's parent precedes it and every non-root node is claimed
+/// by exactly one run.
+///
+/// A node whose parent appears *after* it cannot be reached by the bottom-up
+/// pass (which walks runs in reverse), and a node claimed by no run never enters
+/// `children` at all. Both are silent: no error counter moves, the tree just
+/// loses a subtree from the totals and from the map.
+#[cfg(debug_assertions)]
+fn runs_cover_every_node(t: &Tree, runs: &[(u32, u32, u32)]) -> bool {
+    let mut claimed = vec![false; t.len()];
+    claimed[0] = true;
+    for &(_p, first, len) in runs {
+        for i in first..first + len {
+            if i as usize >= t.len() || claimed[i as usize] {
+                return false;
+            }
+            claimed[i as usize] = true;
+        }
+    }
+    t.parents
+        .iter()
+        .enumerate()
+        .all(|(i, &p)| i == 0 || (p != NO_PARENT && (p as usize) < i))
+        && claimed.iter().all(|&c| c)
+}
+
 /// Derive subtree totals and the sorted child lists from the walk's arrays.
+///
+/// **Single-shot, and debug-asserted as such.** Every total here is an
+/// `+=` into an already-existing array: a second call adds each subtree to its
+/// parent again, so a one-file directory of 100 bytes becomes 300 (measured,
+/// audit RE-5). That is fine for the one caller (`lib.rs::scan`, which finishes
+/// the freshly walked tree exactly once), but the surrounding code
+/// (`Tree::with_root`/`push`/`link_children`) exists so tests can build trees by
+/// hand and run these passes — and a test that calls `finish` twice would get
+/// quietly wrong numbers instead of an error.
+///
+/// The invariant is checked rather than documented: `debug_assert` fires in the
+/// test profile, and the recursive-kind of double-add is impossible to detect
+/// from the arrays alone, so the guard is the flag below in debug builds. It
+/// costs nothing in release.
 pub(crate) fn finish(t: &mut Tree) {
+    #[cfg(debug_assertions)]
+    {
+        let fresh = t.n_files.len() != t.len();
+        debug_assert!(
+            fresh,
+            "finish() is single-shot: a second call double-counts every subtree total"
+        );
+    }
     let runs = runs(&t.parents);
+    // The walk's batch invariant, checked rather than assumed: a lost run would
+    // silently orphan a node from every total and from the child lists (RE-6).
+    #[cfg(debug_assertions)]
+    debug_assert!(
+        runs_cover_every_node(t, &runs),
+        "runs() lost a node: a reordered or split batch would orphan it silently"
+    );
     // Bottom-up: a directory's run starts after its parent's run, so reverse
     // run order finishes every child before its parent.
     t.n_files = vec![0u32; t.len()];
@@ -520,6 +624,20 @@ pub(crate) fn remove_node(t: &mut Tree, node: usize) -> bool {
         t.alloc[cur] = t.alloc[cur].saturating_sub(da);
         t.logical[cur] = t.logical[cur].saturating_sub(dl);
         t.n_files[cur] = t.n_files[cur].saturating_sub(df);
+        // ...and recompute the ancestor's completeness from what is left.
+        //
+        // `complete` is a folded bool ("every descendant was readable"), so
+        // subtracting one contribution from it needs the fold, not a value.
+        // Removing the one unreadable folder used to leave the root still
+        // claiming its figures were partial, with no way to recover — the user
+        // trashes the cause and the scan still reads unreliable (audit RE-4).
+        //
+        // Re-folding from the surviving children is exact: each child's own
+        // `complete` is already the fold of its subtree, so ANDing them is the
+        // same result the original bottom-up pass would produce, minus the
+        // removed subtree. The node's own attachment matters too — a directory
+        // whose child list was emptied by the removal is complete.
+        t.complete[cur] = t.kids(cur).iter().all(|&c| t.complete[c as usize]);
         let p = t.parents[cur];
         if p == NO_PARENT {
             break;
@@ -632,6 +750,39 @@ mod tests {
     }
 
     #[test]
+    fn removing_the_unreadable_folder_restores_completeness() {
+        // RE-4. `complete` is a folded bool: "every descendant was readable".
+        // `remove_node` subtracted sizes but never touched it, so trashing the
+        // one unreadable folder left the root still reporting a partial walk and
+        // the CLI's `coverage.complete` still `false`, with no way to recover —
+        // the cause was gone and the flag could not be. The fold is now
+        // recomputed from the surviving children, which is exact.
+        let mut t = Tree::with_root("/root");
+        let good = t.push("good", 0, 100, 100, true);
+        t.push("good-child", good, 50, 50, false);
+        let unreadable = t.push("unreadable", 0, 0, 0, true);
+        t.complete = vec![true; t.len()];
+        finish(&mut t);
+        // Mark the folder the way `mark_incomplete` does, then re-fold upward so
+        // the fixture matches a real walk.
+        t.complete[unreadable as usize] = false;
+        for i in (1..t.len()).rev() {
+            let p = t.parents[i] as usize;
+            t.complete[p] &= t.complete[i];
+        }
+        assert!(!t.complete[0], "the fixture must start incomplete");
+
+        assert!(remove_node(&mut t, unreadable as usize));
+        assert!(
+            t.complete[0],
+            "after removing the only unreadable folder the walk is complete again"
+        );
+        // The surviving subtree is untouched and still complete.
+        assert!(t.complete[good as usize]);
+        assert_eq!(t.alloc[0], 150);
+    }
+
+    #[test]
     fn remove_node_detaches_in_place_without_renumbering() {
         // The layout invariant `remove_node` relies on: every directory's
         // children form ONE contiguous run of indices, because the walk appends
@@ -692,6 +843,34 @@ mod tests {
         assert_eq!(t.alloc[0], 0);
         assert_eq!(t.n_files[0], 0);
         assert_eq!(t.kids(0), &[] as &[u32]);
+    }
+
+    #[test]
+    fn path_does_not_panic_on_a_detached_node() {
+        // RE-2. `remove_node` sets the removed node's parent to `NO_PARENT`, and
+        // `Tree::path` looped `while i != 0`, so it indexed
+        // `parents[u32::MAX]` and panicked: "index out of bounds: the len is 4
+        // but the index is 4294967295". `Tree::path` is `pub` and the GUI's
+        // `bz_remove_node` → `find` → sort comparator calls it, so one detached
+        // candidate aborted the whole refresh. The Swift mirror always had the
+        // guard; this asserts the Rust copy does too.
+        let mut t = Tree::with_root("/root");
+        let a = t.push("a", 0, 0, 0, true);
+        let a1 = t.push("a-child", a, 900, 1000, false);
+        t.complete = vec![true; t.len()];
+        finish(&mut t);
+
+        assert!(remove_node(&mut t, a as usize));
+
+        // Both the removed node and its still-linked descendant must resolve
+        // without panicking. The path they report is the one they still hold —
+        // whether they are reachable is `isAttached`'s question, not this one's.
+        let removed_path = t.path(a as usize);
+        let child_path = t.path(a1 as usize);
+        assert_eq!(removed_path, std::path::PathBuf::from("/root/a"));
+        assert_eq!(child_path, std::path::PathBuf::from("/root/a/a-child"));
+        // The root itself is unaffected.
+        assert_eq!(t.path(0), std::path::PathBuf::from("/root"));
     }
 
     /// Every child is listed once, under its parent, after it.
@@ -756,6 +935,65 @@ mod tests {
         assert_partition(&t);
     }
 
+    #[test]
+    fn walk_reaches_beyond_path_max() {
+        // RE-3. The walk used to rebuild an absolute path per child and `open(2)`
+        // it, so once the accumulated prefix passed `PATH_MAX` (1024 bytes) every
+        // deeper directory was refused: one error counter, `complete = false`,
+        // and the whole tail of the tree silently missing. Measured on a
+        // 3424-byte-deep fixture, `find` reached the leaf while the engine
+        // stopped at depth 24.
+        //
+        // The fixture is built with `fchdir`/`mkdirat`, never an absolute path,
+        // because the *fixture* would hit the same cap: 60 components of 30
+        // characters is ~1830 bytes.
+        let root = std::env::temp_dir().join(format!("bz-pathmax-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+
+        let depth = 60usize;
+        let component = "d".repeat(30);
+        let mut dir_fd = unsafe {
+            libc::open(
+                std::ffi::CString::new(root.to_str().unwrap()).unwrap().as_ptr(),
+                libc::O_RDONLY | libc::O_DIRECTORY,
+            )
+        };
+        assert!(dir_fd >= 0, "fixture root must open");
+        for _ in 0..depth {
+            let name = std::ffi::CString::new(component.as_str()).unwrap();
+            assert_eq!(unsafe { libc::mkdirat(dir_fd, name.as_ptr(), 0o755) }, 0);
+            let next = unsafe {
+                libc::openat(dir_fd, name.as_ptr(), libc::O_RDONLY | libc::O_DIRECTORY)
+            };
+            assert!(next >= 0, "fixture level must open");
+            unsafe { libc::close(dir_fd) };
+            dir_fd = next;
+        }
+        // A real file at the very bottom, so a reached leaf is observable.
+        let leaf = std::ffi::CString::new("leaf.bin").unwrap();
+        let fd = unsafe { libc::openat(dir_fd, leaf.as_ptr(), libc::O_CREAT | libc::O_WRONLY, 0o644) };
+        assert!(fd >= 0, "fixture leaf must open");
+        unsafe {
+            libc::write(fd, [7u8; 4096].as_ptr() as *const _, 4096);
+            libc::close(fd);
+            libc::close(dir_fd);
+        }
+
+        let t = crate::scan(&root, &Progress::default());
+        let _ = std::fs::remove_dir_all(&root);
+
+        // The old behaviour: errors == 1, complete == false, ~24 levels.
+        // Every level and the leaf must be present, and the walk must be whole.
+        assert_eq!(t.errors, 0, "the walk must not stop at PATH_MAX");
+        assert!(t.complete[0], "the walk must report a complete tree");
+        assert_eq!(t.n_files[0], 1, "the leaf file must be seen");
+        // 1 root + 60 levels + the leaf file itself.
+        assert_eq!(t.len(), depth + 2, "every level must be reached");
+        assert_eq!(t.alloc[0], 4096, "the leaf's bytes must be totalled");
+        assert_partition(&t);
+    }
+
     /// A tree as the walk leaves it: each directory's entries appended as one
     /// batch after it, totals and child lists not yet derived.
     fn fixture(dirs: usize, files_per_dir: usize) -> Tree {
@@ -810,6 +1048,44 @@ mod tests {
             finish(&mut t);
             assert_eq!(t, reference_finish(fixture(dirs, files)));
         }
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    fn runs_reject_a_split_batch() {
+        // Proves the RE-6 invariant is not vacuous: two nodes of one parent
+        // separated by another parent's node is the shape a dropped batch
+        // creates, and it must be refused rather than orphaning a node.
+        let mut t = Tree::with_root("/root");
+        let a = t.push("a", 0, 1, 1, true);
+        t.push("b", 0, 1, 1, true);
+        t.push("a-child", a, 1, 1, false);
+        t.complete = vec![true; t.len()];
+        // `parents` is [NO_PARENT, 0, 0, 0] — already one run for the root. Break
+        // it the way a lost node would: give the last node a parent that appears
+        // after it.
+        t.parents[3] = 3;
+        let r = runs(&t.parents);
+        assert!(!runs_cover_every_node(&t, &r), "a self-parented node must be refused");
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    fn finish_refuses_a_second_call() {
+        // RE-5. `finish` adds each subtree into its parent, so a second call
+        // double-counts: measured (100, 100, 1) → (300, 300, 1). The guard makes
+        // that an assertion in test builds instead of silently wrong totals.
+        let mut t = Tree::with_root("/root");
+        t.push("a", 0, 100, 100, false);
+        t.complete = vec![true; t.len()];
+        finish(&mut t);
+        assert_eq!(t.alloc[0], 100);
+
+        let second = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| finish(&mut t)));
+        assert!(
+            second.is_err(),
+            "a second finish() must be refused, not double every total"
+        );
     }
 
     #[test]

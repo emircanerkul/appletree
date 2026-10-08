@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 
-use scan::{child_path, finish, read_dir_bulk, walk, Arena, SCRATCH, Shared};
+use scan::{finish, read_dir_bulk, walk, Arena, SCRATCH, Shared};
 
 /// Contents live in the cloud (iCloud Drive, File Provider). Opening such a
 /// directory asks the provider to materialize it, i.e. download.
@@ -71,9 +71,25 @@ impl Tree {
     pub fn name(&self, i: usize) -> &str {
         std::str::from_utf8(self.name_bytes(i)).unwrap_or("")
     }
+    /// Node `i`'s path from the root.
+    ///
+    /// Stops at the root **or at a detached node**. `remove_node` (see
+    /// `scan::remove_node`) cuts a subtree by setting the removed node's parent
+    /// to `NO_PARENT`, and its descendants keep pointing at each other. A loop
+    /// that stopped only on `0` therefore walked into `parents[u32::MAX]` and
+    /// panicked with "index out of bounds: the len is 4 but the index is
+    /// 4294967295" — reachable from the GUI's own refresh path, where
+    /// `bz_remove_node` recomputes Clean Up's list and this is called in the
+    /// sort comparator (audit RE-2).
+    ///
+    /// The Swift mirror has always carried this guard (`app/Model.swift`, the
+    /// `tree.parents[cur] == UInt32.max` break) — this is the copy that was
+    /// missing it. A detached node reports the path it still has, which is what
+    /// every other accessor documents; whether that node is still reachable is
+    /// `isAttached`'s question, not this one's.
     pub fn path(&self, mut i: usize) -> PathBuf {
         let mut parts = Vec::new();
-        while i != 0 {
+        while i != 0 && i != NO_PARENT as usize {
             parts.push(self.name(i));
             i = self.parents[i] as usize;
         }
@@ -164,7 +180,16 @@ pub fn scan(root: &Path, progress: &Progress) -> Tree {
         progress.skipped_cloud_dirs.fetch_add(1, Ordering::Relaxed);
         shared.mark_incomplete(0);
     } else if let Ok(path) = CString::new(root.as_os_str().as_encoded_bytes()) {
-        fast_pool().scope(|s| walk(s, &shared, path, 0));
+        // Open the root once and hand the walk a descriptor. Descending goes
+        // through `openat(2)` from there, so no path is ever rebuilt and the
+        // walk is not capped at `PATH_MAX` (audit RE-3).
+        match scan::open_dir(&path) {
+            Some(fd) => fast_pool().scope(|s| walk(s, &shared, fd, 0)),
+            None => {
+                progress.errors.fetch_add(1, Ordering::Relaxed);
+                shared.mark_incomplete(0);
+            }
+        }
     } else {
         progress.errors.fetch_add(1, Ordering::Relaxed);
         shared.mark_incomplete(0);
@@ -186,9 +211,10 @@ pub fn scan(root: &Path, progress: &Progress) -> Tree {
 
 /// Count-only walk with no tree building: measures the pure syscall floor.
 pub fn scan_count(root: &Path, progress: &Progress) {
-    fn go<'s>(scope: &rayon::Scope<'s>, progress: &'s Progress, dir: CString) {
+    fn go<'s>(scope: &rayon::Scope<'s>, progress: &'s Progress, dir_fd: c_int) {
         SCRATCH.with_borrow_mut(|s| {
-            if read_dir_bulk(&dir, s, progress).is_none() {
+            if read_dir_bulk(dir_fd, s, progress).is_none() {
+                unsafe { libc::close(dir_fd) };
                 return;
             }
             let (mut start, mut n_files, mut n_dirs, mut bytes) = (0, 0u64, 0u64, 0u64);
@@ -196,8 +222,8 @@ pub fn scan_count(root: &Path, progress: &Progress) {
                 if e.is_dir {
                     n_dirs += 1;
                     if e.descend() {
-                        if let Some(p) = child_path(&dir, &s.names[start..e.name_end as usize]) {
-                            scope.spawn(move |sc| go(sc, progress, p));
+                        if let Some(fd) = scan::open_at(dir_fd, &s.names[start..e.name_end as usize]) {
+                            scope.spawn(move |sc| go(sc, progress, fd));
                         }
                     }
                 } else {
@@ -209,9 +235,12 @@ pub fn scan_count(root: &Path, progress: &Progress) {
             progress.files.fetch_add(n_files, Ordering::Relaxed);
             progress.dirs.fetch_add(n_dirs, Ordering::Relaxed);
             progress.bytes.fetch_add(bytes, Ordering::Relaxed);
+            unsafe { libc::close(dir_fd) };
         });
     }
     if let Ok(path) = CString::new(root.as_os_str().as_encoded_bytes()) {
-        rayon::scope(|s| go(s, progress, path));
+        if let Some(fd) = scan::open_dir(&path) {
+            rayon::scope(|s| go(s, progress, fd));
+        }
     }
 }

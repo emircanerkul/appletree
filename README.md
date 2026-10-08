@@ -184,6 +184,17 @@ depend on traversal order. The scan stays on one volume, and cloud-only iCloud
 folders are never downloaded. Root-only system data that no app can read is
 reported in the status bar instead of being hidden.
 
+**APFS clones are counted per name, like `du`, and that is not the same as space
+you get back.** A clone is a separate inode sharing blocks with its original, so
+each copy reports the full allocated size: a 512 MB clone shows as 512 MB in
+every tool here, while deleting it frees roughly nothing. Both `du` and this
+scanner behave that way, which is why the totals match — but the Clean Up panel's
+figures are read as *reclaimable* space, and for a folder full of clones they are
+not. macOS produces clones routinely (the installer, `cp -c`, Xcode caches, Time
+Machine locals), so treat a suspiciously round figure as a clone before expecting
+the disk back. Hard links do not have this problem: those genuinely are one inode
+and this scanner counts their bytes once.
+
 File counts differ from some tools, and not because of an accuracy problem.
 AppleTree lists every name of a hard-linked file and counts symlinks as files;
 disktree counts a hard-linked file once. AppleTree therefore reports more files
