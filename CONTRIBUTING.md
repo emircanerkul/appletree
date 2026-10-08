@@ -24,10 +24,20 @@ run it before tagging.
 make test                 # must be green; also runs `cargo test --release`
 ```
 
-**Version lives in one place.** `Cargo.toml`'s `version` is read by the Makefile
-for `CFBundleVersion` and `CFBundleShortVersionString`, so the app bundle and the
-CLI both report it. `Cargo.lock` records it too, and `--locked` builds fail until
-it is regenerated — that failure is the reminder, not a problem to route around:
+**Two version numbers, and they are different things.** `Cargo.toml`'s `version`
+is the *marketing* version (`CFBundleShortVersionString`) and is read by the
+Makefile, so the app bundle and the CLI both report it. `CFBundleVersion` — the
+*build* number App Store Connect requires to be unique per version and to
+increase — is `APP_BUILD`, defaulting to a UTC timestamp to the second. They used
+to be the same value, which made every re-upload of one version a duplicate and
+had a second 1.1.0 delivery rejected. Override when you want a specific number:
+
+```sh
+make pkg APP_BUILD=42
+```
+
+`Cargo.lock` records the marketing version, and `--locked` builds fail until it is
+regenerated — that failure is the reminder, not a problem to route around:
 
 ```sh
 # 1. Edit Cargo.toml's version; move CHANGELOG's "Unreleased" section under the

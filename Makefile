@@ -29,6 +29,22 @@ SHELL := /bin/bash
 .DELETE_ON_ERROR:
 
 VERSION := $(shell awk -F'"' '/^version/{print $$2; exit}' Cargo.toml)
+
+# The build number — Apple's CFBundleVersion — which is NOT the marketing version.
+#
+# These were the same value, and that is what broke a second upload: App Store
+# Connect requires CFBundleVersion to be unique for a given
+# CFBundleShortVersionString and to increase. Pinned to the marketing version,
+# every re-upload of one version collides, so a rebuilt pkg is rejected as a
+# duplicate of the one already delivered.
+#
+# The default is a UTC timestamp to the second (YYYYMMDDHHMMSS): unique without
+# anyone having to remember, larger on every later build, and safe against two
+# builds in the same minute — which a minute-resolution stamp would collide on,
+# in exactly the build-rebuild-upload loop this is meant to unblock. Apple treats
+# CFBundleVersion as a dotted version string and compares it numerically, so
+# digits alone are valid. Override for a specific number: `make pkg APP_BUILD=42`.
+APP_BUILD ?= $(shell date -u +%Y%m%d%H%M%S)
 MIN_MACOS := 14.0
 APP := build/AppleTree.app
 # A second, separately-named bundle for the App Store sandbox rehearsal: it is
@@ -172,7 +188,7 @@ bundle: engine
 	    '    <key>CFBundleName</key><string>AppleTree</string>' \
 	    '    <key>CFBundleDisplayName</key><string>AppleTree</string>' \
 	    '    <key>CFBundleIdentifier</key><string>com.erklab.apps.appletree</string>' \
-	    "    <key>CFBundleVersion</key><string>$(VERSION)</string>" \
+	    "    <key>CFBundleVersion</key><string>$(APP_BUILD)</string>" \
 	    "    <key>CFBundleShortVersionString</key><string>$(VERSION)</string>" \
 	    '    <key>CFBundleExecutable</key><string>AppleTree</string>' \
 	    '    <key>CFBundlePackageType</key><string>APPL</string>' \

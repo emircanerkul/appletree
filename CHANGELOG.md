@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.1.1 — 2026-10-08
+
+**A rebuilt package can be uploaded again.** `CFBundleVersion` and
+`CFBundleShortVersionString` were both pinned to the marketing version, so every
+re-upload of one version was a duplicate: App Store Connect requires the build
+number to be unique per version and to increase. A second 1.1.0 delivery was
+rejected for exactly that reason. The build number is now its own value, defaulting
+to a UTC timestamp to the second, so `make pkg` twice in a row produces two
+distinct, increasing builds. Override with `make pkg APP_BUILD=42`.
+
+Export compliance is now declared in `Info.plist`
+(`ITSAppUsesNonExemptEncryption = false`), so App Store Connect stops asking the
+App Encryption Documentation question on every submission. Verified the app
+implements no cryptography of its own — no CryptoKit or CommonCrypto, no crypto
+crate in `Cargo.toml`, no custom trust evaluation — and uses only the
+operating system's HTTPS and Keychain, which is the mass-market exemption.
+
 ## 1.1.0 — 2026-10-08
 
 **The scan no longer comes back short.** A file descriptor was leaked for every
