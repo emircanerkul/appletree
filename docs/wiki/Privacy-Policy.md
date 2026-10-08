@@ -149,7 +149,7 @@ Built from the scan you are looking at. It contains **paths, names, sizes, count
 | The folder you scanned, or "whole disk" | — |
 | Largest folder paths, each with allocated size and file count | up to 250 |
 | Largest file paths, each with allocated size | up to 80 |
-| Folders AppleTree recognises as rebuildable caches, with path and kind | up to 120 |
+| Folders AppleTree recognises as rebuildable caches, with path, size and a description that names the owning tool where one was identified (for example `~/Library/Caches/pip` — `pip`) | up to 120 |
 | Names and bundle identifiers of the apps currently running | all regular apps |
 | Xcode simulator runtimes: identifier, platform and version, size, last-used date, path | 100 MB and over |
 | Xcode simulator devices: name, state, size, last-used date, UDID, folder path | 100 MB and over |
