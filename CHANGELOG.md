@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.1.2 — 2026-10-08
+
+**The duplicate privacy policy is gone.** `docs/appstore/privacy-policy.md` was an
+untracked second copy of the policy, referenced by nothing: the app reads
+`Contents/Resources/PrivacyPolicy.md`, which `make build` copies from
+`docs/wiki/Privacy-Policy.md`. It had drifted 95 lines from that source — missing
+the entire section on the Mac App Store build and claiming Full Disk Access is
+required to scan, which is false for the sandboxed build — and being gitignored
+meant no diff and no test could see it. One policy now, at
+`docs/wiki/Privacy-Policy.md`. `docs/appstore/app-store-metadata.md` remains, as
+the submission notes the Makefile points at.
+
+The policy's §5.2 also now lists the field the planner actually receives: the
+owning tool's name beside the cache's kind, which 1.1.0 began sending.
+
 ## 1.1.1 — 2026-10-08
 
 **A rebuilt package can be uploaded again.** `CFBundleVersion` and
