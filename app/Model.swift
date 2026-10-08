@@ -1415,6 +1415,26 @@ nonisolated private struct VolumeSpace: Sendable {
     let free: UInt64?
     let used: UInt64?
 
+    /// The volume's free and used bytes, for the panel and the rings' free arc.
+    ///
+    /// `free` is `volumeAvailableCapacityForImportantUsage`, **deliberately**, and
+    /// it is not the number `df` prints. Both are correct answers to different
+    /// questions, and this one is the question the user is asking:
+    ///
+    /// - `volumeAvailableCapacity` is free space *right now*, excluding anything
+    ///   stored on demand. On the machine this was measured, `df` reported
+    ///   25.88 GB.
+    /// - `…ForImportantUsage` is what Apple documents as "space available for
+    ///   important usage": it includes space macOS will reclaim under pressure
+    ///   (purgeable caches, local snapshots), so it is what you can actually
+    ///   write. Measured: **35.22 GB**, which is the figure System Settings →
+    ///   Storage shows (35.21 GB) in the same moment.
+    ///
+    /// So this matches Apple's own user-facing number and `df` does not. Measured
+    /// on a 245 GB Mac: panel 35.23 GB, System Settings 35.21 GB, `df` 25.88 GB.
+    /// A comment here once claimed the opposite — that the panel was ~9 GB too
+    /// optimistic and `df` was the truth — and it was wrong: it compared the two
+    /// APIs without checking which one macOS itself displays.
     static func read(_ path: String) -> VolumeSpace {
         let values = try? URL(fileURLWithPath: path).resourceValues(
             forKeys: [.volumeAvailableCapacityForImportantUsageKey])

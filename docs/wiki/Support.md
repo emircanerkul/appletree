@@ -73,12 +73,16 @@ Expected, and not a bug. Four separate reasons, in order of how much they usuall
    with their sizes.
 2. **Full Disk Access is not granted.** Root-only system data is invisible to *every* tool without it, not just AppleTree. Grant it in **System Settings → Privacy & Security → Full Disk Access** and rescan.
 3. **APFS volume sharing.** Several volumes on one container report the same free space, because they draw on one shared pool. The app shows what the filesystem reports.
-4. **Purgeable space and snapshots.** macOS does not count Time Machine local snapshots or purgeable space as free, and neither does AppleTree. `diskutil apfs listSnapshots /` shows the former.
+4. **Purgeable space and snapshots.** `df` does not count Time Machine local snapshots or purgeable space as free. The app follows Apple's own guidance here and reports the figure macOS itself shows you, so the panel and System Settings agree. `diskutil apfs listSnapshots /` lists the snapshots.
 
-**"Free space" in the panel includes purgeable space**, so it reads higher than
-Finder's or `df`'s figure. Measured on one 245 GB Mac: the panel showed 35.27 GB
-while the real available space was 25.91 GB. The panel answers "how much could
-macOS free if it needed to"; Finder answers "how much is free right now".
+**The app's "Free space" matches System Settings, not `df`.** It reads
+`volumeAvailableCapacityForImportantUsage`, the API Apple documents for
+"space available for important usage" — the same number the Storage pane shows.
+Measured on one 245 GB Mac: the panel read 35.23 GB and System Settings read
+35.21 GB, while `df` reported 25.88 GB. That lower figure excludes space macOS
+will reclaim on demand (purgeable caches, local snapshots), so it understates what
+you can actually write. If you are comparing against a shell, expect the two to
+differ by a few GB, and trust the app and System Settings.
 
 The app is explicit about this: when a whole-disk scan cannot read everything, it
 reports the coverage rather than quietly presenting a smaller number as the truth.
