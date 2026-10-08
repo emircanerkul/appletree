@@ -254,3 +254,9 @@
    always works so the user is never stuck. */
 "AppleTree could not use that folder" = "AppleTree bu klasörü kullanamadı";
 "The folder you chose did not give AppleTree access. Choose a different folder — Macintosh HD always works." = "Seçtiğiniz klasör AppleTree'ye erişim vermedi. Başka bir klasör seçin — \"Macintosh HD\" her zaman çalışır.";
+
+/* Scan-coverage honesty: a walk that did not reach what the volume holds.
+   Distinct from "root-only", which is genuinely unreadable system data. */
+"Scan may be incomplete — some folders were not readable. Rescan" = "Tarama eksik olabilir — bazı klasörler okunamadı. Yeniden tara";
+"The last scan did not start: AppleTree could not get access to its scan folder. Choose it again to rescan." = "Son tarama başlamadı: AppleTree tarama klasörüne erişemedi. Yeniden taramak için klasörü tekrar seçin.";
+"This scan reached less than this volume holds. Rescanning usually fixes it; if it recurs, choose the folder again from the Scan menu." = "Bu tarama, bu birimin içerdiğinden daha azına ulaştı. Yeniden tarama genellikle sorunu çözer; tekrarlarsa Tara menüsünden klasörü yeniden seçin.";

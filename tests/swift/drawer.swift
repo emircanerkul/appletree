@@ -446,6 +446,57 @@ func run() async {
             if !ramDev.isEmpty { eject(ramDev) }
             try? fm.removeItem(atPath: imgPath)
         }
+
+        // --- scan coverage: a short walk is not "root-only" ------------------
+        //
+        // The status bar labelled every unscanned byte "root-only … not a
+        // permission problem the user can fix". Real numbers from this machine:
+        // the Data volume consumes 163.59 GB and an unprivileged walk reaches
+        // 154.50 GB, so genuine root-only space is ~9 GB. Three scans that came
+        // back short (124.42 / 140.54 / 158.16 GB) were labelled 30.01 / 23.09 /
+        // 5.07 GB the same way — the first two are impossible as root-only, and
+        // in fact were walks that had lost access. The verdict is pure, so the
+        // distinction is pinned here rather than inferred from a screenshot.
+        let GB: UInt64 = 1_000_000_000
+        // A healthy whole-disk scan: 154.5 GB read of 163.6 GB, 751 unreadable.
+        check("a healthy walk is not flagged as lost coverage",
+              !lostScanCoverage(scannedBytes: 154 * GB + 500_000_000, volumeUsed: 163 * GB,
+                                gap: 9 * GB, errors: 751, nodeCount: 2_800_000,
+                                bestThisLaunch: 154 * GB + 500_000_000,
+                                heldGrant: true, sandboxed: true),
+              "genuine ~9 GB root-only space must not read as a lost scan")
+        // The observed defect: the walk reached 124 GB of a 163 GB volume, with
+        // the error count inflated by denied directories.
+        check("a materially short walk IS flagged",
+              lostScanCoverage(scannedBytes: 124 * GB, volumeUsed: 163 * GB,
+                               gap: 30 * GB, errors: 2_883, nodeCount: 2_200_000,
+                               bestThisLaunch: 154 * GB, heldGrant: true, sandboxed: true),
+              "124 GB of a 163 GB volume is lost coverage, not root-only data")
+        // Each signal must stand alone, because a sandboxed build may have no
+        // volume figure. (`gap` travels with `volumeUsed`: it is computed as the
+        // difference, so one is zero whenever the other is absent.)
+        check("the error count alone trips it with no volume figure",
+              lostScanCoverage(scannedBytes: 124 * GB, volumeUsed: nil,
+                               gap: 0, errors: 6_000, nodeCount: 2_200_000,
+                               bestThisLaunch: 124 * GB, heldGrant: true, sandboxed: true),
+              "thousands of unreadable folders means access was lost")
+        check("falling short of this launch's own best trips it",
+              lostScanCoverage(scannedBytes: 100 * GB, volumeUsed: nil,
+                               gap: 0, errors: 500, nodeCount: 2_000_000,
+                               bestThisLaunch: 154 * GB, heldGrant: true, sandboxed: true),
+              "a later scan must not silently reach less than an earlier one")
+        check("a sandboxed scan with no grant is lossy",
+              lostScanCoverage(scannedBytes: 54 * GB, volumeUsed: 163 * GB,
+                               gap: 109 * GB, errors: 27, nodeCount: 429_000,
+                               bestThisLaunch: 54 * GB, heldGrant: false, sandboxed: true),
+              "no grant held means the root was never fully reachable")
+        // The one-node empty tree a wholly-denied root yields is a different
+        // failure (the gate and the picker), not a coverage verdict.
+        check("a one-node tree is not judged as coverage loss",
+              !lostScanCoverage(scannedBytes: 0, volumeUsed: 163 * GB,
+                                gap: 163 * GB, errors: 1, nodeCount: 1,
+                                bestThisLaunch: 0, heldGrant: false, sandboxed: true),
+              "an empty root is the gate's problem, not a coverage label")
     }
 }
 

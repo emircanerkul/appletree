@@ -1077,7 +1077,26 @@ final class ScanModel {
     var cleanup: [CleanupItem] = []
     let cleanupTrash = CleanupTrashBatch()
     /// Volume-used minus what the scan could see: root-only territory.
+    ///
+    /// Only meaningful when the scan actually had access to its root. See
+    /// `scanCoverage` for why the two are tracked apart.
     var unscannedBytes: UInt64 = 0
+    /// Whether the last scan lost coverage rather than merely meeting
+    /// unreadable system data. Set by `finishScan`; drives the status bar's
+    /// wording so a partial walk is never presented as a finished scan.
+    var scanLostCoverage = false
+    /// Set when a sandboxed scan could not hold the grant covering its root, so
+    /// the UI offers the folder picker instead of showing a partial tree. See
+    /// `startScan`.
+    var needsFolderBeforeScan = false
+    /// The path the grant covered when the scan began, for the diagnostic line.
+    private var grantAtScanStart: String?
+    /// The most this launch has ever reached, in allocated bytes.
+    ///
+    /// A later scan that falls well short of it has lost coverage — a signal
+    /// that needs no volume figure, so it still works where `VolumeSpace` comes
+    /// back empty.
+    private var bestCoverageBytes: UInt64 = 0
     var showFreeSpace: Bool = UserDefaults.standard.bool(forKey: "bz.showFree") {
         didSet { UserDefaults.standard.set(showFreeSpace, forKey: "bz.showFree") }
     }
@@ -1141,13 +1160,43 @@ final class ScanModel {
         // detached: with the hold below it, the task could reach the root before
         // the extension existed, which is the contradiction the old ordering
         // left in place (the comment claimed "around", the code did not).
-        scopedGrant.hold()
+        //
+        // **The result is load-bearing, and used to be discarded.** `hold()`
+        // returns nil when nothing usable is stored — never chosen, stale, or
+        // forgotten — and in that state the walk has no access to its own root.
+        // Running anyway is how a partial scan reached the screen: measured in a
+        // sandboxed process with the real engine, a scan root reachable only
+        // through the grant yields 154.49 GB / 751 unreadable folders when it is
+        // held and 54.32 GB / 27 when it is not, with the count depending on
+        // *when* access was lost (releasing mid-walk gives anything from 79 to
+        // 154 GB). The panel showed that partial tree as a finished scan and
+        // labelled the missing space "root-only", i.e. told the user it was
+        // unfixable system data (audit SW-7).
+        //
+        // A sandboxed build that cannot hold the grant therefore refuses to scan
+        // and asks for the folder again — the picker is the only thing that can
+        // create the grant, so failing here and reopening it is the one route
+        // that works. A non-sandboxed build needs no grant at all and is
+        // unaffected.
+        let grantPath = scopedGrant.hold()
+        if AppEnvironment.isSandboxed, grantPath == nil {
+            scanning = false
+            startedAt = nil
+            if let activity { ProcessInfo.processInfo.endActivity(activity) }
+            self.activity = nil
+            needsFolderBeforeScan = true
+            return
+        }
         // Foundation may ask a disk-management service about purgeable space.
         // Read it alongside the scan, before publishing the finished tree, so
         // the main thread never waits synchronously on that service.
         let volumePath = scanRoot
         volumeTask = Task.detached(priority: .userInitiated) { VolumeSpace.read(volumePath) }
         handle = bz_scan_start(scanRoot)
+        // What the grant actually covers, recorded for the scan's own diagnostic
+        // line: a scan that ran with no grant (or a narrower one than the root)
+        // is the difference between a partial tree and a complete one.
+        grantAtScanStart = grantPath
 
         // 60 Hz: the elapsed time ticks every frame, so the screen keeps
         // moving while the engine assembles the tree after the last file is
@@ -1253,19 +1302,113 @@ final class ScanModel {
             NSLog("BZ scan done: %llu nodes, %llu unreadable dirs", UInt64(tree.count), tree.errors)
         }
         freeBytes = space.free ?? 0
-        // Coverage honesty: compare scanned bytes with what the volume
-        // says it holds. The difference is root-only space (Spotlight
-        // index, unified logs, …) no unelevated app can read.
+        // Coverage honesty: compare scanned bytes with what the volume says it
+        // holds. A *small* difference is root-only space (Spotlight index,
+        // unified logs, …) that no unelevated app can read, and a large one is
+        // the app having lost access to a subtree it should have walked.
+        //
+        // Telling those apart is the point. Measured on this machine's Data
+        // volume: 163.59 GB consumed, 154.50 GB reached by an unprivileged
+        // walk, so genuine root-only space is ~9 GB. The screenshots that
+        // prompted this work showed 30.01 GB and 23.09 GB labelled the same way
+        // — impossible as root-only, and in fact a walk that came back short.
+        // The label told the user "not a permission problem you can fix", which
+        // is exactly backwards in that case.
+        //
+        // Two independent signals, because neither alone is decisive:
+        //   - the gap itself, against the best coverage this launch has seen;
+        //   - the engine's own unreadable-directory count, which the healthy
+        //     walk keeps at ~750 here and a lost-grant walk drives into the
+        //     thousands (measured: 5,904–17,759 while the grant died mid-walk).
         unscannedBytes = 0
-        if let tree, let used = space.used {
-            let seen = tree.alloc[0]
-            if used > seen {
-                unscannedBytes = used - seen
-            }
+        scanLostCoverage = false
+        if let tree, let used = space.used, used > tree.alloc[0] {
+            unscannedBytes = used - tree.alloc[0]
+        }
+        // Best coverage this launch: a later scan that reaches less than an
+        // earlier one has lost something, whatever the absolute numbers say.
+        bestCoverageBytes = max(bestCoverageBytes, tree?.alloc[0] ?? 0)
+        if let tree {
+            scanLostCoverage = lostScanCoverage(
+                scannedBytes: tree.alloc[0],
+                volumeUsed: space.used,
+                gap: unscannedBytes,
+                errors: tree.errors,
+                nodeCount: UInt64(tree.count),
+                bestThisLaunch: bestCoverageBytes,
+                heldGrant: grantAtScanStart != nil,
+                sandboxed: AppEnvironment.isSandboxed
+            )
+        }
+        // One self-contained line per scan, so the next time a total moves the
+        // cause is a grep rather than a log flood:
+        //
+        //   log show --last 30m --predicate 'eventMessage CONTAINS "BZ scan diag"'
+        //
+        // It records what the number cannot show on its own: the grant that was
+        // actually held, the volume figure the gap was measured against, this
+        // launch's best coverage, and the verdict. `bytes` is the figure the
+        // panel displays; `volumeUsed` says what it should be near.
+        if let tree {
+            NSLog(
+                "BZ scan diag: bytes=%llu volumeUsed=%@ gap=%llu best=%llu files=%llu nodes=%llu errors=%llu lostCoverage=%d grant=%@ root=%@",
+                tree.alloc[0],
+                space.used.map(String.init) ?? "unknown",
+                unscannedBytes,
+                bestCoverageBytes,
+                UInt64(tree.nFiles[0]),
+                UInt64(tree.count),
+                tree.errors,
+                scanLostCoverage ? 1 : 0,
+                grantAtScanStart ?? "none",
+                scanRoot
+            )
         }
         if let activity { ProcessInfo.processInfo.endActivity(activity) }
         activity = nil
     }
+}
+
+/// Whether a finished scan lost access to part of its root, rather than merely
+/// meeting data no unelevated process may read.
+///
+/// Pure, so the verdict is testable without a live scan and cannot drift from
+/// the numbers it is derived from. Three independent signals, because no single
+/// one is decisive on its own:
+///
+/// 1. **The gap**, against what the volume says it consumed. Measured here:
+///    163.59 GB consumed, 154.50 GB reached by an unprivileged walk, so genuine
+///    root-only space is ~9 GB. A 20 GB threshold sits well clear of that and
+///    well under the 30.01 / 23.09 GB the broken scans showed.
+/// 2. **The unreadable-directory count.** The healthy walk reports ~750 here; a
+///    walk whose grant died mid-run reported 5,904–17,759. The engine counts a
+///    denied directory, so a loss of access inflates it directly.
+/// 3. **This launch's own best.** A scan that reachhes materially less than an
+///    earlier one in the same process has lost something, whatever the absolute
+///    figures say — and unlike (1) this needs no volume figure, which a
+///    sandboxed build cannot always read.
+///
+/// A sandboxed scan that held no grant is lossy by definition, but only if it
+/// produced more than the one-node tree a wholly-unreadable root yields.
+nonisolated func lostScanCoverage(
+    scannedBytes: UInt64,
+    volumeUsed: UInt64?,
+    gap: UInt64,
+    errors: UInt64,
+    nodeCount: UInt64,
+    bestThisLaunch: UInt64,
+    heldGrant: Bool,
+    sandboxed: Bool
+) -> Bool {
+    guard nodeCount > 1 else { return false }
+    // 20 GB: clear of the ~9 GB genuine root-only figure, well under the
+    // 23 GB+ a partial walk produces.
+    let materialGap: UInt64 = 20_000_000_000
+    if volumeUsed != nil, gap > materialGap { return true }
+    if errors > 2_000 { return true }
+    if bestThisLaunch > scannedBytes, bestThisLaunch - scannedBytes > materialGap { return true }
+    if sandboxed, !heldGrant { return true }
+    return false
 }
 
 nonisolated private struct VolumeSpace: Sendable {

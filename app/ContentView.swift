@@ -57,7 +57,12 @@ struct ContentView: View {
                             ScanProgress(model: model)
                         } else if needsFDA {
                             fdaOverlay
-                        } else if needsFolderChosen {
+                        } else if model.needsFolderBeforeScan || needsFolderChosen {
+                            // Either the last pick gave no usable access, or a
+                            // sandboxed scan refused to start because it could
+                            // not hold the grant covering its root. Both end the
+                            // same way: the user picks a folder, which is the
+                            // only thing that can create the grant.
                             folderChoiceOverlay
                         } else {
                             idleOverlay
@@ -231,9 +236,20 @@ struct ContentView: View {
                 .font(.callout)
             Button("Choose Folder…") {
                 needsFolderChosen = false
+                model.needsFolderBeforeScan = false
                 chooseFolder()
             }
             .buttonStyle(.borderedProminent)
+            // A scan that found no grant leaves the window empty with nothing
+            // running, which reads as a hang unless it says so. The picker above
+            // is the fix, so the text points at it rather than at a permission
+            // the sandboxed build can never be given.
+            if model.needsFolderBeforeScan {
+                Text(String(localized: "The last scan did not start: AppleTree could not get access to its scan folder. Choose it again to rescan."))
+                    .multilineTextAlignment(.leading)
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
+            }
         }
         .frame(maxWidth: 480, alignment: .leading)
         .padding(28)
@@ -594,11 +610,31 @@ private struct ScanStatusBar: View {
                     Text("\(Fmt.num(UInt64(tree.nFiles[model.viewRoot]))) files · \(Fmt.size(tree.alloc[model.viewRoot]))")
                     Spacer()
                     if tree.errors > 0 {
-                        if FDA.isActive() || AppEnvironment.isSandboxed {
-                            // Either the grant is held, or this is the sandboxed
-                            // build where it cannot be held at all (see
-                            // `requestScan`). Both cases are root-owned or
-                            // sandbox-denied system folders: unreadable by
+                        if model.scanLostCoverage {
+                            // The walk came back materially short of what the
+                            // volume holds, or of what this launch reached
+                            // before: access was lost, not merely withheld from
+                            // system data. Saying "root-only" here would be
+                            // false and would tell the user not to bother —
+                            // measured, a walk whose grant died mid-run reached
+                            // 79–154 GB of the same 163.6 GB volume while the
+                            // healthy figure is 154.5 GB with 750 unreadable
+                            // folders, not thousands.
+                            //
+                            // Rescan through the model's own entry point: this
+                            // view has no reference to the coordinator, and the
+                            // model is the one owner of "a scan began".
+                            Button {
+                                model.startScan()
+                            } label: {
+                                Label("Scan may be incomplete — some folders were not readable. Rescan", systemImage: "exclamationmark.triangle")
+                                    .font(.caption)
+                            }
+                            .buttonStyle(.borderless)
+                            .help("This scan reached less than this volume holds. Rescanning usually fixes it; if it recurs, choose the folder again from the Scan menu.")
+                        } else if FDA.isActive() || AppEnvironment.isSandboxed {
+                            // Genuine root-only territory: Spotlight indexes,
+                            // unified logs, other users' folders. Unreadable by
                             // design, not a permission problem the user can fix.
                             let gap = model.unscannedBytes > 1_000_000_000
                                 ? " · ~\(Fmt.size(model.unscannedBytes)) root-only" : ""

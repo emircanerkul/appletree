@@ -256,3 +256,9 @@
    always works so the user is never stuck. */
 "AppleTree could not use that folder" = "AppleTree n’a pas pu utiliser ce dossier";
 "The folder you chose did not give AppleTree access. Choose a different folder — Macintosh HD always works." = "Le dossier choisi n’a pas donné accès à AppleTree. Choisissez un autre dossier — « Macintosh HD » fonctionne toujours.";
+
+/* Scan-coverage honesty: a walk that did not reach what the volume holds.
+   Distinct from "root-only", which is genuinely unreadable system data. */
+"Scan may be incomplete — some folders were not readable. Rescan" = "L'analyse est peut-être incomplète — certains dossiers n'étaient pas lisibles. Relancer l'analyse";
+"The last scan did not start: AppleTree could not get access to its scan folder. Choose it again to rescan." = "La dernière analyse n'a pas démarré : AppleTree n'a pas pu accéder à son dossier d'analyse. Choisissez-le à nouveau pour relancer l'analyse.";
+"This scan reached less than this volume holds. Rescanning usually fixes it; if it recurs, choose the folder again from the Scan menu." = "Cette analyse a atteint moins que ce que contient ce volume. Relancer l'analyse corrige généralement le problème ; si cela se reproduit, choisissez à nouveau le dossier dans le menu Analyse.";
