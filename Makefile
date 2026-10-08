@@ -50,8 +50,14 @@ SWIFT_FLAGS := -O -parse-as-library -swift-version 6 -default-isolation MainActo
                -target arm64-apple-macos$(MIN_MACOS) -framework AppKit -framework SwiftUI \
                -framework DiskArbitration -framework IOKit
 
+# The same language contract for the test binaries, minus `-O` and the app's
+# frameworks: a test target links only the sources it needs. Defined once so a
+# Swift-version or deployment-target change is one edit, not ten.
+SWIFT_TEST_FLAGS := -parse-as-library -swift-version 6 -default-isolation MainActor \
+                    -target arm64-apple-macos$(MIN_MACOS)
+
 .DEFAULT_GOAL := help
-.PHONY: help all build engine bundle open deploy deploy-sandbox deploy-sandbox-undo package test test-fda-grant test-scoped-access test-drawer test-deletion test-selection test-links test-readme test-doclinks test-router test-privacy test-planner-selection test-prompt-scope test-shellenv test-engine-writer test-l10n test-mapweights test-rust icon clean
+.PHONY: help all build engine bundle open deploy deploy-sandbox deploy-sandbox-undo package test test-cli test-fda-grant test-scoped-access test-drawer test-deletion test-selection test-links test-readme test-doclinks test-router test-privacy test-planner-selection test-prompt-scope test-shellenv test-engine-writer test-l10n test-mapweights test-rust icon clean
 
 help:
 	@echo 'AppleTree targets:'
@@ -60,7 +66,11 @@ help:
 	@echo '  make deploy-sandbox     install the Mac App Store sandbox rehearsal alongside it'
 	@echo '  make deploy-sandbox-undo  remove the sandbox rehearsal build'
 	@echo '  make package            notarize (when possible) and package AppleTree.dmg locally'
-	@echo '  make test               guard unit tests (Swift over the Rust staticlib)'
+	@echo '  make test               the full suite: Rust engine, Swift unit tests, JSON CLI, l10n'
+	@echo '  make test-cli           JSON CLI black-box contract (shipped interface)'
+	@echo '  make test-rust          cargo test --release'
+	@echo '  make test-fda-grant     the FDA card names the running bundle; the rehearsal signs stably'
+	@echo '  make test-scoped-access security-scoped bookmark state contract + the retired exception'
 	@echo '  make test-drawer        right-drawer trash outcome and plan-group tests'
 	@echo '  make test-deletion      "Delete Permanently" and the Delete/Backspace keys'
 	@echo '  make test-selection     the multi-selection invariant and its operations'
@@ -282,11 +292,16 @@ deploy: build
 # surviving three keys, `/Users` and `/` are DENIED until that pick, while
 # `/Applications`, `/System/Volumes/Data/Library` and `/Volumes` are readable.
 #
-# Uses an ad-hoc signature. That is deliberate and sufficient for THIS question:
-# the sandbox is enforced from the entitlement, not from the certificate, so a
-# self-signed build reproduces the boundary without needing the Apple
-# Distribution certificate a real submission would use. It is NOT a submittable
-# artifact — see §3 of the metadata doc for what that needs.
+# Signs with a real identity when one exists, and only falls back to ad-hoc with
+# a warning. This matters beyond aesthetics: an ad-hoc signature pins the
+# designated requirement to a cdhash, which changes on every rebuild, so macOS
+# TCC drops the Full Disk Access grant each time the rehearsal is rebuilt — the
+# "I already granted it and restarted" loop. The recipe below selects
+# `Developer ID Application`, then `Apple Development`, then warns and uses `-`.
+# The sandbox itself is enforced from the entitlement rather than the
+# certificate, so an ad-hoc build still reproduces the boundary; the identity is
+# what makes a TCC grant survive. It is NOT a submittable artifact — see §3 of
+# the metadata doc for what that needs.
 #
 # The non-sandboxed app is left untouched, so `make deploy` (or `make
 # deploy-sandbox-undo`) puts the ordinary build back at the usual path.
@@ -445,7 +460,7 @@ test-rust:
 # bz_cleanup_allowlist FFI (fail-closed).
 # The .strings check runs first: it is instant, and a table that drifted is a
 # bug the Swift tests cannot see, so there is no reason to compile first.
-test: engine test-l10n test-drawer test-deletion test-selection test-mapweights test-links test-readme test-doclinks test-router test-privacy test-planner-selection test-prompt-scope test-shellenv test-engine-writer test-fda-grant test-scoped-access
+test: engine test-l10n test-drawer test-deletion test-selection test-mapweights test-links test-readme test-doclinks test-router test-privacy test-planner-selection test-prompt-scope test-shellenv test-engine-writer test-cli test-fda-grant test-scoped-access
 	@mkdir -p .build
 	swiftc tests/swift/main.swift app/CleanupGuard.swift app/AppEnvironment.swift \
 	    -import-objc-header app/bz.h \
@@ -549,8 +564,7 @@ test-mapweights: engine
 test-links:
 	@mkdir -p .build
 	swiftc tests/swift/links.swift app/AppMenu.swift app/DocumentView.swift app/ReadmeMarkdown.swift \
-	    -parse-as-library -swift-version 6 -default-isolation MainActor \
-	    -target arm64-apple-macos$(MIN_MACOS) \
+	    $(SWIFT_TEST_FLAGS) \
 	    -framework AppKit \
 	    -o .build/link-tests
 	.build/link-tests
@@ -562,8 +576,7 @@ test-links:
 test-readme:
 	@mkdir -p .build
 	swiftc tests/swift/readme.swift app/ReadmeMarkdown.swift \
-	    -parse-as-library -swift-version 6 -default-isolation MainActor \
-	    -target arm64-apple-macos$(MIN_MACOS) \
+	    $(SWIFT_TEST_FLAGS) \
 	    -o .build/readme-tests
 	.build/readme-tests
 
@@ -574,8 +587,7 @@ test-readme:
 test-doclinks:
 	@mkdir -p .build
 	swiftc tests/swift/doclinks.swift app/ReadmeMarkdown.swift \
-	    -parse-as-library -swift-version 6 -default-isolation MainActor \
-	    -target arm64-apple-macos$(MIN_MACOS) \
+	    $(SWIFT_TEST_FLAGS) \
 	    -o .build/doclink-tests
 	.build/doclink-tests
 
@@ -585,8 +597,7 @@ test-doclinks:
 test-privacy:
 	@mkdir -p .build
 	swiftc tests/swift/privacy.swift app/ReadmeMarkdown.swift \
-	    -parse-as-library -swift-version 6 -default-isolation MainActor \
-	    -target arm64-apple-macos$(MIN_MACOS) \
+	    $(SWIFT_TEST_FLAGS) \
 	    -o .build/privacy-tests
 	.build/privacy-tests
 
@@ -599,8 +610,7 @@ test-planner-selection:
 	@mkdir -p .build
 	swiftc tests/swift/planner-selection.swift app/ModelProvider.swift \
 	    app/AgentSupport.swift app/AppEnvironment.swift app/PlanParsing.swift \
-	    -parse-as-library -swift-version 6 -default-isolation MainActor \
-	    -target arm64-apple-macos$(MIN_MACOS) -framework Security \
+	    $(SWIFT_TEST_FLAGS) -framework Security \
 	    -o .build/planner-selection-tests
 	.build/planner-selection-tests
 
@@ -635,8 +645,7 @@ test-shellenv:
 	@mkdir -p .build
 	swiftc tests/swift/shellenv.swift app/AgentSupport.swift app/AppEnvironment.swift \
 	    app/PlanParsing.swift app/ModelProvider.swift \
-	    -parse-as-library -swift-version 6 -default-isolation MainActor \
-	    -target arm64-apple-macos$(MIN_MACOS) -framework Security \
+	    $(SWIFT_TEST_FLAGS) -framework Security \
 	    -o .build/shellenv-tests
 	.build/shellenv-tests
 
@@ -651,10 +660,21 @@ test-shellenv:
 test-engine-writer:
 	@mkdir -p .build
 	swiftc tests/swift/engine-writer.swift \
-	    -parse-as-library -swift-version 6 -default-isolation MainActor \
-	    -target arm64-apple-macos$(MIN_MACOS) \
+	    $(SWIFT_TEST_FLAGS) \
 	    -o .build/engine-writer-tests
 	.build/engine-writer-tests
+
+# The JSON CLI is a shipped interface (README documents it, the privacy policy
+# §5.5 describes what it may do), so its black-box contract tests are part of
+# `test`, not an optional extra.
+#
+# `required-features = ["cli"]` on the `appletree` bin means `make engine`'s
+# plain `cargo build --release` does NOT produce it, so this target builds the
+# binary itself before running the suite. Without that, a clean clone cannot run
+# these tests at all.
+test-cli: engine
+	$(CARGO) build --locked --release --features cli --bin appletree
+	python3 -m unittest tests.test_cli -v
 
 # Route B: reaching folders the sandbox denies, via a security-scoped bookmark.
 #
@@ -671,8 +691,7 @@ test-engine-writer:
 test-scoped-access:
 	@mkdir -p .build
 	swiftc tests/swift/scoped-access.swift app/ScopedAccess.swift \
-	    -parse-as-library -swift-version 6 -default-isolation MainActor \
-	    -target arm64-apple-macos$(MIN_MACOS) \
+	    $(SWIFT_TEST_FLAGS) \
 	    -o .build/scoped-access-tests
 	.build/scoped-access-tests
 
@@ -688,8 +707,7 @@ test-scoped-access:
 test-fda-grant:
 	@mkdir -p .build
 	swiftc tests/swift/fda-grant.swift \
-	    -parse-as-library -swift-version 6 -default-isolation MainActor \
-	    -target arm64-apple-macos$(MIN_MACOS) \
+	    $(SWIFT_TEST_FLAGS) \
 	    -o .build/fda-grant-tests
 	.build/fda-grant-tests
 
@@ -699,15 +717,15 @@ test-fda-grant:
 # then collides with the app's own SettingsRouter source and silently drops the
 # @main entry point ("Undefined symbols: _main"), which is a compiler quirk, not
 # a code error.
-test-router:
+# test-router depends on the two suites whose binaries it re-runs, so the
+# target is correct when invoked on its own — not only when `test` happens to
+# run them first (which is how it silently relied on ordering before).
+test-router: test-doclinks test-readme
 	@mkdir -p .build
 	swiftc tests/swift/router-handoff.swift app/SettingsRouter.swift \
-	    -parse-as-library -swift-version 6 -default-isolation MainActor \
-	    -target arm64-apple-macos$(MIN_MACOS) \
+	    $(SWIFT_TEST_FLAGS) \
 	    -o .build/router-tests
 	.build/router-tests
-	.build/doclink-tests
-	.build/readme-tests
 
 # The 7 Localizable.strings tables must stay in lockstep: a key added to one
 # and forgotten in another renders English in that language, and a duplicate

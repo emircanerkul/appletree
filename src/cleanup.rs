@@ -71,6 +71,13 @@ pub enum Kind {
     XcodeDerivedData,
     DeviceSupport,
     AppCaches,
+    /// A cache recognised by one `CACHE_RULES` row. The payload is the owning
+    /// tool's name (uv, Cargo, pnpm, pip, Homebrew, …), which is what makes the
+    /// identity table useful: `id()` still collapses every row to the published
+    /// `tool_caches` category, but `tool()` can say which tool was matched.
+    ToolCache(&'static str),
+    /// The older shape rules (`.npm`, `.gradle`, a nested `.cache`), which are
+    /// not rows of the identity table and so have no tool name to carry.
     ToolCaches,
     BunCache,
 }
@@ -85,8 +92,19 @@ impl Kind {
             Self::XcodeDerivedData => "xcode_derived_data",
             Self::DeviceSupport => "device_support",
             Self::AppCaches => "app_caches",
-            Self::ToolCaches => "tool_caches",
+            // Published wire value: every identity-table row and every shape
+            // rule reports the same category through the CLI and the bridge.
+            Self::ToolCache(_) | Self::ToolCaches => "tool_caches",
             Self::BunCache => "bun_cache",
+        }
+    }
+
+    /// The tool that owns this cache, when a `CACHE_RULES` row identified it.
+    /// `None` for every folder recognised by shape rather than by identity.
+    pub fn tool(self) -> Option<&'static str> {
+        match self {
+            Self::ToolCache(name) => Some(name),
+            _ => None,
         }
     }
 
@@ -100,7 +118,13 @@ impl Kind {
             Self::XcodeDerivedData => "Xcode build data",
             Self::DeviceSupport => "Device symbols, re-downloaded when needed",
             Self::AppCaches => "App caches, rebuilt automatically",
-            Self::ToolCaches => "Caches, rebuilt or re-downloaded when needed",
+            // Deliberately unspecific, and unchanged for the table rows: the
+            // Swift `Cleanup` model shows this verbatim and the shape rules
+            // (`.npm`, `.gradle`) have no tool name to name. `tool()` is where
+            // a caller asks *which* tool.
+            Self::ToolCache(_) | Self::ToolCaches => {
+                "Caches, rebuilt or re-downloaded when needed"
+            }
             Self::BunCache => "Bun package cache, re-downloaded when needed",
         }
     }
@@ -303,6 +327,11 @@ const CACHEDIR_TAG: &str = "CACHEDIR.TAG";
 /// `~/Documents`, which `CleanupGuard` refuses — and recognition must never
 /// offer what authorization refuses (module doc).
 struct CacheRule {
+    /// The tool that owns this cache, carried all the way to `Kind::ToolCache`
+    /// so the panel, the CLI and the agent prompt can say *which* tool a
+    /// candidate belongs to instead of a generic "tool caches". It never
+    /// reaches the published `category` wire value, which stays `tool_caches`.
+    name: &'static str,
     rel: &'static str,
     any_of: &'static [&'static [&'static str]],
 }
@@ -317,35 +346,28 @@ struct CacheRule {
 /// markers must not be a rule: they could never be consulted.
 const CACHE_RULES: &[CacheRule] = &[
     // uv declares its own cache; measured `~/.cache/uv/CACHEDIR.TAG`.
-    CacheRule { rel: ".cache/uv", any_of: &[&[CACHEDIR_TAG]] },
+    CacheRule { name: "uv", rel: ".cache/uv", any_of: &[&[CACHEDIR_TAG]] },
     // Cargo declares the whole registry a cache: measured
     // `~/.cargo/registry/CACHEDIR.TAG` at the registry root, with `cache/`
     // holding `<registry>-<hash>` directories that no name rule can match.
     // Naming `.cargo/registry` is what the tool's own tag marks.
-    CacheRule { rel: ".cargo/registry", any_of: &[&[CACHEDIR_TAG]] },
+    CacheRule { name: "Cargo", rel: ".cargo/registry", any_of: &[&[CACHEDIR_TAG]] },
     // Cargo's git databases are git repositories, so the marker is git's own:
     // measured ten `<name>-<hash>` children, each holding `FETCH_HEAD`.
-    CacheRule { rel: ".cargo/git/db", any_of: &[&["*/FETCH_HEAD"]] },
+    CacheRule { name: "Cargo", rel: ".cargo/git/db", any_of: &[&["*/FETCH_HEAD"]] },
     // pnpm's store is versioned: measured `v11/files` and `v11/index.db`, so
     // the version directory is the wildcard and both of its markers are
     // required — `files/` alone is also what an unrelated store-shaped folder
     // would have, while the 43 MB `index.db` is pnpm's own database.
-    CacheRule { rel: "Library/pnpm/store", any_of: &[&["*/files"], &["*/index.db"]] },
+    CacheRule { name: "pnpm", rel: "Library/pnpm/store", any_of: &[&["*/files"], &["*/index.db"]] },
     // pip's HTTP cache: `http-v2` today, `http/` before 2020.
-    CacheRule { rel: "Library/Caches/pip", any_of: &[&["http-v2", "http"]] },
+    CacheRule { name: "pip", rel: "Library/Caches/pip", any_of: &[&["http-v2", "http"]] },
     // Homebrew's own metadata. Bottles are cached only sometimes (measured:
     // zero here), so they cannot be a marker, and brew re-downloads them.
-    CacheRule { rel: "Library/Caches/Homebrew", any_of: &[&["api"]] },
-    CacheRule { rel: "Library/Caches/CocoaPods", any_of: &[&["Pods"]] },
-    CacheRule { rel: "Library/Caches/org.swift.swiftpm", any_of: &[&["manifests"]] },
+    CacheRule { name: "Homebrew", rel: "Library/Caches/Homebrew", any_of: &[&["api"]] },
+    CacheRule { name: "CocoaPods", rel: "Library/Caches/CocoaPods", any_of: &[&["Pods"]] },
+    CacheRule { name: "SwiftPM", rel: "Library/Caches/org.swift.swiftpm", any_of: &[&["manifests"]] },
 ];
-
-/// The home-relative path components a rule names, as the tree's own byte
-/// slices. Comparing components rather than a joined string avoids allocating
-/// per candidate and keeps a rule's `/` an explicit separator.
-fn rule_parts(rel: &str) -> std::str::Split<'_, char> {
-    rel.split('/')
-}
 
 /// True when `dir` (or, for a multi-component marker, one of its descendants)
 /// carries the marker `pattern`.
@@ -376,50 +398,202 @@ fn satisfies(t: &Tree, i: u32, rule: &CacheRule) -> bool {
         .all(|alternatives| alternatives.iter().any(|m| has_marker(t, i, m)))
 }
 
+/// The facts about a scan root that recognition needs, computed **once per
+/// tree** rather than per candidate.
+///
+/// The table's rules are written in the volume's own path — `Library/pnpm/store`
+/// means `/Users/<user>/Library/pnpm/store` — but a scan root is not always that
+/// path:
+///
+/// - the app's default target is `/System/Volumes/Data` (the writable Data
+///   volume behind `/`), whose first component is `System`;
+/// - an external drive is `/Volumes/<name>`;
+/// - a folder scan is `/Users/me/Library/Caches`, itself below the home.
+///
+/// The two volume prefixes are **transparent**: a path below one is the same
+/// path the rules name, so only the part after the prefix is usable. `parts` is
+/// that usable prefix; a candidate's components run through it and then carry on
+/// below the root (see `ScannedPath`).
+struct ScanRoot<'a> {
+    /// The root's usable prefix: its absolute components, volume prefix removed.
+    parts: Vec<&'a str>,
+    /// The root's own name was an absolute path. Only the no-`Users` fallback
+    /// consults this; a `Users/<name>` component is evidence enough on its own.
+    absolute: bool,
+}
+
+/// The length of the transparent volume prefix at the start of `parts`.
+///
+/// `/System/Volumes/Data` is the Data volume and `/Volumes/<name>` an external
+/// drive; both are stripped so `Users/me/...` below them is recoverable. A `/`
+/// root matches neither and keeps its empty prefix: stripping it would leave
+/// `Volumes/<name>` looking like the path itself.
+fn volume_prefix(parts: &[&str]) -> usize {
+    if parts.starts_with(&["System", "Volumes", "Data"]) {
+        return 3;
+    }
+    if parts.len() > 1 && parts[0] == "Volumes" {
+        return 2;
+    }
+    0
+}
+
+/// The scan root's facts, read once per `find` (see `tool_cache`).
+fn scan_root(t: &Tree) -> ScanRoot<'_> {
+    let all: Vec<&str> = t.name(0).split('/').filter(|p| !p.is_empty()).collect();
+    ScanRoot {
+        parts: all[volume_prefix(&all)..].to_vec(),
+        // A relative fixture must not be able to pretend to be an absolute home
+        // (the legacy contract's own guard).
+        absolute: t.name(0).starts_with('/'),
+    }
+}
+
+impl ScanRoot<'_> {
+    /// The root's usable prefix is a user's home, so the legacy contract holds:
+    /// the rule may begin at or below the root (a `HOME` that is not under
+    /// `/Users` — the CLI's tests use a temporary directory and macOS puts a
+    /// sandboxed process under `/private/var/folders`).
+    ///
+    /// This is the *only* way a path with no `/Users/<name>` is accepted, and it
+    /// deliberately refuses the service and system roots the guard calls
+    /// "Outside your home folder": `/Library`, `/Library/Caches`,
+    /// `/private/tmp/<anything>`, `/Applications`, `/opt`, `/usr`, `/System` and
+    /// a bare `/`. Recognition must not offer what authorization refuses (module
+    /// doc). `var/folders/...` is the one exception, because that really is the
+    /// home of a sandboxed process.
+    fn is_home(&self) -> bool {
+        if !self.absolute {
+            return false; // a relative fixture is not a home
+        }
+        let Some((first, rest)) = self.parts.split_first() else {
+            return false; // a bare `/` is not a home
+        };
+        match *first {
+            // Service and system directories: never a home, and a folder scan
+            // rooted in one can hold a `Library/Caches/<tool>`-shaped subtree.
+            "Applications" | "usr" | "opt" | "bin" | "sbin" | "Developer" | "Network"
+            | "Library" | "System" | "Volumes" | ".cache" => false,
+            // `/var/folders/<…>` is a sandboxed process's home; `/var` and
+            // `/var/tmp` are not. macOS hands the same home out under the
+            // `/private` prefix (`/private/var/folders/…`, `/var` being a
+            // symlink), and a resolved scan root reaches it that way.
+            "var" => rest.first() == Some(&"folders"),
+            // `/private/tmp/…` is a shared scratch directory, not a home.
+            "private" => rest.starts_with(&["var", "folders"]),
+            _ => true,
+        }
+    }
+}
+
+/// One node's path, in the components the rules are written in: the root's usable
+/// prefix followed by the names the tree holds below it.
+///
+/// Built once per node (`tool_cache`) and lent to every rule, instead of the old
+/// per-rule `Vec` of root parts, path and wanted components.
+struct ScannedPath<'a> {
+    root: &'a ScanRoot<'a>,
+    below: &'a [&'a str],
+}
+
+impl ScannedPath<'_> {
+    /// Components run through the root's prefix and then continue below it: a
+    /// folder scan's rule begins *inside* the prefix (`~/Library/Caches` scanning
+    /// down to `pip`), a home or volume scan's begins below it.
+    fn component(&self, i: usize) -> &str {
+        match self.root.parts.get(i) {
+            Some(part) => part,
+            None => self.below[i - self.root.parts.len()],
+        }
+    }
+
+    fn len(&self) -> usize {
+        self.root.parts.len() + self.below.len()
+    }
+}
+
 /// True when `i` is the directory a cache rule names, judged by the *path* the
 /// scan reached rather than by a name.
 ///
-/// The rules are home-relative, and the panel produces three shapes this must
+/// The rules are home-relative, and the panel produces these shapes this must
 /// answer for:
 ///
 /// - a home scan, where node 0 is the home and the rule is the path below it;
 /// - a whole-volume scan, where the home is `<root>/Users/<user>`;
+/// - the app's default whole-disk scan, rooted at `/System/Volumes/Data`;
+/// - an external drive, rooted at `/Volumes/<name>`;
 /// - a **folder** scan, where node 0 is a folder *below* the home
 ///   (`~/Library/Caches`). Measured before this: scanning `~/Library/Caches`
 ///   offered neither pip nor Homebrew, and scanning `~/Library/pnpm` offered no
 ///   store — the user had picked exactly the folder holding the cache they
 ///   wanted cleaned.
 ///
-/// All three are one test: the rule's components must be the **exact tail** of
-/// the scanned path, anchored at a home boundary. The anchor is what keeps it
-/// precise rather than a loose suffix match:
+/// All of them are one test: the rule's components must be the path's exact
+/// tail, and the position they begin at must be a home boundary — the first
+/// `Users` component with exactly one user name after it, or (when the path holds
+/// no `Users` at all) a scan root that is itself a plausible home.
 ///
-/// - when the path contains `/Users/<name>`, the rule must begin exactly there.
-///   This is what refuses `/Users/me/Projects/Library/Caches/pip` and
-///   `/Users/Library/pnpm/store` while accepting `/Users/me/Library/pnpm/store`
-///   from a home, whole-volume or folder scan alike.
-/// - when it does not, the scan root is the home — the legacy contract, and what
-///   a `HOME` outside `/Users` needs (the CLI's tests use a temporary directory;
-///   macOS puts a sandboxed process under `/var/folders`). The root must then be
-///   absolute and not a system location.
-///
-/// A system location is refused outright: a folder scan of `/Applications`
-/// contains a `Library/Caches/<tool>`-shaped subtree, and `CleanupGuard` refuses
-/// those paths as outside the user's home — recognition must not offer what
-/// authorization refuses (module doc).
+/// "First `Users` component with a user name after it" is what makes both
+/// directions right at once. `rposition` used to take the *deepest* `Users`, so
+/// `/Users/me/Projects/Users/foo/Library/pnpm/store` anchored its rule at a fake
+/// home inside a user's project, while a user literally named `Users`
+/// (`/Users/Users`) was refused by the same mistake. Requiring `k + 2 == start`
+/// then keeps `/Users/Library/pnpm/store` (no user component at all) and
+/// `/Users/me/Projects/Library/Caches/pip` (the tail begins past the project
+/// boundary) refused.
 ///
 /// Nothing here is sufficient on its own: the rule's marker must also be present
 /// (`satisfies`), so `~/Projects/foo/store` is refused for having no pnpm
 /// structure even though its path is unremarkable.
-fn at_rule_location(t: &Tree, i: u32, rule: &CacheRule) -> bool {
-    // The scanned path, outermost first: the root's own absolute name, then the
-    // components the tree holds below it.
-    let root_parts: Vec<&str> = t.name(0).split('/').filter(|p| !p.is_empty()).collect();
-    if is_system_location(&root_parts) {
+fn at_rule_location(path: &ScannedPath<'_>, rule: &CacheRule) -> bool {
+    let parts = rule.rel.split('/');
+    let count = parts.clone().count();
+    let Some(start) = path.len().checked_sub(count) else {
+        return false;
+    };
+    // The rule must be the path's exact tail, compared one component at a time:
+    // no per-rule `Vec` of wanted components.
+    if parts.enumerate().any(|(k, part)| path.component(start + k) != part) {
         return false;
     }
-    let mut path = root_parts;
-    let root_len = path.len();
+    // ...anchored at a home boundary. `Users` may sit in the root's own prefix
+    // (a folder scan below `~/Library/Caches`) or below it (a whole-volume scan),
+    // so the whole path is searched.
+    match (0..path.len()).position(|k| path.component(k) == "Users") {
+        // A `Users` component must be followed by a user name and the rule must
+        // begin right after that pair.
+        Some(k) => k + 1 < path.len() && k + 2 == start,
+        // No `Users` anywhere: the root is the home boundary, when it is a home.
+        None => path.root.is_home() && start <= path.root.parts.len(),
+    }
+}
+
+/// The tool-cache row `i` matches, if any: the first rule whose location
+/// (`at_rule_location`) and marker (`satisfies`) both hold, carried out as the
+/// row's own tool name.
+///
+/// The node's path prefix is built once here for all eight rules, and the scan
+/// root's facts are passed in from `find` rather than recomputed per candidate.
+fn tool_cache(t: &Tree, root: &ScanRoot<'_>, i: u32) -> Option<Kind> {
+    // A fast path first: only a node whose name is some row's last component can
+    // match, so the common node never builds a path at all. It decides nothing —
+    // the full comparison below still decides the answer.
+    let name = t.name(i as usize);
+    if !CACHE_RULES.iter().any(|rule| rule.rel.rsplit('/').next() == Some(name)) {
+        return None;
+    }
+    // The node's path, once for all eight rules.
+    let below = node_below(t, i);
+    let path = ScannedPath { root, below: &below };
+    CACHE_RULES
+        .iter()
+        .find(|rule| at_rule_location(&path, rule) && satisfies(t, i, rule))
+        .map(|rule| Kind::ToolCache(rule.name))
+}
+
+/// The names on the path from the root's children down to `i`, outermost first.
+/// One `Vec` per node, not one per rule.
+fn node_below(t: &Tree, i: u32) -> Vec<&str> {
     let mut below = Vec::new();
     let mut cur = i;
     while cur != 0 {
@@ -427,66 +601,12 @@ fn at_rule_location(t: &Tree, i: u32, rule: &CacheRule) -> bool {
         cur = t.parents[cur as usize];
     }
     below.reverse();
-    path.extend(below);
-
-    let want: Vec<&str> = rule_parts(rule.rel).collect();
-    if want.len() > path.len() {
-        return false;
-    }
-    let start = path.len() - want.len();
-    // The rule must be the path's exact tail.
-    if path[start..] != want[..] {
-        return false;
-    }
-    // ...anchored at a home boundary.
-    if let Some(users) = path.iter().rposition(|p| *p == "Users") {
-        // The deepest `/Users/<name>`: the rule must begin right after it, so
-        // `/Users/me/Projects/Library/Caches/pip` and `/Users/Library/pnpm/store`
-        // are refused while every real home shape is accepted.
-        return users + 2 == start;
-    }
-    // No `/Users/<name>` anywhere: macOS puts `HOME` under `/private/var/folders`
-    // for sandboxed and test processes, so the home cannot be recovered from the
-    // path and the scan root is taken as the home boundary (the legacy contract).
-    // An absolute root is required so a relative fixture cannot pretend to be one.
-    //
-    // The rule may begin at the root (`start == root_len`, a rule found below the
-    // home) or inside it (`start < root_len`, a *folder* scan like
-    // `~/Library/Caches`, where part of the rule is the root's own tail). It may
-    // not begin *after* the root's end, which is what refuses
-    // `~/Projects/Library/pnpm/store` on a home scan here. A root that is itself
-    // a system location was refused above.
-    t.name(0).starts_with('/') && start <= root_len
+    below
 }
 
-/// Whether a scan root's absolute components name a system location.
-///
-/// These are never a user's home, and a folder scan rooted in one can hold a
-/// `Library/Caches/<tool>`-shaped subtree. Reading such a root as home-relative
-/// would nominate a folder the guard refuses as outside the user's home.
-///
-/// `/var`, `/private` and `/tmp` are deliberately absent: macOS places `HOME`
-/// for test and sandboxed processes under `/private/var/folders`, and for such a
-/// process that *is* the home — treating `/private` as a system location made a
-/// folder scan under it find nothing.
-fn is_system_location(parts: &[&str]) -> bool {
-    matches!(
-        parts.first(),
-        Some(&"Applications" | &"System" | &"usr" | &"opt" | &"bin" | &"sbin" | &"Developer"
-            | &"Network" | &"Volumes")
-    )
-}
-
-/// The tool-cache row `i` matches, if any. The location test comes first so an
-/// unrelated folder is refused before any marker lookup.
-fn tool_cache(t: &Tree, i: u32) -> Option<Kind> {
-    CACHE_RULES
-        .iter()
-        .find(|rule| at_rule_location(t, i, rule) && satisfies(t, i, rule))
-        .map(|_| Kind::ToolCaches)
-}
-
-fn kind(t: &Tree, i: u32) -> Option<Kind> {
+/// What `i` is, with the scan root's facts already computed. `find` computes them
+/// once per tree; tests reach this through the `kind` helper in their own module.
+fn kind_at(t: &Tree, root: &ScanRoot<'_>, i: u32) -> Option<Kind> {
     if is_apple_managed(t, i) || is_inside_app_bundle(t, i) {
         return None;
     }
@@ -524,7 +644,7 @@ fn kind(t: &Tree, i: u32) -> Option<Kind> {
         // Identity locations (§5): a tool's cache found by where it is and what
         // the tool puts there. Checked last so the shape rules above stay the
         // cheapest path, and only for a directory under a home directory.
-        _ => tool_cache(t, i),
+        _ => tool_cache(t, root, i),
     }
 }
 
@@ -536,6 +656,8 @@ pub fn find(t: &Tree, min_bytes: u64) -> Vec<Candidate> {
     if t.is_empty() {
         return found;
     }
+    // The root's facts, once for the whole walk rather than once per candidate.
+    let root = scan_root(t);
     let mut stack = vec![0];
     while let Some(i) = stack.pop() {
         for &child in t.kids(i) {
@@ -544,7 +666,7 @@ pub fn find(t: &Tree, min_bytes: u64) -> Vec<Candidate> {
             if t.alloc[c] < min_bytes || !t.is_dir(c) || t.name(c) == ".Trash" {
                 continue;
             }
-            if let Some(kind) = kind(t, child) {
+            if let Some(kind) = kind_at(t, &root, child) {
                 found.push(Candidate { node: child, kind });
             } else {
                 stack.push(c);
@@ -979,10 +1101,11 @@ mod tests {
 
         for (rel, marker) in CASES {
             let (scan, node) = home_location(rel, marker);
-            assert_eq!(kind(&scan, node), Some(Kind::ToolCaches), "{rel} with its marker");
+            let matched = CACHE_RULES.iter().find(|r| r.rel == rel).expect("every case is a row");
+            assert_eq!(kind(&scan, node), Some(Kind::ToolCache(matched.name)), "{rel} with its marker");
             assert_eq!(
                 find(&scan, MIN_BYTES),
-                vec![Candidate { node, kind: Kind::ToolCaches }],
+                vec![Candidate { node, kind: Kind::ToolCache(matched.name) }],
                 "{rel} must reach the candidate list"
             );
 
@@ -1059,9 +1182,8 @@ mod tests {
         add(&mut scan, version, "files", true, MIN_BYTES);
         add(&mut scan, version, "index.db", false, 0);
         let scan = link(scan);
-        assert!(at_rule_location(&scan, store, &CACHE_RULES.iter()
-            .find(|r| r.rel == "Library/pnpm/store").unwrap()));
-        assert_eq!(kind(&scan, store), Some(Kind::ToolCaches));
+        assert!(at_location(&scan, store, "Library/pnpm/store"));
+        assert_eq!(kind(&scan, store), Some(Kind::ToolCache("pnpm")));
 
         // The same shape one level above a home is not a home-relative location:
         // `/Users/Library/pnpm/store` is not a user's cache.
@@ -1078,6 +1200,251 @@ mod tests {
         assert_eq!(kind(&scan, store), None, "not under any user's home");
     }
 
+    /// The classifier as `find` calls it, for one node.
+    fn kind(t: &Tree, i: u32) -> Option<Kind> {
+        kind_at(t, &scan_root(t), i)
+    }
+
+    /// The location half of the identity test, as the classifier calls it.
+    fn at_location(t: &Tree, i: u32, rel: &str) -> bool {
+        let root = scan_root(t);
+        let below = node_below(t, i);
+        let path = ScannedPath { root: &root, below: &below };
+        at_rule_location(&path, CACHE_RULES.iter().find(|r| r.rel == rel).unwrap())
+    }
+
+    /// The marker for a `CACHE_RULES` row. `key` may be the row's full `rel` or
+    /// the tail a folder scan reaches it through ("pip" for "Library/Caches/pip"),
+    /// so tests name a row rather than restating its structure.
+    fn marker_for(key: &str) -> fn(&mut Tree, u32) {
+        let rel = CACHE_RULES
+            .iter()
+            .map(|r| r.rel)
+            .find(|rel| *rel == key || rel.ends_with(&format!("/{key}")))
+            .unwrap_or_else(|| panic!("no CACHE_RULES row for {key}"));
+        match rel {
+            ".cache/uv" | ".cargo/registry" => |t, i| {
+                add(t, i, "CACHEDIR.TAG", false, 0);
+            },
+            ".cargo/git/db" => |t, i| {
+                let db = add(t, i, "zed-a70e2ad075855582", true, MIN_BYTES);
+                add(t, db, "FETCH_HEAD", false, 0);
+            },
+            "Library/pnpm/store" => |t, i| {
+                let version = add(t, i, "v11", true, MIN_BYTES);
+                add(t, version, "files", true, MIN_BYTES);
+                add(t, version, "index.db", false, 0);
+            },
+            "Library/Caches/pip" => |t, i| {
+                add(t, i, "http-v2", true, MIN_BYTES);
+            },
+            "Library/Caches/Homebrew" => |t, i| {
+                add(t, i, "api", true, MIN_BYTES);
+            },
+            "Library/Caches/CocoaPods" => |t, i| {
+                add(t, i, "Pods", true, MIN_BYTES);
+            },
+            "Library/Caches/org.swift.swiftpm" => |t, i| {
+                add(t, i, "manifests", true, MIN_BYTES);
+            },
+            other => panic!("no marker helper for row {other}"),
+        }
+    }
+
+    /// An absolute-rooted tree `<root>/<rel…>` with `rel`'s marker, plus the node
+    /// the rule nominates. The root's own name carries its absolute path, so the
+    /// rule must be measured against the *path the scan reached*, exactly as the
+    /// real walk hands it over (node 0 is the scan root, not `/`).
+    fn rooted(root: &str, rel: &str, marker: fn(&mut Tree, u32)) -> (Tree, u32) {
+        let mut scan = Tree::default();
+        add(&mut scan, NO_PARENT, root, true, 0);
+        let mut parent = 0;
+        let mut node = 0;
+        for part in rel.split('/') {
+            node = add(&mut scan, parent, part, true, MIN_BYTES);
+            parent = node;
+        }
+        marker(&mut scan, node);
+        (link(scan), node)
+    }
+
+    #[test]
+    fn every_rule_is_found_from_every_scan_root_shape() {
+        // B1: the app's default scan target is `/System/Volumes/Data`
+        // (`ScanTargets.macintoshHD`), whose first component is `System`. The
+        // old `is_system_location` check refused that root outright, so all eight
+        // rows were unreachable there — measured on this machine, `quick-wins
+        // --root /System/Volumes/Data` reported 51 candidates and ZERO table-row
+        // hits while the same scan rooted at `$HOME` reported pnpm, Homebrew and
+        // Cargo. The Data volume is *transparent*: its prefix is stripped before
+        // the rule is measured, so the path below it is the volume's real one.
+        //
+        // `/` and an external drive rooted at `/Volumes/<name>` get the same
+        // treatment: a whole-disk walk reaches users' caches through them, and
+        // `is_system_location` used to refuse `Volumes` wholesale.
+        for root in ["/System/Volumes/Data", "/", "/Volumes/Ext"] {
+            for rule in CACHE_RULES {
+                let rel = format!("Users/me/{}", rule.rel);
+                let (scan, node) = rooted(root, &rel, marker_for(rule.rel));
+                assert_eq!(
+                    kind(&scan, node),
+                    Some(Kind::ToolCache(rule.name)),
+                    "root {root}: row {} must be recognised",
+                    rule.rel
+                );
+                // The candidate list too, not only the classifier.
+                assert_eq!(
+                    find(&scan, MIN_BYTES),
+                    vec![Candidate { node, kind: Kind::ToolCache(rule.name) }],
+                    "root {root}: row {} must reach the candidate list",
+                    rule.rel
+                );
+                // ...and without its marker the same location stays refused, so
+                // the new root handling did not weaken the structural half.
+                let (scan, node) = rooted(root, &rel, |_, _| {});
+                assert_eq!(kind(&scan, node), None, "root {root}: {} needs its marker", rule.rel);
+            }
+        }
+
+        // A folder scan *below* the Data volume's home: the same three shapes the
+        // panel produces for `/`, now under the default target.
+        for (root, rel, tool) in [
+            ("/System/Volumes/Data/Users/me/Library/Caches", "pip", "pip"),
+            ("/System/Volumes/Data/Users/me/Library", "Caches/pip", "pip"),
+            ("/System/Volumes/Data/Users/me/Library/pnpm", "store", "pnpm"),
+        ] {
+            let (scan, node) = rooted(root, rel, marker_for(rel));
+            assert_eq!(kind(&scan, node), Some(Kind::ToolCache(tool)), "scan root {root}");
+            assert_eq!(find(&scan, MIN_BYTES).len(), 1, "scan root {root} must offer {rel}");
+        }
+    }
+
+    #[test]
+    fn a_home_and_a_folder_below_it_still_find_the_caches() {
+        // A home scan (node 0 *is* the home) must keep working, as must a folder
+        // scan below the home: the rule's components are the exact path tail.
+        // `rel` is the path from the scan root and `tool` the row it belongs to.
+        let folder_cases = [
+            ("/Users/me", "Library/Caches/pip", "pip"),
+            ("/Users/me", "Library/pnpm/store", "pnpm"),
+            ("/Users/me/Library/Caches", "pip", "pip"),
+            ("/Users/me/Library", "Caches/pip", "pip"),
+            ("/Users/me/Library/pnpm", "store", "pnpm"),
+        ];
+        for (root, rel, tool) in folder_cases {
+            let (scan, node) = rooted(root, rel, marker_for(rel));
+            assert_eq!(
+                kind(&scan, node),
+                Some(Kind::ToolCache(tool)),
+                "scan root {root} must reach {rel}"
+            );
+            assert_eq!(find(&scan, MIN_BYTES).len(), 1, "scan root {root} must offer {rel}");
+        }
+    }
+
+    #[test]
+    fn a_service_folder_is_not_a_home() {
+        // B5: the no-`Users` fallback used to accept any absolute root, so
+        // `/Library/Caches`, `/Library` and `/private/tmp/notahome` were read as
+        // homes. `CleanupGuard` refuses all of them as "Outside your home
+        // folder", i.e. recognition offered what authorization refuses (module
+        // doc). `/` is the same trap: it is only a home when a `Users/<name>`
+        // component follows it.
+        let pip = |t: &mut Tree, i: u32| {
+            add(t, i, "http-v2", true, MIN_BYTES);
+        };
+        for (root, rel) in [
+            ("/Library/Caches", "pip"),
+            ("/Library", "Caches/Homebrew"),
+            ("/private/tmp/notahome", "Library/Caches/pip"),
+            ("/", "Library/Caches/pip"),
+            ("/Applications", "Library/Caches/pip"),
+            ("/opt/homebrew", "Library/Caches/pip"),
+            ("/Users", "Library/Caches/pip"),
+            ("/Users/me/Projects", "Library/Caches/pip"),
+        ] {
+            let marker = if root == "/Library" {
+                marker_for("Library/Caches/Homebrew")
+            } else {
+                pip
+            };
+            let (scan, node) = rooted(root, rel, marker);
+            assert_eq!(kind(&scan, node), None, "scan root {root} is not a home");
+            assert!(find(&scan, MIN_BYTES).is_empty(), "scan root {root} must offer nothing");
+        }
+    }
+
+    #[test]
+    fn the_home_anchor_is_the_first_plausible_users_component() {
+        // B6, false-accept: `rposition` found the *deepest* `Users`, so
+        // `/Users/me/Projects/Users/foo/Library/pnpm/store` had its rule anchored
+        // at the fake `Projects/Users/foo` home inside a user's project.
+        let (scan, node) = rooted(
+            "/Users/me/Projects/Users/foo",
+            "Library/pnpm/store",
+            marker_for("Library/pnpm/store"),
+        );
+        assert_eq!(kind(&scan, node), None, "a project is not a second home");
+        assert!(find(&scan, MIN_BYTES).is_empty());
+
+        // B6, false-reject: a user literally named `Users` has the home
+        // `/Users/Users`. `rposition` alone still finds the right deepest
+        // component here, but the *first* plausible one must be considered too;
+        // this is the acceptance half of the same rule.
+        let (scan, node) = rooted(
+            "/Users/Users",
+            "Library/Caches/Homebrew",
+            marker_for("Library/Caches/Homebrew"),
+        );
+        assert_eq!(kind(&scan, node), Some(Kind::ToolCache("Homebrew")));
+
+        // B6 via a home under `/Volumes/...`: the old `is_system_location`
+        // refused the whole `Volumes` prefix, so an external-drive home could
+        // never be recognised.
+        let (scan, node) = rooted(
+            "/Volumes/Ext/Users/me",
+            "Library/pnpm/store",
+            marker_for("Library/pnpm/store"),
+        );
+        assert_eq!(kind(&scan, node), Some(Kind::ToolCache("pnpm")));
+
+        // A `Users` directory with no user component below it is not a home:
+        // `/Users/Library/pnpm/store` and `/Users/me/Projects/Library/Caches/pip`
+        // must stay refused (the anchor is `Users/<name>`, not `Users`).
+        for (root, rel) in [
+            ("/Users", "Library/pnpm/store"),
+            ("/Users/me/Projects", "Library/Caches/pip"),
+        ] {
+            let (scan, node) = rooted(root, rel, marker_for(rel));
+            assert_eq!(kind(&scan, node), None, "scan root {root} is not a home");
+        }
+    }
+
+    #[test]
+    fn a_table_row_carries_its_tool_but_keeps_the_published_category() {
+        // B7: the identity table exists to say *which* tool a cache belongs to,
+        // and `tool_cache` used to throw that away with `.map(|_| Kind::ToolCaches)`.
+        // The tool name is now carried on the candidate.
+        let (scan, node) = rooted("/Users/me", ".cargo/registry", marker_for(".cargo/registry"));
+        assert_eq!(kind(&scan, node), Some(Kind::ToolCache("Cargo")));
+        assert_eq!(kind(&scan, node).and_then(Kind::tool), Some("Cargo"));
+
+        // HARD CONSTRAINT: `id()` is the published CLI/JSON category and must stay
+        // exactly `tool_caches` for every row. `description()` stays the generic
+        // panel label because Swift `Cleanup` shows it verbatim.
+        for rule in CACHE_RULES {
+            let kind = Kind::ToolCache(rule.name);
+            assert_eq!(kind.id(), "tool_caches", "row {} must keep the wire value", rule.rel);
+            assert_eq!(kind.tool(), Some(rule.name));
+            assert_eq!(kind.description(), Kind::ToolCaches.description());
+        }
+        // Shape rules have no tool identity and keep reporting `None`.
+        for kind in [Kind::ToolCaches, Kind::NodeModules, Kind::BunCache] {
+            assert_eq!(kind.tool(), None);
+        }
+        assert_eq!(Kind::ToolCache("uv").id(), Kind::ToolCaches.id());
+    }
+
     #[test]
     fn a_folder_scan_finds_the_caches_inside_it() {
         // The panel lets the user scan ONE folder, and the table's rules are
@@ -1092,18 +1459,6 @@ mod tests {
         // components before it must spell a home directory. `/Applications` is
         // not a home, which is what keeps a folder scan outside the home from
         // offering the user's caches.
-        let rooted = |root: &str, rel: &str, marker: fn(&mut Tree, u32)| {
-            let mut scan = Tree::default();
-            add(&mut scan, NO_PARENT, root, true, 0);
-            let mut parent = 0;
-            let mut node = 0;
-            for part in rel.split('/') {
-                node = add(&mut scan, parent, part, true, MIN_BYTES);
-                parent = node;
-            }
-            marker(&mut scan, node);
-            (link(scan), node)
-        };
         let pip = |t: &mut Tree, i: u32| {
             add(t, i, "http-v2", true, MIN_BYTES);
         };
@@ -1112,10 +1467,10 @@ mod tests {
         for (root, rel) in [("/Users/me/Library/Caches", "pip"),
                             ("/Users/me/Library", "Caches/pip")] {
             let (scan, node) = rooted(root, rel, pip);
-            assert_eq!(kind(&scan, node), Some(Kind::ToolCaches), "scan root {root}");
+            assert_eq!(kind(&scan, node), Some(Kind::ToolCache("pip")), "scan root {root}");
             assert_eq!(
                 find(&scan, MIN_BYTES),
-                vec![Candidate { node, kind: Kind::ToolCaches }],
+                vec![Candidate { node, kind: Kind::ToolCache("pip") }],
                 "scan root {root} must offer the cache inside it"
             );
         }
@@ -1125,7 +1480,7 @@ mod tests {
             add(t, version, "files", true, MIN_BYTES);
             add(t, version, "index.db", false, 0);
         });
-        assert_eq!(kind(&scan, node), Some(Kind::ToolCaches));
+        assert_eq!(kind(&scan, node), Some(Kind::ToolCache("pnpm")));
         assert_eq!(find(&scan, MIN_BYTES).len(), 1);
 
         // A folder scan OUTSIDE the home finds nothing: the location test is

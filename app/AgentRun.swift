@@ -41,10 +41,13 @@ final class PlanItem: Identifiable {
         // so its size is measured instead of guessed.
         if spec.action == .command, asked.isEmpty {
             let home = AppEnvironment.realHome
+            // Only forms the allowlist still carries can reach this: `bun pm
+            // cache rm`, `pip cache purge` and `pip3 cache purge` were retired
+            // (their cache folder is now a first-class candidate), so rows for
+            // them could never be consulted.
             let known: [(String, String)] = [
                 ("uv cache", "\(home)/.cache/uv"), ("npm cache", "\(home)/.npm/_cacache"),
-                ("bun pm cache", "\(home)/.bun/install/cache"), ("pip cache", "\(home)/Library/Caches/pip"),
-                ("pip3 cache", "\(home)/Library/Caches/pip"), ("yarn cache", "\(home)/Library/Caches/Yarn"),
+                ("yarn cache", "\(home)/Library/Caches/Yarn"),
             ]
             if let hit = known.first(where: { spec.command.hasPrefix($0.0) }) { asked = [hit.1] }
         }
@@ -55,12 +58,12 @@ final class PlanItem: Identifiable {
         // parallel delete: reversible in step one, and faster than the tool's
         // own single-threaded removal (bun took 20 s for 5 GB).
         // The cache-clearing commands with no flag variants, straight from
-        // the Rust allowlist: exactly the no-flag `… cache clean|purge|rm`
-        // forms. (Flag variants like the npm force flag match by the
-        // same prefix, which is what this check wants.)
-        let plainCache = CleanupGuard.allowlistCommands.filter {
-            $0.hasSuffix(" cache clean") || $0.hasSuffix(" cache purge") || $0.hasSuffix(" pm cache rm")
-        }
+        // the Rust allowlist: exactly the no-flag `… cache clean` forms.
+        // (`npm`'s force flag matches by the same prefix, which is what this
+        // check wants.) The `… cache purge` and `… pm cache rm` suffixes this
+        // used to test were retired with the commands that carried them, so
+        // testing them would be dead code.
+        let plainCache = CleanupGuard.allowlistCommands.filter { $0.hasSuffix(" cache clean") }
         let trashable = spec.action == .command && !asked.isEmpty
             && plainCache.contains { spec.command.hasPrefix($0) }
             && asked.allSatisfy { CleanupGuard.blockReason(path: $0) == nil && FileManager.default.fileExists(atPath: $0) }

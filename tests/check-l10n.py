@@ -115,7 +115,7 @@ def read_string_literal(src: str, start: int) -> tuple[str, int] | None:
 INT_INTERPOLATION = re.compile(r"^[A-Za-z_][\w.]*\.count(\s*-\s*\d+)?$")
 
 def interpolations_to_format(raw: str) -> str:
-    """Spell an interpolation the way the table's key does.
+    r"""Spell an interpolation the way the table's key does.
     Swift picks the specifier from the interpolated value's TYPE: a `String`
     renders as `%@`, an `Int` as `%lld`. Rewriting EVERY interpolation to `%@`
     masked a real bug: the batch dialog wrote `"\(items.count) items"`, whose

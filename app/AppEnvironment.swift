@@ -46,8 +46,35 @@ nonisolated enum AppEnvironment {
                 return (path as NSString).standardizingPath
             }
         }
-        return (NSHomeDirectory() as NSString).standardizingPath
+        // No passwd entry. `NSHomeDirectory()` is the process home, which under
+        // the sandbox is the container's `Data` directory — the exact wrong
+        // answer this type exists to replace, and a silent permissive one: every
+        // real cache would read as "Outside your home folder".
+        //
+        // Recovering the real home from the container path is the honest
+        // fallback, because the container's own layout names it:
+        //   /Users/<user>/Library/Containers/<bundle-id>/Data
+        // Stripping at `/Library/Containers/` therefore yields the real home.
+        // Only when that shape is absent (or the process is not sandboxed) is
+        // `NSHomeDirectory()` itself the best available answer.
+        let processHome = (NSHomeDirectory() as NSString).standardizingPath
+        if let recovered = realHomeFromContainer(processHome) { return recovered }
+        return processHome
     }()
+
+    /// The user's real home, recovered from a sandbox container path.
+    ///
+    /// Returns nil when `path` is not a container's `Data` directory, so a
+    /// non-sandboxed process keeps its own home rather than being rewritten.
+    private static func realHomeFromContainer(_ path: String) -> String? {
+        let marker = "/Library/Containers/"
+        guard let range = path.range(of: marker) else { return nil }
+        let candidate = String(path[path.startIndex..<range.lowerBound])
+        // A container's Data directory sits under a real home; anything else is
+        // not the shape we know how to read.
+        return candidate.hasPrefix("/Users/") && !candidate.isEmpty ? candidate : nil
+    }
+
 
     /// Whether this process is sandboxed, read from its own signature.
     ///
@@ -83,6 +110,12 @@ nonisolated enum AppEnvironment {
     /// a guess with a permissive outcome. It is reached only on the unreadable
     /// path, where answering `false` would let a sandboxed build offer work it
     /// cannot do — the silent-failure this whole change exists to remove.
+    ///
+    /// The variable is *inherited*, not signature-derived, so a Developer-ID
+    /// build launched as a child of a sandboxed process sees it too. That
+    /// over-claims "sandboxed" in that one case, and the over-claim is the safe
+    /// direction: the app would ask for a folder it can already read, rather than
+    /// promising work it cannot do.
     private static var fallbackSandboxSignal: Bool {
         ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"] != nil
     }

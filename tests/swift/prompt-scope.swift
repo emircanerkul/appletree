@@ -59,7 +59,7 @@ func run() {
 
     // --- the command list is conditional on being able to run one (Task 5) --
     //
-    // The prompt offered all 27 exact command forms regardless of build. In the
+    // The prompt offered all 22 exact command forms regardless of build. In the
     // App Store build none of them can run — measured: no `exec`, no `PATH`, no
     // subprocess — so the planner produced "command" cards that silently did
     // nothing. That is worse than absent: the user clicks Move and the item

@@ -312,33 +312,48 @@ pub extern "C" fn bz_free(h: *mut BzScan) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::NO_PARENT;
 
     #[test]
     fn bridge_exposes_the_shared_candidates_and_labels() {
+        // Two shapes: one recognised by a name rule with no tool identity, one
+        // recognised by an identity-table row (`Kind::ToolCache`), which now
+        // carries a tool name. The bridge must label both identically — the
+        // label is a published panel string and `description()` stays generic.
         for bytes in [0, cleanup::MIN_BYTES] {
-            let mut tree = Tree::with_root("/root");
-            tree.push("node_modules", 0, bytes, bytes, true);
-            (tree.alloc[0], tree.logical[0]) = (bytes, bytes);
-            tree.link_children();
-            assert_eq!(tree.parents, [NO_PARENT, 0]);
-            let expected = cleanup::find(&tree, cleanup::MIN_BYTES);
-            assert_eq!(expected.len(), (bytes > 0) as usize);
-            let mut handle = BzScan {
-                progress: Arc::new(Progress::default()),
-                done: Arc::new(AtomicBool::new(true)),
-                result: Arc::new(std::sync::Mutex::new(None)),
-                flat: Some(Box::new(with_cleanup(tree))),
-            };
-            let h = &mut handle as *mut BzScan;
-            assert_eq!(unsafe { bz_cleanup_count(h) } as usize, expected.len());
-            let nodes = unsafe { std::slice::from_raw_parts(bz_cleanup_nodes(h), expected.len()) };
-            for (i, candidate) in expected.iter().enumerate() {
-                assert_eq!(nodes[i], candidate.node);
-                let label = unsafe { CStr::from_ptr(bz_cleanup_description(h, i as u64)) };
-                assert_eq!(label.to_str().unwrap(), candidate.kind.description());
+            for identity in [false, true] {
+                let mut tree = Tree::with_root("/root");
+                if identity {
+                    let cargo = tree.push(".cargo", 0, bytes, bytes, true);
+                    let registry = tree.push("registry", cargo, bytes, bytes, true);
+                    tree.push("CACHEDIR.TAG", registry, 0, 0, false);
+                } else {
+                    tree.push("node_modules", 0, bytes, bytes, true);
+                }
+                (tree.alloc[0], tree.logical[0]) = (bytes, bytes);
+                tree.link_children();
+                let expected = cleanup::find(&tree, cleanup::MIN_BYTES);
+                assert_eq!(expected.len(), (bytes > 0) as usize);
+                if identity && bytes > 0 {
+                    assert_eq!(expected.len(), 1, "the registry row is recognised");
+                    assert_eq!(expected[0].kind, cleanup::Kind::ToolCache("Cargo"));
+                }
+                let mut handle = BzScan {
+                    progress: Arc::new(Progress::default()),
+                    done: Arc::new(AtomicBool::new(true)),
+                    result: Arc::new(std::sync::Mutex::new(None)),
+                    flat: Some(Box::new(with_cleanup(tree))),
+                };
+                let h = &mut handle as *mut BzScan;
+                assert_eq!(unsafe { bz_cleanup_count(h) } as usize, expected.len());
+                let nodes =
+                    unsafe { std::slice::from_raw_parts(bz_cleanup_nodes(h), expected.len()) };
+                for (i, candidate) in expected.iter().enumerate() {
+                    assert_eq!(nodes[i], candidate.node);
+                    let label = unsafe { CStr::from_ptr(bz_cleanup_description(h, i as u64)) };
+                    assert_eq!(label.to_str().unwrap(), candidate.kind.description());
+                }
+                assert!(unsafe { bz_cleanup_description(h, expected.len() as u64) }.is_null());
             }
-            assert!(unsafe { bz_cleanup_description(h, expected.len() as u64) }.is_null());
         }
     }
 

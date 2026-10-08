@@ -10,11 +10,17 @@ command path was half the problem.
 folder names, so `~/Library/pnpm/store` — 4.0 GB on the machine this was
 measured on — and `~/Library/Caches/Homebrew` (689 MB) were never offered: it did
 not know the words `store` or `Homebrew`. A tool cache is now found by the tool's
-own fixed location *plus* the structure that tool creates (`CACHEDIR.TAG`, npm's
-`index-v5`+`content-v2`, pnpm's `version/files`+`index.db`, pip's `http-v2`,
-Cargo's registry tag), so a folder that merely resembles a cache is still not
-proposed. A row is added only when its marker was observed on a real machine; a
-row that could not be confirmed is left out rather than guessed.
+own fixed location *plus* the structure that tool creates, across eight rows:
+`~/.cache/uv` and `~/.cargo/registry` (`CACHEDIR.TAG`), `~/.cargo/git/db`
+(`*/FETCH_HEAD`), `~/Library/pnpm/store` (`v*/files` **and** `v*/index.db`),
+`~/Library/Caches/pip` (`http-v2`, or `http/` before 2020),
+`~/Library/Caches/Homebrew` (`api`), `~/Library/Caches/CocoaPods` (`Pods`) and
+`~/Library/Caches/org.swift.swiftpm` (`manifests`). A folder that merely resembles
+a cache is still not proposed. `~/.npm` keeps its existing name-based rule, so no
+npm row is added: `find` never descends into a recognised folder, and a row for
+`~/.npm/_cacache` could therefore never be consulted. A row is added only when its
+marker was observed on a real machine; a row that could not be confirmed is left
+out rather than guessed.
 
 **A folder scan now finds the caches inside it.** Scanning one folder — the
 panel's own "choose a folder" — found nothing at all before: the rules were

@@ -45,13 +45,25 @@ Verified against the shipped binary:
 
 ## 3. Full Disk Access
 
-To scan a whole disk, AppleTree needs macOS **Full Disk Access**, which you grant yourself in **System Settings → Privacy & Security → Full Disk Access**.
+This section describes the **Developer ID** build. The **Mac App Store** build works differently, and §3.1 explains how.
+
+To scan a whole disk, the Developer ID build needs macOS **Full Disk Access**, which you grant yourself in **System Settings → Privacy & Security → Full Disk Access**.
 
 This is a blanket read permission to your disk while it is granted. AppleTree uses it for one thing only: reading folder and file names, sizes and timestamps so it can draw the map. AppleTree does not ask for camera, microphone, location, contacts, photos, calendar or Bluetooth access, and it does not read the contents of your documents.
 
 A whole-disk scan is never started without Full Disk Access. If you decline it, AppleTree still scans the folders you pick yourself, and every other feature works.
 
 Reading your disk is local. Granting Full Disk Access does not cause anything to be uploaded.
+
+### 3.1 The Mac App Store build
+
+The Mac App Store build runs inside the **App Sandbox**, which macOS requires of every Mac App Store app. Two consequences follow, and both are properties of the sandbox rather than choices AppleTree makes:
+
+- **It does not ask for Full Disk Access, and Full Disk Access would not help it.** App Sandbox denies file access independently of that permission: a sandboxed process is refused even while Full Disk Access is granted to it. Asking would therefore be a request the app could never honour, so the sandboxed build does not ask.
+- **It reaches your files through a folder you choose.** Because no entitlement can grant your home folder or another volume, the sandboxed build asks you to pick a folder — the whole disk, or your home folder — the first time you scan one of them, and remembers that choice. That is Apple's documented route for exactly this case. Until you choose, a whole-disk or home scan cannot read anything and would return an empty map, so the app asks rather than showing you nothing.
+- **It never runs external cleanup commands.** App Sandbox forbids launching other tools, so in the Mac App Store build every cleanup item is a folder AppleTree moves to the Trash itself. The allowlisted commands described in §5.5 apply to the Developer ID build only. Everything else — the map, the scan, the sizes, the AI planner — behaves identically.
+
+Everything else in this policy applies unchanged to both builds: the data described in §4, the handling described in §5, and your rights in §8 and §9.
 
 **Two consequences worth knowing about, both of which are properties of macOS rather than of AppleTree:**
 
@@ -74,6 +86,7 @@ Everything AppleTree remembers is stored locally in two macOS-provided places, p
 | `bz.mapStyle` | Treemap or rings view |
 | `bz.listWidth` | Width of the outline list |
 | `bz.scanRoot` | The folder you last scanned |
+| `bz.scopedBookmark` | The folder you chose to let the sandboxed build read: a macOS **security-scoped bookmark**, not a path, together with the permission it carries. Mac App Store build only (see §3.1) |
 | `bz.trail`, `bz.trailIndex` | Your folder history and your position in it |
 | `bz.showCleanup` | Whether the Clean Up panel is open |
 | `bz.engine` | Which AI planner you selected |
@@ -82,7 +95,9 @@ Everything AppleTree remembers is stored locally in two macOS-provided places, p
 
 **API keys are never stored in preferences.** `bz.providers` holds the base URL and model name only.
 
-**Two of these record paths, which are the most personal things AppleTree keeps.** `bz.scanRoot` is the folder you last scanned, and `bz.trail` is your folder history — kept as up to **200 absolute paths**, oldest first, so the back and forward buttons survive a relaunch. Both can include your account name and the names of your folders, and a folder name can reveal what a project or client is. They are used for nothing but restoring your place, and they are covered by the deletion steps in §8.2. If you would rather they were not kept, deleting them costs you only the restored history.
+**Three of these record paths, which are the most personal things AppleTree keeps.** `bz.scanRoot` is the folder you last scanned, and `bz.trail` is your folder history — kept as up to **200 absolute paths**, oldest first, so the back and forward buttons survive a relaunch. Both can include your account name and the names of your folders, and a folder name can reveal what a project or client is. They are used for nothing but restoring your place, and they are covered by the deletion steps in §8.2. If you would rather they were not kept, deleting them costs you only the restored history.
+
+`bz.scopedBookmark` also names a folder, and differs from the two above in two ways worth knowing. It exists only in the Mac App Store build, and it holds an opaque bookmark that **carries the sandbox permission** you granted — so deleting it also revokes that access, and the app will ask you to choose the folder again the next time you scan the whole disk or your home folder. That is the same `defaults delete` command as the others; see §8.2.
 
 ### 4.2 Keychain
 
@@ -227,7 +242,7 @@ All of it is on your Mac, and all of it is yours to remove:
    defaults delete com.erklab.apps.appletree
    ```
 4. **Delete your API keys** from Keychain: open **Keychain Access**, search for `com.erklab.apps.appletree`, and delete the matching `api-key` items — or remove the provider in **Settings → Model Providers** and delete its key.
-5. **Revoke Full Disk Access** if you no longer want the app to have it: quit AppleTree first, then **System Settings → Privacy & Security → Full Disk Access** (§3).
+5. **Revoke Full Disk Access** if you no longer want the app to have it: quit AppleTree first, then **System Settings → Privacy & Security → Full Disk Access** (§3). The Mac App Store build never asks for this permission and so has no row to remove; the folder choice it does hold is removed by step 3 above (§3.1).
 
 ### 8.3 Data held by third parties
 

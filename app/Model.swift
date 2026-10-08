@@ -1090,16 +1090,22 @@ final class ScanModel {
             options: [.userInitiated, .latencyCritical],
             reason: "Disk scan"
         )
+        // Keep the sandbox extension held around the engine call: the engine
+        // stats the scan root before walking it, so a root the sandbox denies
+        // yields a one-node tree and an empty panel rather than an error. The
+        // hold outlives the walk on purpose — cleanup happens afterwards.
+        //
+        // Acquired *before* the volume-space read is dispatched, because that
+        // read asks a disk-management service about the same root and runs
+        // detached: with the hold below it, the task could reach the root before
+        // the extension existed, which is the contradiction the old ordering
+        // left in place (the comment claimed "around", the code did not).
+        scopedGrant.hold()
         // Foundation may ask a disk-management service about purgeable space.
         // Read it alongside the scan, before publishing the finished tree, so
         // the main thread never waits synchronously on that service.
         let volumePath = scanRoot
         volumeTask = Task.detached(priority: .userInitiated) { VolumeSpace.read(volumePath) }
-        // Keep the sandbox extension held around the engine call: the engine
-        // stats the scan root before walking it, so a root the sandbox denies
-        // yields a one-node tree and an empty panel rather than an error. The
-        // hold outlives the walk on purpose — cleanup happens afterwards.
-        scopedGrant.hold()
         handle = bz_scan_start(scanRoot)
 
         // 60 Hz: the elapsed time ticks every frame, so the screen keeps

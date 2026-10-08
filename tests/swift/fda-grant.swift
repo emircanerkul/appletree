@@ -77,6 +77,78 @@ func makeRecipe(_ target: String, in makefile: String) -> String {
     return out.joined(separator: "\n")
 }
 
+/// The source with `//` and `/* */` comments removed.
+///
+/// A positive source-shaped assertion must run on this, or a comment that
+/// merely *names* the symbol satisfies it — which is exactly how the old
+/// `content.contains("!AppEnvironment.isSandboxed")` check passed while proving
+/// nothing. Negative assertions stay on the raw text, where a comment is also a
+/// hit: stricter, and a literal named anywhere is still worth failing.
+func strippingComments(_ source: String) -> String {
+    var out = ""
+    var i = source.startIndex
+    var inLine = false, inBlock = false, inString = false
+    while i < source.endIndex {
+        let c = source[i]
+        let next = source.index(after: i)
+        let pair = source[i..<min(next, source.endIndex)]
+        if inLine {
+            if c == "\n" { inLine = false; out.append(c) }
+        } else if inBlock {
+            if pair.hasPrefix("*/") {
+                inBlock = false
+                i = source.index(i, offsetBy: 1)
+            }
+        } else if inString {
+            out.append(c)
+            if c == "\\" {
+                if next < source.endIndex {
+                    out.append(source[next])
+                    i = next
+                }
+            } else if c == "\"" {
+                inString = false
+            }
+        } else if pair.hasPrefix("//") {
+            inLine = true
+            i = source.index(i, offsetBy: 1)
+        } else if pair.hasPrefix("/*") {
+            inBlock = true
+            i = source.index(i, offsetBy: 1)
+        } else {
+            out.append(c)
+            if c == "\"" { inString = true }
+        }
+        i = source.index(after: i)
+    }
+    return out
+}
+
+/// One function's body, from its signature to its matching closing brace.
+///
+/// Scoping a source-shaped assertion to the function that owns the behaviour is
+/// what makes it mean something: the same symbol appears elsewhere in the file,
+/// so a whole-file search cannot say *where* it was used.
+func functionBody(startingAt signature: String, in code: String) -> String {
+    guard let start = code.range(of: signature),
+          let open = code.range(of: "{", range: start.upperBound..<code.endIndex) else {
+        return ""
+    }
+    var depth = 0
+    var i = open.lowerBound
+    while i < code.endIndex {
+        let c = code[i]
+        if c == "{" {
+            depth += 1
+        } else if c == "}" {
+            depth -= 1
+            if depth == 0 { return String(code[start.lowerBound...i]) }
+        }
+        i = code.index(after: i)
+    }
+    return ""
+}
+
 @main
 enum FDAGrantTests {
     static func main() {
@@ -142,11 +214,28 @@ enum FDAGrantTests {
         // denial is App Sandbox's own, not a missing consent. Offering the card
         // therefore loops forever: grant, restart, card again.
         //
-        // The sandboxed build has the home-relative file grant it actually needs,
-        // so it must not ask for what it cannot have.
-        check("the FDA prompt is not raised in a sandboxed build",
-              content.contains("!AppEnvironment.isSandboxed"),
-              "a sandboxed build cannot satisfy the FDA grant, so the card must not appear")
+        // The sandboxed build's route to the user's files is not FDA at all: it
+        // is the security-scoped bookmark the folder panel creates (see
+        // `ScopedAccess`), so asking for FDA would be asking for something the
+        // build can never receive *and* does not need.
+        //
+        // `requestScan` does not compile into this target, so this is a
+        // source-shaped assertion — but scoped and code-shaped: the function's
+        // own body is extracted (after comments are stripped, so prose cannot
+        // satisfy it), and the question is whether the sandbox refusal sits
+        // *before* the card is raised. A bare `content.contains(...)` was
+        // satisfied by any comment that named the symbol, which is how the old
+        // assertion passed while proving nothing.
+        let code = strippingComments(content)
+        let requestBody = functionBody(startingAt: "private func requestScan(", in: code)
+        check("requestScan's body was found in ContentView.swift", !requestBody.isEmpty,
+              "the assertion below cannot be evaluated without it")
+        let refusal = requestBody.range(of: "guard !AppEnvironment.isSandboxed")
+        let raised = requestBody.range(of: "needsFDA = true")
+        check("the FDA card is not raised in a sandboxed build",
+              refusal != nil && raised != nil
+                && refusal!.lowerBound < raised!.lowerBound,
+              "the guard must refuse a sandboxed build before the card is raised")
 
         // --- 4. The home-relative exception is retired, not merely unused -----
         //

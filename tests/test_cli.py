@@ -175,6 +175,24 @@ class AgentCLITests(unittest.TestCase):
         self.assertEqual(kinds, expected)
         self.assertTrue(all(c["requires_review"] for c in candidates))
 
+        # The identity table names the tool, so a `tool_caches` row says *which*
+        # tool it is rather than only its class. This is what makes the
+        # "a new tool is one row" claim true in the *output*, not just in the
+        # matcher: adding a row is observable without touching `category`.
+        tools = {Path(c["path"]).relative_to(self.home).as_posix(): c["tool"]
+                 for c in candidates if c["category"] == "tool_caches"}
+        self.assertEqual(tools, {
+            ".npm": None,               # shape rule, no tool identity
+            ".cache/uv": "uv",
+            ".cargo/registry": "Cargo",
+            ".cargo/git/db": "Cargo",
+            "Library/pnpm/store": "pnpm",
+            "Library/Caches/pip": "pip",
+            "Library/Caches/Homebrew": "Homebrew",
+            "Library/Caches/CocoaPods": "CocoaPods",
+            "Library/Caches/org.swift.swiftpm": "SwiftPM",
+        })
+
         # The two npm locations are *not* separate rows, and that is correct
         # rather than a gap: `find` never descends into an already-recognised
         # folder and `.npm` is recognised by shape, so a row for `_cacache` or
@@ -296,6 +314,51 @@ class AgentCLITests(unittest.TestCase):
         report = self.run_cli("quick-wins", "--root", str(alias), "--min-bytes", "1")
         self.assertEqual(len(report["report"]["candidates"]), 1)
         self.assertEqual(report["report"]["candidates"][0]["path"], str(alias / ".npm"))
+
+    def test_data_volume_alias_reaches_the_identity_table(self):
+        # B1 through the public CLI. The app's default scan target is the Data
+        # volume (`ScanTargets.macintoshHD` is `/System/Volumes/Data`), whose
+        # first component is `System`. The location table used to refuse that root
+        # outright, so every table row was unreachable there — measured on a real
+        # machine, `quick-wins --root /System/Volumes/Data` reported 51 candidates
+        # and ZERO table-row hits while the same scan rooted at `$HOME` found
+        # pnpm, Homebrew, Cargo and uv. The Data volume's prefix is transparent:
+        # the path below it is the volume's real one.
+        alias = Path("/System/Volumes/Data") / self.home.relative_to("/")
+        if not alias.exists() or not alias.samefile(self.home):
+            self.skipTest("Data volume alias unavailable on this Mac")
+        self.file(".cache/uv/CACHEDIR.TAG")
+        self.file(".cargo/registry/CACHEDIR.TAG")
+        self.file("Library/pnpm/store/v11/files/x")
+        self.file("Library/pnpm/store/v11/index.db")
+        self.file("Library/Caches/pip/http-v2/x")
+        self.file("Library/Caches/Homebrew/api/formula.json")
+
+        candidates = self.run_cli("quick-wins", "--root", str(alias),
+                                  "--min-bytes", "1", "--limit", "100")["report"]["candidates"]
+        kinds = {Path(c["path"]).relative_to(alias).as_posix(): c["category"] for c in candidates}
+        self.assertEqual(kinds, {
+            ".cache/uv": "tool_caches",
+            ".cargo/registry": "tool_caches",
+            "Library/pnpm/store": "tool_caches",
+            "Library/Caches/pip": "tool_caches",
+            "Library/Caches/Homebrew": "tool_caches",
+        })
+
+    def test_a_service_folder_is_not_a_home(self):
+        # B5 through the public CLI: a root that is not the user's home must not
+        # be read as one, or recognition offers what `CleanupGuard` refuses as
+        # "Outside your home folder". `/private/tmp/<name>` is the probe from the
+        # spec; the fixture is created and removed by tempfile.
+        tmp = Path("/private/tmp")
+        if not os.access(tmp, os.W_OK):
+            self.skipTest("/private/tmp not writable")
+        with tempfile.TemporaryDirectory(prefix="appletree-notahome-", dir=tmp) as root:
+            root = Path(root)
+            (root / "Library/Caches/pip/http-v2").mkdir(parents=True)
+            (root / "Library/Caches/pip/http-v2/x").write_bytes(b"x" * 8192)
+            report = self.run_cli("quick-wins", "--root", str(root), "--min-bytes", "1")["report"]
+            self.assertEqual([c for c in report["candidates"] if c["category"] == "tool_caches"], [])
 
     def test_explicit_symlink_root_is_resolved(self):
         # `.npm` rather than `.cache`: the home-level `~/.cache` is now

@@ -92,6 +92,12 @@ pub fn quick_wins(scan: &Tree, options: &Options) -> Value {
             let mut value = entry(scan, c.node as usize);
             value["category"] = json!(c.kind.id());
             value["reason"] = json!(c.kind.description());
+            // The identity table names the tool whose cache this is, so a
+            // `tool_caches` row says *which* tool rather than only its class.
+            // Null for the name-based rows (`.npm`, `.gradle`, a nested
+            // `.cache`), which carry no tool identity. Additive: `category`
+            // keeps its published value.
+            value["tool"] = json!(c.kind.tool());
             value["requires_review"] = json!(true);
             value
         })

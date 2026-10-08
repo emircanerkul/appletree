@@ -12,19 +12,29 @@
 // app to store a bookmark. That is Apple's documented route and the reason
 // `ScopedAccess` exists.
 //
-// The bookmark round-trip cannot be tested in-process here: creating one needs
-// the `files.bookmarks.app-scope` entitlement, and this test binary is not
-// sandboxed or entitled. What IS testable, and is what a regression would
-// actually break, is the *state* contract the scan path depends on: what
-// `grantedPath` reports before and after a bookmark is stored, that a second
-// `begin()` does not leak the first extension, and that `forget()` really
-// removes it. Those are asserted against a real UserDefaults suite, so the
-// storage key is exercised rather than mocked.
+// What is asserted here. Almost all of it is *behaviour*: real bookmarks are
+// created for real directories in this process and the type's state is read
+// back. Measured while writing this file: on an unsigned, unsandboxed test
+// binary `URL.bookmarkData(options: .withSecurityScope)` on a temp directory
+// succeeds (~780 bytes) and the resolved URL starts access — so the round trip,
+// `covers`, and `Grant.hold()` are all exercisable without an entitlement. If a
+// future toolchain does make that call fail, the suite says so out loud and
+// falls back to asserting the documented no-grant contract, rather than going
+// quietly green on nothing.
+//
+// Only two kinds of assertion are structural, and each is labelled:
+//   - the entitlement keys, which cannot be exercised in-process (a missing
+//     entitlement is a property of the shipped bundle, not of this binary);
+//   - one comment-stripped check that ContentView's gate uses the coverage test
+//     rather than the bookmark-existence test, because ContentView does not
+//     compile into this target. Source text is stripped of comments first, so a
+//     comment can never satisfy a code-shaped assertion.
 
 import Foundation
 
 var failed = 0
 var passed = 0
+var substitutions = 0
 
 func check(_ name: String, _ condition: Bool, _ detail: String = "") {
     if condition {
@@ -36,177 +46,323 @@ func check(_ name: String, _ condition: Bool, _ detail: String = "") {
     }
 }
 
+/// A check that was not run as written because the process cannot exercise it.
+func substitute(_ name: String, _ why: String) {
+    substitutions += 1
+    print("SUBSTITUTED \(name) — \(why)")
+}
+
+func note(_ message: String) { print("NOTE \(message)") }
+
+/// The source with `//` and `/* */` comments removed.
+///
+/// Every source-shaped assertion below runs on this, so a comment that
+/// *describes* the code can never satisfy a check about the code.
+func strippingComments(_ source: String) -> String {
+    var out = ""
+    var i = source.startIndex
+    var inLine = false, inBlock = false
+    var inString = false
+    while i < source.endIndex {
+        let c = source[i]
+        let next = source.index(after: i)
+        let pair = source[i..<min(next, source.endIndex)]
+        if inLine {
+            if c == "\n" { inLine = false; out.append(c) }
+        } else if inBlock {
+            if pair.hasPrefix("*/") {
+                inBlock = false
+                i = source.index(i, offsetBy: 1)
+            }
+        } else if inString {
+            out.append(c)
+            if c == "\\" {
+                if next < source.endIndex {
+                    out.append(source[next])
+                    i = next
+                }
+            } else if c == "\"" {
+                inString = false
+            }
+        } else if pair.hasPrefix("//") {
+            inLine = true
+            i = source.index(i, offsetBy: 1)
+        } else if pair.hasPrefix("/*") {
+            inBlock = true
+            i = source.index(i, offsetBy: 1)
+        } else {
+            out.append(c)
+            if c == "\"" { inString = true }
+        }
+        i = source.index(after: i)
+    }
+    return out
+}
+
+/// A path as the bookmark round trip reports it, with symlinks resolved.
+/// Measured: a bookmark for a temp directory under `/var/folders` resolves to
+/// the `/private/var/folders` spelling, and `URL(fileURLWithPath:)` does not
+/// resolve that on its own.
+func canonical(_ path: String) -> String {
+    URL(fileURLWithPath: path).resolvingSymlinksInPath().path
+}
+
 @main
 enum ScopedAccessTests {
     static func main() {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
 
-        // --- the entitlement the route depends on ----------------------------
-        //
-        // Without `files.bookmarks.app-scope` the bookmark call itself fails
-        // (measured: error 256, "The file couldn't be opened"), so the route is
-        // unavailable rather than merely degraded. The key is easy to drop from
-        // an entitlement file during an unrelated edit, and nothing else would
-        // notice until a user tried to pick a disk.
-        let entsPath = root.appendingPathComponent("app/AppleTree.entitlements")
-        let ents = (try? String(contentsOf: entsPath, encoding: .utf8)) ?? ""
-        check("AppleTree.entitlements was read", !ents.isEmpty, entsPath.path)
-        check("the app-scope bookmark entitlement is requested",
-              ents.contains("com.apple.security.files.bookmarks.app-scope"),
-              "without it bookmark creation fails outright (measured: error 256)")
-        check("the picker entitlement is requested",
-              ents.contains("com.apple.security.files.user-selected.read-write"),
-              "the panel is how the user hands over the folder")
-
-        // --- the state contract the scan path reads --------------------------
-        //
-        // `ScopedAccess` reads `UserDefaults.standard`, so the fixture must not
-        // clobber a real user's stored bookmark. It is saved and restored.
+        // The test binary reads `ScopedAccess`, which reads UserDefaults.standard:
+        // the fixture must not clobber a real user's stored bookmark, so it is
+        // saved and restored around everything below.
         let defaults = UserDefaults.standard
         let savedBookmark = defaults.data(forKey: ScopedAccess.bookmarkKey)
+        defer {
+            if let savedBookmark {
+                defaults.set(savedBookmark, forKey: ScopedAccess.bookmarkKey)
+            } else {
+                defaults.removeObject(forKey: ScopedAccess.bookmarkKey)
+            }
+            check("the user's stored bookmark was restored",
+                  defaults.data(forKey: ScopedAccess.bookmarkKey) == savedBookmark)
+        }
 
-        // A clean start: nothing chosen yet. This is the state a fresh install
-        // is in, and the scan path must treat it as "ask the user", not as
-        // "scan anyway".
         ScopedAccess.forget()
+
+        // --- 1. Structural: the entitlements the route depends on -------------
+        //
+        // Not behavioural *on purpose*. Without
+        // `files.bookmarks.app-scope` the bookmark call fails outright (measured:
+        // error 256, "The file couldn't be opened"), so the route is unavailable
+        // rather than degraded; the key is easy to drop during an unrelated edit
+        // and only a shipped bundle can really test it.
+        let entsPath = root.appendingPathComponent("app/AppleTree.entitlements")
+        let ents = strippingComments((try? String(contentsOf: entsPath, encoding: .utf8)) ?? "")
+        check("AppleTree.entitlements was read", !ents.isEmpty, entsPath.path)
+        check("the app-scope bookmark entitlement is requested",
+              ents.contains("<key>com.apple.security.files.bookmarks.app-scope</key>"),
+              "without it bookmark creation fails outright (measured: error 256)")
+        check("the picker entitlement is requested",
+              ents.contains("<key>com.apple.security.files.user-selected.read-write</key>"),
+              "the panel is how the user hands over the folder")
+        // The retired key must not be a live entitlement. It is still *named* in
+        // the retirement comment, so the check is on the `<key>` form (and this
+        // file strips comments anyway): an `<key>` line means it is granted.
+        check("the home-relative temporary exception was retired",
+              !ents.contains("<key>com.apple.security.temporary-exception"),
+              "the bookmark route replaces it; the exception must not linger")
+
+        // --- 2. Behaviour: the no-grant state ---------------------------------
+        //
+        // A fresh install. The scan path must read this as "ask the user", never
+        // as "scan anyway".
         check("no stored bookmark reports no granted path", ScopedAccess.grantedPath == nil)
         check("no stored bookmark is not stale", !ScopedAccess.isStale)
-
-        // `hold()` with nothing stored yields no path, so the caller cannot
-        // start a scan against a folder it has no access to.
+        check("no stored bookmark has nothing usable", !ScopedAccess.hasUsableBookmark)
+        // Coverage is the gate's question now: with nothing stored, no target is
+        // covered, and the gate must ask for one.
+        for target in ["/", "/System/Volumes/Data", NSHomeDirectory(), "/Applications", "/Volumes/Any"] {
+            check("no grant covers \(target)", !ScopedAccess.covers(target))
+        }
         let empty = ScopedAccess.Grant()
         check("hold() with no bookmark grants nothing", empty.hold() == nil)
         check("hold() with no bookmark holds nothing", !empty.isHeld)
 
-        // A bookmark that is not a bookmark must be refused rather than crash or
-        // silently resolve to somewhere unexpected.
+        // --- 3. Behaviour: a bookmark that is not a bookmark -------------------
         defaults.set(Data([0x00, 0x01, 0x02, 0x03]), forKey: ScopedAccess.bookmarkKey)
         check("a corrupt bookmark reports no granted path", ScopedAccess.grantedPath == nil,
               "resolving garbage must fail safe")
+        check("a corrupt bookmark covers nothing", !ScopedAccess.covers("/Applications"))
         let corrupt = ScopedAccess.Grant()
         check("hold() on a corrupt bookmark grants nothing", corrupt.hold() == nil)
         check("hold() on a corrupt bookmark holds nothing", !corrupt.isHeld)
 
         // `forget()` must actually clear the key: this is what "the stored
-        // folder is gone" means to every other owner, and a `removeObject` that
-        // missed the key would leave a stale grant forever.
+        // folder is gone" means to every other owner.
         ScopedAccess.forget()
         check("forget() clears the stored bookmark",
               defaults.data(forKey: ScopedAccess.bookmarkKey) == nil)
 
-        // `hold()` must be idempotent, and it must outlive a scan.
+        // --- 4. Behaviour: a real bookmark for a real directory -----------------
         //
-        // Cleanup runs AFTER a scan and reaches the same paths, so releasing the
-        // extension at the end of the walk would make every `Move to Trash` on a
-        // chosen folder fail. This is why the grant is session-held rather than
-        // scan-held, and why the app's only route to the user's files is now the
-        // bookmark: the home-relative temporary exception was retired.
-        //
-        // Asserted on the type's own state rather than through the sandbox, which
-        // this binary cannot enter.
-        let grant = ScopedAccess.Grant()
-        _ = grant.hold()
-        _ = grant.hold()
-        check("repeated hold() is safe to call", true)
-        grant.release()
-        check("release() drops the grant", !grant.isHeld)
-        // The retirement itself: the entitlement that used to carry the app's own
-        // caches must be gone from the shipping set, or the refactor is only
-        // half-done and the review surface was not actually reduced.
-        // The retired key must not be a live entitlement. It is still *named* in
-        // the retirement comment (so the reason survives), so the check is on the
-        // key form rather than any mention: an `<key>` line means it is granted.
-        check("the home-relative temporary exception was retired",
-              !ents.contains("<key>com.apple.security.temporary-exception.files.home-relative-path"),
-              "the bookmark route replaces it; the exception must not linger")
+        // Two throwaway directories the process owns, so the round trip is the
+        // real one: create, store, resolve, cover, hold.
+        let fm = FileManager.default
+        let base = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("bz-scoped-access-\(UUID().uuidString)")
+        let picked = base.appendingPathComponent("picked")
+        let pickedSecond = base.appendingPathComponent("picked-second")
+        try? fm.createDirectory(at: picked, withIntermediateDirectories: true)
+        try? fm.createDirectory(at: pickedSecond, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: base) }
 
-        // Restore whatever the real user had.
-        if let savedBookmark {
-            defaults.set(savedBookmark, forKey: ScopedAccess.bookmarkKey)
-        } else {
-            defaults.removeObject(forKey: ScopedAccess.bookmarkKey)
+        // Does the toolchain let an unsigned binary create an app-scoped
+        // bookmark on a directory it owns? Measured yes (see the header).
+        var canBookmark = false
+        do {
+            _ = try picked.bookmarkData(options: [.withSecurityScope],
+                                        includingResourceValuesForKeys: nil, relativeTo: nil)
+            canBookmark = true
+        } catch {
+            canBookmark = false
+            note("this toolchain refuses .withSecurityScope bookmarks in an unsigned process: \((error as NSError).code)")
         }
-        check("the user's stored bookmark was restored",
-              defaults.data(forKey: ScopedAccess.bookmarkKey) == savedBookmark)
 
-        // --- 4. A whole-disk click must open the picker, not show a card ------
-        //
-        // The first cut raised a "Choose the folder to scan" card instead. That
-        // cannot work: only `NSOpenPanel` extends the sandbox, so a button that
-        // displays instructions cannot make the click succeed. Worse, the
-        // bookmark result was ignored, so a failure to store one left
-        // `hasUsableBookmark` false and the next click showed the card again —
-        // the same choose-card-choose loop as the FDA card it replaced.
-        //
-        // Measured: picking the sidebar's "Macintosh HD" yields `file:///`, and
-        // bookmarking `/` FAILED (0 bytes) from a build holding only the
-        // home-relative grant, while `/System/Volumes/Data` succeeded. So the
-        // retry to the data volume is not a nicety; it is what makes that
-        // particular click work at all.
-        let content = (try? String(contentsOf: root.appendingPathComponent("app/ContentView.swift"),
-                                   encoding: .utf8)) ?? ""
-        check("ContentView.swift was read for the picker checks", !content.isEmpty)
-        check("a whole-disk request in a sandboxed build opens the picker",
-              content.contains("chooseFolder()\n            return"),
-              "showing a card cannot grant the sandbox; only the panel can")
-        check("the picker does not ignore a failed bookmark",
-              content.contains("if !ScopedAccess.remember(url)"),
-              "an ignored failure is what looped: choose, card, choose")
-        check("a `file:///` choice is retried as the data volume",
-              content.contains("ScopedAccess.remember(URL(fileURLWithPath: volume))"),
-              "`/` cannot be bookmarked; its data volume can")
-        check("the unsatisfiable folder card was removed",
-              !content.contains("needsScopedRoot"),
-              "dead UI that cannot grant anything must not ship")
-        check("the scan path asks the one question, not two",
-              content.contains("ScopedAccess.hasUsableBookmark"),
-              "reassembling grantedPath/isStale at the caller invites the loop back")
+        if !canBookmark {
+            substitute("the bookmark round-trip, coverage and hold() tests",
+                       "the process cannot create an app-scoped bookmark, so the documented no-grant contract is asserted instead")
+            check("a bookmark that cannot be created is not reported",
+                  ScopedAccess.remember(picked) == false)
+            check("a refused bookmark leaves no granted path", ScopedAccess.grantedPath == nil)
+            check("a refused bookmark covers nothing", !ScopedAccess.covers(canonical(picked.path)))
+            let refused = ScopedAccess.Grant()
+            check("a refused bookmark grants nothing", refused.hold() == nil)
+            check("a refused bookmark holds nothing", !refused.isHeld)
+        } else {
+            let pickedPath = canonical(picked.path)
+            let secondPath = canonical(pickedSecond.path)
+            check("remember() stores a bookmark for a real directory",
+                  ScopedAccess.remember(picked))
+            let granted = ScopedAccess.grantedPath
+            check("the stored bookmark resolves to the chosen directory",
+                  granted.map(canonical) == pickedPath, granted ?? "nil")
+            check("the stored bookmark is not stale", !ScopedAccess.isStale)
+            check("a stored bookmark is usable", ScopedAccess.hasUsableBookmark)
 
-        // The Home target is gated too, now that the home-relative exception is
-        // retired: `~/` is DENIED until a folder is chosen (measured on a build
-        // with only the sandbox, picker and bookmark entitlements). Leaving Home
-        // ungated would restore the original symptom — a scan of nothing,
-        // reported as "Nothing large to clean up" rather than as a missing
-        // permission. `/Applications` and a mounted drive are deliberately NOT
-        // gated: both are readable on the entitlements alone, so prompting for
-        // them would be a prompt for nothing.
-        check("the Home target is gated on a chosen folder",
-              content.contains("target == ScanTargets.home.path"),
-              "`~/` is denied once the exception is retired, so Home must ask")
-        check("the whole-disk target is gated on a chosen folder",
-              content.contains("target == ScanTargets.macintoshHD.path"),
-              "the disk is denied too")
-        check("readable targets are not gated",
-              !content.contains("target == ScanTargets.applications.path) {"),
-              "Applications is readable on the entitlements alone")
+            // `covers`: exact, descendant, and the two negative boundaries. The
+            // path-boundary rule is what keeps a sibling name from matching.
+            check("covers() accepts the granted path itself",
+                  ScopedAccess.covers(pickedPath))
+            check("covers() accepts a descendant",
+                  ScopedAccess.covers(pickedPath + "/sub/deeper"))
+            check("covers() rejects an unrelated path",
+                  !ScopedAccess.covers("/Applications"))
+            check("covers() rejects a name-prefix sibling",
+                  !ScopedAccess.covers(pickedPath + "-elsewhere"),
+                  "a prefix match without the path separator is not coverage")
+            check("covers() rejects the parent directory",
+                  !ScopedAccess.covers(canonical(base.path)),
+                  "a grant covers its subtree, not its ancestors")
 
-        // --- 5. The Home target is gated too, now that the exception is gone ---
+            // B3's regression, asserted as state: a grant of one folder must not
+            // disable the gate for Home or the disk. Measured on the old
+            // existence gate: with `/Applications` bookmarked, `grantedPath` was
+            // `/Applications` while `/Users/…` was DENIED — so a Home click
+            // raised no panel and scanned nothing.
+            check("a grant of another folder does not cover Home",
+                  !ScopedAccess.covers(NSHomeDirectory()),
+                  "home is not on the picked path")
+            check("a grant of another folder does not cover Macintosh HD",
+                  !ScopedAccess.covers("/System/Volumes/Data"))
+            check("a grant of another folder does not cover /Applications",
+                  !ScopedAccess.covers("/Applications"))
+
+            // `hold()`: real extension, idempotent for an unchanged bookmark.
+            let grant = ScopedAccess.Grant()
+            let heldOnce = grant.hold()
+            check("hold() acquires the stored directory", heldOnce.map(canonical) == pickedPath,
+                  heldOnce ?? "nil")
+            check("hold() reports the grant as held", grant.isHeld)
+            let heldTwice = grant.hold()
+            check("a repeated hold() returns the same directory and stays held",
+                  heldTwice.map(canonical) == pickedPath && grant.isHeld,
+                  "dropping and re-acquiring would close the window cleanup runs in")
+
+            // B8: re-picking mid-session must move the extension to the new
+            // folder. The old short-circuit returned the first path forever, so
+            // the newly chosen folder was never actually reachable.
+            check("remember() overwrites the stored bookmark on a re-pick",
+                  ScopedAccess.remember(pickedSecond))
+            check("the stored bookmark now resolves to the second pick",
+                  ScopedAccess.grantedPath.map(canonical) == secondPath,
+                  ScopedAccess.grantedPath ?? "nil")
+            let heldAfterRepick = grant.hold()
+            check("hold() follows a re-pick to the new directory",
+                  heldAfterRepick.map(canonical) == secondPath,
+                  "the old short-circuit returned \(heldOnce ?? "nil") instead")
+            check("hold() still reports the grant as held after a re-pick", grant.isHeld)
+
+            grant.release()
+            check("release() drops the grant", !grant.isHeld)
+            check("hold() re-acquires after release", grant.hold().map(canonical) == secondPath)
+            grant.release()
+
+            // Coverage is read from storage, not from the held extension:
+            // forgetting must make the gate ask again.
+            ScopedAccess.forget()
+            check("a forgotten bookmark covers nothing", !ScopedAccess.covers(secondPath))
+            let forgotten = ScopedAccess.Grant()
+            check("hold() after forget() grants nothing", forgotten.hold() == nil)
+            check("hold() after forget() holds nothing", !forgotten.isHeld)
+        }
+
+        // --- 5. Behaviour: a boot-volume grant covers the scanned volume --------
         //
-        // When the home-relative exception granted `~/`, a Home scan worked with
-        // no user action. With it retired, `~/` is DENIED until a folder is
-        // chosen — measured on a build with only the sandbox, picker and bookmark
-        // entitlements. Leaving Home ungated would restore the original symptom:
-        // a scan of nothing, reported as "Nothing large to clean up" rather than
-        // as a missing permission.
+        // The panel's "Macintosh HD" row stands for the Data volume, and the
+        // disk target is that volume: one pick has to authorize the whole
+        // subtree the app scans, or the B2 loop comes back.
+        if canBookmark, ScopedAccess.remember(URL(fileURLWithPath: ScopedAccess.bootVolumeDataPath)) {
+            let granted = ScopedAccess.grantedPath
+            note("a bookmark of \(ScopedAccess.bootVolumeDataPath) resolves to \(granted ?? "nil")")
+            check("the disk grant resolves to the boot volume",
+                  granted == "/" || granted == ScopedAccess.bootVolumeDataPath, granted ?? "nil")
+            for target in ["/", ScopedAccess.bootVolumeDataPath, NSHomeDirectory(),
+                           "/Applications", "/opt", "/private/var"] {
+                check("the boot-volume grant covers \(target)", ScopedAccess.covers(target))
+            }
+            // B4: the grant covers the boot volume, not other devices mounted in
+            // its tree. `/Volumes/Foo` is reachable through that tree but its
+            // bytes are not on the granted volume, so it still needs its own pick.
+            for target in ["/Volumes", "/Volumes/External", "/System/Volumes/Data/Volumes/External"] {
+                check("the boot-volume grant does not cover \(target)",
+                      !ScopedAccess.covers(target),
+                      "a mounted drive is another device's bytes")
+            }
+        } else {
+            substitute("the boot-volume coverage tests",
+                       "no app-scoped bookmark could be created in this process")
+        }
+
+        // A grant of `/` (what a plain `file:///` pick used to store) behaves the
+        // same, in either spelling of the volume.
+        if canBookmark, ScopedAccess.remember(URL(fileURLWithPath: "/")) {
+            check("a / grant covers the disk target",
+                  ScopedAccess.covers(ScanPathAlias.dataVolume))
+            check("a / grant covers Home", ScopedAccess.covers(NSHomeDirectory()))
+            check("a / grant does not cover a mounted drive",
+                  !ScopedAccess.covers("/Volumes/External"))
+        } else {
+            substitute("the / grant coverage tests",
+                       "no app-scoped bookmark could be created in this process")
+        }
+        ScopedAccess.forget()
+
+        // --- 6. Structural: the UI gate asks the coverage question -------------
         //
-        // `/Applications` and a mounted drive are deliberately NOT gated: both
-        // are readable on the entitlements alone, so prompting for them would be
-        // a prompt for nothing.
-        check("the Home target is gated on a chosen folder",
-              content.contains("target == ScanTargets.home.path"),
-              "`~/` is denied once the exception is retired, so Home must ask")
-        check("the whole-disk target is gated on a chosen folder",
-              content.contains("target == ScanTargets.macintoshHD.path"),
-              "the disk is denied too")
-        // The gate must not cover the targets that are readable without a grant,
-        // or every Applications scan would demand a picker for no reason.
-        check("readable targets are not gated",
-              !content.contains("target == ScanTargets.applications.path) {"),
-              "Applications is readable on the entitlements alone")
+        // ContentView does not compile into this target, so this is the one
+        // source-shaped assertion: the scan gate must call `covers`, and must no
+        // longer decide on the mere existence of a bookmark (B3). Comments are
+        // stripped first, so prose cannot satisfy it.
+        let contentPath = root.appendingPathComponent("app/ContentView.swift")
+        let content = strippingComments((try? String(contentsOf: contentPath, encoding: .utf8)) ?? "")
+        check("ContentView.swift was read", !content.isEmpty, contentPath.path)
+        check("the scan gate asks whether the grant covers the target [structural]",
+              content.contains("ScopedAccess.covers("),
+              "coverage, not existence: an unrelated grant must not disable the gate")
+        check("the scan gate no longer decides on a stored bookmark's existence [structural]",
+              !content.contains("ScopedAccess.hasUsableBookmark"),
+              "existence is the B3 bug")
 
         print("")
+        if substitutions > 0 { print("\(substitutions) substituted (see NOTE/SUBSTITUTED above)\n") }
         print("\(passed) passed, \(failed) failed")
         exit(failed == 0 ? 0 : 1)
     }
+}
+
+/// The Data volume the whole-disk target scans, spelled here because `ScanTargets`
+/// (app/Model.swift) is not compiled into this target.
+enum ScanPathAlias {
+    static let dataVolume = "/System/Volumes/Data"
 }

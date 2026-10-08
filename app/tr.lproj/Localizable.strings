@@ -247,3 +247,10 @@
 "Edit %@" = "%@ düzenle";
 "Manage model providers" = "Model sağlayıcılarını yönet";
 
+
+/* Scoped-access failure card: the user picked a folder that did not yield a
+   usable security-scoped bookmark (Mac App Store sandbox build only). Mirrors
+   the Full Disk Access card's layout; the body names the one folder that
+   always works so the user is never stuck. */
+"AppleTree could not use that folder" = "AppleTree bu klasörü kullanamadı";
+"The folder you chose did not give AppleTree access. Choose a different folder — Macintosh HD always works." = "Seçtiğiniz klasör AppleTree'ye erişim vermedi. Başka bir klasör seçin — \"Macintosh HD\" her zaman çalışır.";
