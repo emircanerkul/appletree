@@ -138,7 +138,13 @@ nonisolated enum Readme {
         // line to its own terminator. Skipping it by its real extent, rather
         // than line by line, is what keeps the wrapped prose inside it from
         // leaking the `<br>`/`</p>` that surrounds it.
-        var skippingHeader = markdown.trimmingCharacters(in: .whitespaces).hasPrefix("<")
+        //
+        // It is detected as an HTML *block tag*, not as "the first character is
+        // `<`". That broader test swallowed any document beginning with an
+        // autolink (`<https://example.com>`) or an inline tag: the header skip
+        // only ends at its own `<!-- /header` marker, so a document without one
+        // rendered completely empty (audit UI-6).
+        var skippingHeader = Self.startsWithHTMLBlock(markdown)
         for raw in markdown.components(separatedBy: "\n") {
             let line = raw.trimmingCharacters(in: .whitespaces)
 
@@ -160,8 +166,21 @@ nonisolated enum Readme {
                 continue
             }
             if let close = skippingUntil {
-                if line.hasPrefix(close) { skippingUntil = nil }
-                continue
+                if line.hasPrefix(close) {
+                    skippingUntil = nil
+                    continue
+                }
+                // A block that never closes must not eat the document. Markdown
+                // structure is the bound: a heading or a fence means the HTML
+                // block is over (malformed, but over), so the rest still renders
+                // instead of vanishing (audit UI-6). The line that releases the
+                // skip is processed normally rather than dropped — it is a
+                // heading the reader needs.
+                if line.hasPrefix("#") || line.hasPrefix("```") {
+                    skippingUntil = nil
+                } else {
+                    continue
+                }
             }
             if line.hasPrefix("<table") { skippingUntil = "</table>"; continue }
             if line.hasPrefix("<video") { skippingUntil = "</video>"; continue }
@@ -175,6 +194,23 @@ nonisolated enum Readme {
             out.append(raw)
         }
         return out.joined(separator: "\n")
+    }
+
+    /// Whether the document opens with an HTML block that has its own
+    /// terminator, rather than with an inline tag or an autolink.
+    ///
+    /// Only the block tags this file skips are recognised: an autolink
+    /// (`<https://…>`) or a stray inline `<b>` at the top of a document must
+    /// render as content, not start a header skip that nothing can end.
+    private static func startsWithHTMLBlock(_ markdown: String) -> Bool {
+        guard let first = markdown.split(separator: "\n").first(where: {
+            !$0.trimmingCharacters(in: .whitespaces).isEmpty
+        }) else { return false }
+        let line = first.trimmingCharacters(in: .whitespaces).lowercased()
+        guard line.hasPrefix("<") else { return false }
+        // An autolink has no tag name: `<https://…>`, `<mailto:…>`.
+        let blockTags = ["<div", "<p", "<table", "<video", "<img", "<h1", "<h2", "<center", "<!--"]
+        return blockTags.contains { line.hasPrefix($0) }
     }
 
     /// Remove every HTML tag from a line, leaving whatever text it wrapped.
@@ -240,7 +276,16 @@ nonisolated enum MarkdownBlocks {
         }
 
         func flushCells() {
-            defer { cells = []; cellsContainer = nil; cellsHeader = false }
+            // `align` is reset with the row, not left for the next table.
+            //
+            // It is declared once outside the run loop and only ever filled when
+            // empty, so without this the SECOND and every later table in a
+            // document rendered with the FIRST table's column alignment
+            // (measured: two adjacent tables declared `:--|--:` and `--:|:--`
+            // both came out `[leading, trailing]`, audit UI-5). The bundled
+            // Privacy-Policy.md has several tables with different alignment, so
+            // its numbers stopped lining up with their headers.
+            defer { cells = []; cellsContainer = nil; cellsHeader = false; align = [] }
             guard !cells.isEmpty else { return }
             blocks.append(ReadmeBlock(
                 id: blocks.count,

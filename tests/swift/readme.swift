@@ -351,6 +351,52 @@ enum ReadmeTests {
             check("LICENSE is readable", false, "cannot read at \(licenseURL.path)")
         }
 
+        // --- UI-5: each table keeps its own column alignment ------------------
+        //
+        // `MarkdownBlocks.parse` held one alignment vector for the whole
+        // document and only filled it when empty, so the second and every later
+        // table rendered with the FIRST table's alignment. Two adjacent tables
+        // with opposite alignment is the smallest fixture that exposes it.
+        let twoTables = """
+        | left | right |
+        |:--|--:|
+        | a | 1 |
+
+        | right | left |
+        |--:|:--|
+        | b | 2 |
+        """
+        var alignVectors: [[ColumnAlign]] = []
+        for block in MarkdownBlocks.parse(twoTables) {
+            if case .tableRow(_, _, let align) = block.role { alignVectors.append(align) }
+        }
+        // Four rows: header + body of each table. The first two must share one
+        // vector and the last two the other, and the two vectors must differ —
+        // the defect was every table reusing the first one.
+        let unique = alignVectors.map { $0.map(String.init(describing:)).joined(separator: ",") }
+        check("each table keeps its own column alignment",
+              unique.count == 4
+                && unique[0] == unique[1] && unique[2] == unique[3]
+                && unique[0] != unique[2],
+              "alignments: \(unique)")
+
+        // --- UI-6: an unclosed HTML block, and a leading autolink ------------
+        //
+        // A `<table>` with no `</table>` used to swallow the rest of the
+        // document, and a document starting with `<https://…>` was classified as
+        // an HTML header and rendered completely empty (both measured).
+        let unclosed = "# Title\n<table>\n<tr><td>x</td></tr>\n\n## After\n\nprose\n"
+        let unclosedOut = Readme.forDisplay(unclosed)
+        check("an unclosed HTML block does not eat the document",
+              unclosedOut.contains("## After") && unclosedOut.contains("prose"),
+              "rendered: \(unclosedOut.prefix(80))")
+
+        let autolink = "<https://example.com>\n\n# Heading\n\nprose\n"
+        let autolinkOut = Readme.forDisplay(autolink)
+        check("a document starting with an autolink still renders",
+              autolinkOut.contains("# Heading") && autolinkOut.contains("prose"),
+              "rendered: \(autolinkOut.prefix(80))")
+
         print("\(passed) passed, \(failed) failed")
         exit(failed == 0 ? 0 : 1)
     }

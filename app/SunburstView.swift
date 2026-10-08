@@ -191,11 +191,27 @@ final class SunburstNSView: NSView {
             // treemap blends and the set that can be drawn. Children reporting 0
             // bytes stay out of both, so they cannot dilute a real sibling's
             // floor, and `Σ share` still lands on the folder's span.
-            var siblings = 0
-            for k in kids where tree.alloc[Int(k)] > 0 { siblings += 1 }
+            //
+            // They must also stay out of the LOOP, not just the divisor. The
+            // divisor counted only the siblings with bytes, but the loop drew
+            // every one, and `ShareWeight.share` gives any sibling a positive
+            // pool floor — so a 0-byte child got a real arc. The ring then
+            // overran the circle (measured: 6 phantom arcs took ring 0 to 8.168
+            // rad against a 6.283 circle, +30 %) and wrapped over arc 0, so the
+            // picture stopped agreeing with what hover and click resolve (audit
+            // UI-2). `Squarify.items` already skips these; this is the same rule
+            // in the other view.
+            //
+            // `candidates` is the drawn-eligible list, so the tail below counts
+            // and sums exactly the children this loop could have drawn and did
+            // not — a `shown < kids.count` test against the full list would have
+            // called every zero-byte child "undrawn" and folded its 0 bytes into
+            // the tail's byte total while overstating its item count.
+            let candidates = kids.filter { tree.alloc[Int($0)] > 0 }
+            let siblings = candidates.count
             var a = start
             var shown = 0
-            for k in kids {
+            for k in candidates {
                 let node = Int(k)
                 let bytes = tree.alloc[node]
                 let share: Double
@@ -218,9 +234,9 @@ final class SunburstNSView: NSView {
                 a += s
                 shown += 1
             }
-            if shown < kids.count {
-                // The tail is the siblings left undrawn. Its bytes stay the
-                // true total of that tail, which is what the tooltip and the
+            if shown < candidates.count {
+                // The tail is the drawable siblings left undrawn. Its bytes stay
+                // the true total of that tail, which is what the tooltip and the
                 // "N smaller items" label report; its span is whatever of the
                 // folder is left, so the ring still tiles and the free-space
                 // split is untouched. Summing only when the arc is big enough
@@ -228,9 +244,9 @@ final class SunburstNSView: NSView {
                 let rest = start + span - a
                 if rest >= minAngle[ring] {
                     var bytes: UInt64 = 0
-                    for k in kids[shown...] { bytes += tree.alloc[Int(k)] }
+                    for k in candidates[shown...] { bytes += tree.alloc[Int(k)] }
                     out.append(SBSegment(node: -2, ring: ring, start: a, end: start + span, bytes: bytes,
-                                         count: kids.count - shown, color: (0.30, 0.30, 0.32)))
+                                         count: candidates.count - shown, color: (0.30, 0.30, 0.32)))
                 }
             }
         }

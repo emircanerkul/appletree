@@ -858,10 +858,25 @@ final class TreemapNSView: NSView {
             // Any tile is selectable, folders included: without this a folder
             // drawn as a solid block picked nothing, which also left "move to
             // the folder holding this" with no focus to climb from.
-            guard let node = pick(at: p) else {
+            guard let node = pick(at: p), node != model.viewRoot else {
                 // Empty space: a plain click clears, but a modified click is an
                 // additive gesture and clearing on it would throw away the
                 // selection the user is in the middle of building.
+                //
+                // `node != model.viewRoot` is what makes this branch reachable at
+                // all. `pick` ends in `folder(at:)`, which returns the deepest
+                // drawn folder containing the point, and the view root is drawn
+                // as the window-wide box — so ANY pixel not covered by a child
+                // resolves to the root, and `pick` never returns nil. Measured
+                // over a 300×200 canvas: 0 of 239,001 points returned nil, and on
+                // a fixture with real holes 728 points resolved to node 0 (audit
+                // UI-4). The whole-disk root was being selected by a click the
+                // documentation calls "clears the selection", and `crumbPath`
+                // then re-anchored on it.
+                //
+                // Treating the view root as empty space is the same rule
+                // `extendSelection` below already applies, which is what the
+                // comment there describes.
                 if event.modifierFlags.intersection([.command, .shift]).isEmpty {
                     focus(nil, tree: tree, model: model)
                 }
@@ -1033,7 +1048,15 @@ enum NodeActions {
     /// cannot disagree with the screen.
     private static func summary(_ items: [(node: Int, path: String, name: String)],
                                 tree: Tree) -> (count: String, bytes: UInt64) {
-        let total = items.reduce(UInt64(0)) { $0 + tree.alloc[$1.node] }
+        // `addingReportingOverflow`, because subtree totals are sums of sums: a
+        // pathological tree (or an engine bug) that already overflowed one
+        // folder's figure would trap the app here, in a dialog, instead of
+        // showing a wrong-but-alive number. This is the one byte sum that runs
+        // on a user gesture (audit UI-9).
+        let total = items.reduce(UInt64(0)) { acc, item in
+            let (sum, overflowed) = acc.addingReportingOverflow(tree.alloc[item.node])
+            return overflowed ? UInt64.max : sum
+        }
         // `String(items.count)`, not the Int itself: an Int interpolation builds
         // the key "%lld items", and the tables define "%@ items" — every
         // translation silently fell back to English. A String interpolation
