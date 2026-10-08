@@ -56,7 +56,8 @@ nonisolated enum ScopedAccess {
     /// convenience below would be lost.
     static let bootVolumeDataPath = "/System/Volumes/Data"
 
-    /// The path the stored bookmark resolves to, or nil when there is none.
+    /// The path the stored bookmark resolves to, or nil when there is none **or
+    /// the bookmark is stale**.
     ///
     /// Resolved **without** starting access: this only inspects, and
     /// `startAccessingSecurityScopedResource()` outlives nothing here — the
@@ -65,13 +66,22 @@ nonisolated enum ScopedAccess {
     /// passed, so a plain resolve here would quietly take an extension that
     /// `isStale`/`covers` never drop. `Grant.hold()` is the one place that
     /// acquires, explicitly.
+    ///
+    /// **Stale means nil, deliberately.** `Grant.hold()` refuses a stale
+    /// bookmark (`!stale` in its guard), so a `grantedPath` that ignored
+    /// staleness made the gate and the grant disagree: `covers(target)` returned
+    /// true, the gate skipped the picker, and `hold()` then returned nil —
+    /// a scan with no access to its root, i.e. the silently empty panel the
+    /// gate exists to prevent, reached through a second door (audit SW-1). One
+    /// question, one answer: if resolution says the bookmark no longer names
+    /// what it did, nothing may treat it as authorization.
     static var grantedPath: String? {
         guard let bookmark = stored() else { return nil }
         var stale = false
         guard let url = try? URL(resolvingBookmarkData: bookmark,
                                  options: [.withSecurityScope, .withoutImplicitStartAccessing],
                                  relativeTo: nil,
-                                 bookmarkDataIsStale: &stale) else { return nil }
+                                 bookmarkDataIsStale: &stale), !stale else { return nil }
         return url.path
     }
 
@@ -80,9 +90,13 @@ nonisolated enum ScopedAccess {
     /// "Is any grant stored", which is **not** the question the scan gate asks:
     /// a grant of `/Applications` used to satisfy this and let a Home or
     /// whole-disk scan start with no access to it, producing an empty tree
-    /// instead of a request for the folder (B3). The gate uses `covers(_:)`;
-    /// this stays for callers that genuinely want the weaker question, and for
-    /// tests that assert the storage contract.
+    /// instead of a request for the folder (B3). The gate uses `covers(_:)`.
+    ///
+    /// No app call site remains — the gate was the only one, and it moved to
+    /// `covers` — so this is the storage contract's assertion surface for
+    /// `tests/swift/scoped-access.swift` (audit SW-14). It stays because the
+    /// distinction it draws (stored vs. resolve-able vs. still-there) is what the
+    /// tests pin; it is not API for new app code.
     static var hasUsableBookmark: Bool {
         guard let path = grantedPath, !path.isEmpty else { return false }
         return !isStale && FileManager.default.fileExists(atPath: path)
@@ -244,6 +258,17 @@ nonisolated enum ScopedAccess {
     /// fail. `hold()` is therefore idempotent and lives until the app exits —
     /// the standard lifetime for a security-scoped resource the user has
     /// deliberately handed over.
+    ///
+    /// `@MainActor`, because it owns mutable state (`url`, `heldBookmark`) and
+    /// hands it to the session's cleanup. `ScopedAccess` is `nonisolated` — its
+    /// other members are pure reads of `UserDefaults` and path strings — which
+    /// meant this class inherited no isolation and could be driven from several
+    /// threads at once with no diagnostic: two `hold()` calls racing could each
+    /// start an extension and one `url` would be overwritten without its
+    /// `stopAccessing` ever running, leaking it for the process's life (audit
+    /// SW-6). Every caller is already main-actor (the scan UI and `ScanModel`),
+    /// so this costs nothing.
+    @MainActor
     final class Grant {
         private var url: URL?
         /// The bookmark the held extension came from. Comparing it is how a
@@ -315,6 +340,12 @@ nonisolated enum ScopedAccess {
         /// Whether access is currently held.
         var isHeld: Bool { url != nil }
 
-        deinit { release() }
+        /// Deinit cannot touch main-actor state, so it stops the extension
+        /// directly rather than through `release()`. The values it needs are the
+        /// ones the object owns, and deinit runs only when nothing else holds a
+        /// reference, so no other thread can be inside `hold()` at this point.
+        deinit {
+            url?.stopAccessingSecurityScopedResource()
+        }
     }
 }

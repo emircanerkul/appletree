@@ -172,25 +172,28 @@ struct ContentView: View {
         // question that matters here — does the grant the app holds actually
         // authorize *this* target.
         //
-        // The Home target is gated, and so is a mounted drive: `~/` is exactly
-        // what Home scans, and a `/Volumes/*` mount is another device whose
-        // bytes the boot volume's grant does not cover (see
-        // `ScopedAccess.covers`). Whether the sandbox lets the app read a *real*
-        // external volume on the entitlements alone could not be measured here —
-        // every volume mounted on this machine is a disk image, and
-        // `ScanModel.isDiskImage` keeps those out of the picker, so the drive
-        // gate is mostly unreachable. It is gated anyway, and the default is the
-        // right way round: an unnecessary panel costs one click, while a
-        // silently empty scan of a real external disk costs the user the
-        // feature. `/Applications` stays ungated — it is measured readable on
-        // the entitlements alone, and asking for a folder the app can already
-        // read is a prompt for nothing.
+        // **Coverage is the ONLY condition.** A second predicate used to narrow
+        // this to the targets the UI's own list happened to name (Macintosh HD,
+        // Home, `/Volumes/*`). Everything else — a folder the user picked in the
+        // panel, which is then what `model.scanRoot` holds and what Rescan and
+        // the next launch request — was declared "not gated", skipped this
+        // branch, and started a scan the sandbox denied. Measured in a sandboxed
+        // bundle: such a target produced a 1-node tree with `errors=1`, i.e. the
+        // panel showed "Nothing large to clean up" for a folder the user had
+        // explicitly handed over (audit SW-2). A target allowlist beside the
+        // coverage test can only ever disagree with it; there is no reason for
+        // one to exist.
+        //
+        // `/Applications` therefore prompts now too, and that is the right
+        // trade: an unnecessary panel costs one click, while a silently empty
+        // scan costs the feature. Measured, `/Applications` is readable on the
+        // entitlements alone, so the common case still resolves in one click —
+        // and a grant made for it is remembered like any other.
         //
         // Opening the panel here, rather than showing a card that tells the user
         // to open it, is the point: only the panel can extend the sandbox, so a
         // button that merely displays instructions cannot make the click work.
-        if AppEnvironment.isSandboxed, !ScopedAccess.covers(target),
-           isSandboxGatedTarget(target) {
+        if AppEnvironment.isSandboxed, !ScopedAccess.covers(target) {
             chooseFolder()
             return
         }
@@ -209,27 +212,6 @@ struct ContentView: View {
         }
         pendingScanPath = path
         needsFDA = true
-    }
-
-    /// Whether a sandboxed build must have a grant covering `target` before it
-    /// may scan it.
-    ///
-    /// Gated: the disk root and its Data-volume spelling, Home, and anything
-    /// under `/Volumes` (another device's bytes, which the boot volume's grant
-    /// does not cover). Not gated: `/Applications` and any other path outside
-    /// the user's area — measured readable on the entitlements alone, so a
-    /// panel there would ask for access the app already has.
-    ///
-    /// Kept next to `requestScan` rather than inline so the gate and the
-    /// `chooseFolder` outcome check cannot disagree about which targets need a
-    /// grant: `covers` decides *whether this grant* is enough, this decides
-    /// *whether one is needed at all*.
-    private func isSandboxGatedTarget(_ target: String) -> Bool {
-        if target == ScanTargets.macintoshHD.path || target == ScanTargets.home.path {
-            return true
-        }
-        let volume = "/Volumes"
-        return target == volume || target.hasPrefix(volume + "/")
     }
 
     /// The sandboxed build's "that choice gave no access" card.
@@ -528,6 +510,15 @@ struct ContentView: View {
     /// A target that is not gated at all (`/Applications`, measured readable on
     /// the entitlements alone) still starts after a pick, since the pick was
     /// about a different folder and refusing it would strand the user.
+    /// A pick that cannot be used reports it; it never silently becomes another
+    /// scan. The retry this used to carry — bookmark the chosen folder, else
+    /// bookmark `/System/Volumes/Data` and scan *that* — was worse than a
+    /// failed pick: measured in a sandboxed bundle, choosing `/opt`,
+    /// `/private/var` or an unmounted `/Volumes/Ghost` made `remember` fail with
+    /// error 256, the retry then succeeded for the Data volume, the coverage
+    /// check below passed because it was now asking about a different path, and
+    /// the app scanned the whole disk. The user asked for one folder and got an
+    /// unrelated multi-minute scan with no explanation (audit SW-3).
     private func chooseFolder() {
         guard !choosingFolder else { return }
         choosingFolder = true
@@ -538,15 +529,10 @@ struct ContentView: View {
         panel.allowsMultipleSelection = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
-        var scanPath = url.path == "/" ? ScanTargets.macintoshHD.path : url.path
-        // A leading store attempt, then a retry for the root case: the panel
-        // can hand back `/` itself, and bookmarking the Data volume is the
-        // spelling the scan wants.
-        if !ScopedAccess.remember(URL(fileURLWithPath: scanPath)),
-           scanPath != ScanTargets.macintoshHD.path,
-           ScopedAccess.remember(URL(fileURLWithPath: ScanTargets.macintoshHD.path)) {
-            scanPath = ScanTargets.macintoshHD.path
-        }
+        // The panel normalises the sidebar's "Macintosh HD" row to `file:///`;
+        // the Data volume is the spelling this app scans and bookmarks.
+        let scanPath = url.path == "/" ? ScanTargets.macintoshHD.path : url.path
+        _ = ScopedAccess.remember(URL(fileURLWithPath: scanPath))
         // What matters is the stored root, not the write's return value: a
         // bookmark that no longer resolves (or resolves elsewhere) authorizes
         // nothing. `grantedPath` is the resolved truth the gate itself reads.
@@ -555,6 +541,9 @@ struct ContentView: View {
             return
         }
         needsFolderChosen = false
+        // The user may have changed their mind about scanning while the panel
+        // was open; the gate ran before it, so ask again (audit SW-8).
+        guard model.canScan else { return }
         // Scan the folder the grant actually covers — the normalised pick, not
         // the raw `file:///` the panel may have handed back. `choosingFolder`
         // is still set here, so even a re-entrant gate match cannot re-prompt.

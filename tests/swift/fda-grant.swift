@@ -59,6 +59,14 @@ func check(_ name: String, _ condition: Bool, _ detail: String = "") {
 /// variable assignment. `deploy-sandbox`'s recipe is what has to sign with a
 /// stable identity, so this is the scope the assertion must read — not the
 /// whole file, where `build`'s (correct) identity selection would satisfy it.
+///
+/// **Recipe comments are stripped.** A Makefile recipe may carry `#` comments
+/// (tab-indented, so they are recipe lines, not Makefile comments), and the
+/// `deploy-sandbox` recipe is full of prose that names `find-identity` and
+/// `--sign -`. Testing the raw recipe meant a *comment* could satisfy a
+/// positive assertion and could not fail a negative one — the same defect this
+/// file already fixed for Swift source. Both directions now read executable
+/// recipe text only, so a `# …` line neither proves nor breaks anything.
 func makeRecipe(_ target: String, in makefile: String) -> String {
     let lines = makefile.split(separator: "\n", omittingEmptySubsequences: false)
     var out: [Substring] = []
@@ -72,7 +80,11 @@ func makeRecipe(_ target: String, in makefile: String) -> String {
             inside = line.hasPrefix("\(target):")
             continue
         }
-        if inside { out.append(line) }
+        if inside {
+            // Drop the comment tail, keeping what a shell would actually run.
+            let code = line.prefix { $0 != "#" }
+            if !code.trimmingCharacters(in: .whitespaces).isEmpty { out.append(code) }
+        }
     }
     return out.joined(separator: "\n")
 }

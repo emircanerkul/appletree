@@ -11,8 +11,8 @@
 #   make deploy                rebuild and clean-replace /Applications/AppleTree.app
 #   make package               build, notarize (if Developer ID + notary profile),
 #                              and produce AppleTree.dmg + SHA256SUMS.txt locally
-#   make test                  guard unit tests (Swift, linked against the Rust staticlib)
-#   make test-rust             cargo test --release
+#   make test                  the full suite: Rust engine tests, Swift suites, JSON CLI, l10n
+#   make test-rust             cargo test --release (also runs inside `make test`)
 #   make engine                cargo build --release only
 #   make icon                  regenerate AppIcon source (assets/gen_icon.py)
 #   make clean                 remove build/, .build/, AppleTree.dmg, SHA256SUMS.txt
@@ -85,7 +85,6 @@ help:
 	@echo '  make test-engine-writer ProviderStore is the only owner of bz.engine'
 	@echo '  make test-l10n          every .strings table has the same keys, no duplicates'
 	@echo '  make test-prompt-scope  the planner prompt only describes folders the scan covered'
-	@echo '  make test-rust          cargo test --release'
 	@echo '  make engine             cargo build --release only'
 	@echo '  make icon               regenerate AppIcon source (assets/gen_icon.py)'
 	@echo '  make clean              remove build/, .build/, dmg and checksums'
@@ -460,7 +459,11 @@ test-rust:
 # bz_cleanup_allowlist FFI (fail-closed).
 # The .strings check runs first: it is instant, and a table that drifted is a
 # bug the Swift tests cannot see, so there is no reason to compile first.
-test: engine test-l10n test-drawer test-deletion test-selection test-mapweights test-links test-readme test-doclinks test-router test-privacy test-planner-selection test-prompt-scope test-shellenv test-engine-writer test-cli test-fda-grant test-scoped-access
+# The Rust engine suite is a prerequisite, not a separate errand: it is the only
+# coverage for recognition (`src/cleanup.rs`), the FFI bridge and the JSON CLI's
+# report shape, and there is no CI in this repository. Leaving it out made
+# `make test` green while all 31 engine tests never ran (audit CD-1/L1).
+test: test-rust engine test-l10n test-drawer test-deletion test-selection test-mapweights test-links test-readme test-doclinks test-router test-privacy test-planner-selection test-prompt-scope test-shellenv test-engine-writer test-cli test-fda-grant test-scoped-access
 	@mkdir -p .build
 	swiftc tests/swift/main.swift app/CleanupGuard.swift app/AppEnvironment.swift \
 	    -import-objc-header app/bz.h \

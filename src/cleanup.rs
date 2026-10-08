@@ -149,19 +149,42 @@ fn parent_of(t: &Tree, i: u32) -> Option<u32> {
     (p != NO_PARENT).then_some(p)
 }
 
-/// True when `dir` is a user's home directory as the tree sees it: either the
-/// scan root itself (scanning `~`) or `<root>/Users/<user>` (scanning the whole
-/// volume, where node 0 is the Data root).
-fn is_home_dir(t: &Tree, dir: u32) -> bool {
+/// True when the usable path *is* a home directory: `<Users>/<user>` at the head,
+/// with nothing before it.
+///
+/// The head position is what `volume_prefix` already guarantees: `/Users/<u>`,
+/// `/System/Volumes/Data/Users/<u>` and `/Volumes/<n>/Users/<u>` all arrive here
+/// as `["Users", "<u>"]`. A deeper `Users` component is a folder that merely
+/// shares the name — a project's `Projects/Users/foo` — and must not read as a
+/// second home (audit RC-3).
+fn is_home_path(path: &[&str]) -> bool {
+    path.len() == 2 && path[0] == "Users"
+}
+
+/// True when `dir` is a user's home directory as the tree sees it: the scan root
+/// itself (`~`, a whole volume, a folder scan), or a node whose usable path is
+/// the anchored pair `<Users>/<user>`.
+///
+/// The second arm is judged from the **reconstructed path**, not from the tree's
+/// shape. The old test required the `Users` directory to be a direct child of
+/// the scan root (`t.parents[users] == 0`), which can never hold when the scan
+/// root *is* `/Users` — the root's `parents[0]` is `NO_PARENT`, not `0`. So a
+/// scan of `/Users` recognised no home below it, skipped every home-level
+/// narrowing, and nominated `~/Library/Caches`, the shared root the guard
+/// refuses. Because the panel's Move does not re-run the guard (the user's tick
+/// is the authorization), that row could really be trashed, taking every app's
+/// live cache with it (audit L3/RC-1).
+fn is_home_dir(t: &Tree, root: &ScanRoot<'_>, dir: u32) -> bool {
     if dir == 0 {
         return true;
     }
-    parent_of(t, dir).is_some_and(|users| {
-        t.name(users as usize) == "Users" && t.parents[users as usize] == 0
-    })
+    let mut path = root.parts.clone();
+    path.extend(node_below(t, dir));
+    is_home_path(&path)
 }
 
-/// The user's own `Library` — `~/Library`, or `<root>/Users/<user>/Library`.
+/// The user's own `Library/Caches` — `~/Library/Caches`, or
+/// `<root>/Users/<user>/Library/Caches`. `library` is the **Library node**.
 ///
 /// This exists because `~/Library/Caches` is a *shared, app-wide* cache root:
 /// `CleanupGuard.tooBroad` refuses it as too broad, and only its named
@@ -169,14 +192,33 @@ fn is_home_dir(t: &Tree, dir: u32) -> bool {
 /// authorization will refuse, or the panel offers a Move that fails with
 /// "Too broad". Deeper `Library/Caches` directories belong to one app or
 /// simulator and stay nominated.
-fn is_home_library(t: &Tree, library: u32) -> bool {
-    parent_of(t, library).is_some_and(|home| is_home_dir(t, home))
+///
+/// `library == 0` answers `true`: node 0 is the scan root, and the scan root is
+/// the boundary its own children are measured from. That is the **folder scan of
+/// `~/Library`**, where the Library *is* node 0 — `parent_of` returns `None` for
+/// it, so an ancestor walk cannot see it, and without this arm such a scan
+/// offered `Caches`, the very too-broad root the guard refuses (audit RC-2).
+/// A service root (`/Library`, `/Applications`) behaves the same way, and that
+/// is correct rather than a leak: the guard refuses `<root>/Library/Caches`
+/// there as "Outside your home folder", so recognition must stay silent too.
+fn is_home_library(t: &Tree, root: &ScanRoot<'_>, library: u32) -> bool {
+    if library == 0 {
+        return true;
+    }
+    parent_of(t, library).is_some_and(|home| is_home_dir(t, root, home))
 }
 
-/// True when a *named* cache directory is the home-level broad root the guard
-/// refuses: `~/.cache`. `.npm` and `.gradle` are per-tool and stay nominated.
-fn is_home_broad_cache(t: &Tree, i: u32) -> bool {
-    parent_of(t, i).is_some_and(|home| is_home_dir(t, home))
+/// True when a directory is the home-level broad cache root the guard refuses:
+/// `~/.cache`. `.npm` and `.gradle` are per-tool and stay nominated, and a
+/// *nested* `.cache` (a project's) is one owner's data and stays too.
+///
+/// `i == 0` is the folder scan of `~/.cache` itself, for the same reason as
+/// `is_home_library`: node 0 is the boundary its children are measured from.
+fn is_home_broad_cache(t: &Tree, root: &ScanRoot<'_>, i: u32) -> bool {
+    if i == 0 {
+        return true;
+    }
+    parent_of(t, i).is_some_and(|home| is_home_dir(t, root, home))
 }
 
 /// True when `dir` is a real application bundle rather than a directory that
@@ -560,10 +602,19 @@ fn at_rule_location(path: &ScannedPath<'_>, rule: &CacheRule) -> bool {
     // (a folder scan below `~/Library/Caches`) or below it (a whole-volume scan),
     // so the whole path is searched.
     match (0..path.len()).position(|k| path.component(k) == "Users") {
-        // A `Users` component must be followed by a user name and the rule must
-        // begin right after that pair.
-        Some(k) => k + 1 < path.len() && k + 2 == start,
-        // No `Users` anywhere: the root is the home boundary, when it is a home.
+        // A `Users` component must be followed by a user name, the rule must
+        // begin right after that pair, AND the pair must sit at a real volume
+        // boundary — the head of the usable prefix.
+        //
+        // The boundary test is what makes a literal `Users` directory harmless
+        // anywhere else. `is_home()` already refuses `/opt`, `/private/tmp` and
+        // `/Network` as homes, but it is only consulted on the no-`Users` branch,
+        // so a project directory named `Users` under any of them re-enabled every
+        // table row and nominated caches the guard then refused as "Outside your
+        // home folder" (audit RC-4).
+        Some(k) => k == 0 && k + 1 < path.len() && k + 2 == start,
+        // No `Users` anywhere: the root is the home boundary, when it is a home,
+        // and the rule must begin at or below it.
         None => path.root.is_home() && start <= path.root.parts.len(),
     }
 }
@@ -611,9 +662,18 @@ fn kind_at(t: &Tree, root: &ScanRoot<'_>, i: u32) -> Option<Kind> {
         return None;
     }
     let parent = t.parents[i as usize];
-    let parent_name = if parent != NO_PARENT { t.name(parent as usize) } else { "" };
+    // The node's path in the components the rules are written in, built once.
+    // Every name test below reads a *reconstructed* component rather than
+    // `t.name(parent)`: a scan root's name is its whole absolute path, so when
+    // the parent IS the scan root that call yields "/Users/me/…/Xcode" instead
+    // of "Xcode", and a folder scan rooted at the folder holding the cache
+    // silently lost it (audit RC-2).
+    let below = node_below(t, i);
+    let path = ScannedPath { root, below: &below };
+    let name = path.component(path.len().saturating_sub(1));
+    let parent_name = if path.len() >= 2 { path.component(path.len() - 2) } else { "" };
     // Marker lookups happen only for the named artifact, not every sibling.
-    match t.name(i as usize) {
+    match name {
         "node_modules" => Some(Kind::NodeModules),
         ".venv" => Some(Kind::PythonEnvironment),
         "venv" if contains(t, i, "pyvenv.cfg") => Some(Kind::PythonEnvironment),
@@ -625,19 +685,21 @@ fn kind_at(t: &Tree, root: &ScanRoot<'_>, i: u32) -> Option<Kind> {
         }
         // Not the home's own Library/Caches: that root is too broad (see
         // `is_home_library`). A simulator's or an app's deeper Library/Caches is
-        // one owner's data and stays a candidate.
-        "Caches" if parent_name == "Library" && !is_home_library(t, parent) => {
+        // one owner's data and stays a candidate. `full` is this node's own path.
+        "Caches" if parent_name == "Library" && !is_home_library(t, root, parent) => {
             Some(Kind::AppCaches)
         }
         "Caches" if parent_name == "CoreSimulator" => Some(Kind::AppCaches),
         // `.cache` at the home root is too broad; a tool's own nested `.cache`
         // (e.g. a project's) is not.
-        ".cache" if !is_home_broad_cache(t, i) => Some(Kind::ToolCaches),
+        ".cache" if !is_home_broad_cache(t, root, i) => Some(Kind::ToolCaches),
         ".npm" | ".gradle" => Some(Kind::ToolCaches),
+        // `<home>/.bun/install/cache`, in the components the rules are written
+        // in rather than by bare parent names (RC-2).
         "cache"
             if parent_name == "install"
-                && t.parents[parent as usize] != NO_PARENT
-                && t.name(t.parents[parent as usize] as usize) == ".bun" =>
+                && path.len() >= 3
+                && path.component(path.len() - 3) == ".bun" =>
         {
             Some(Kind::BunCache)
         }
@@ -1343,6 +1405,95 @@ mod tests {
     }
 
     #[test]
+    fn a_scan_of_users_does_not_offer_the_shared_cache_roots() {
+        // L3/RC-1, the destructive one. `is_home_dir` used to require the
+        // `Users` directory to be a direct child of the scan root
+        // (`t.parents[users] == 0`), which can never hold when the scan root IS
+        // `/Users`: node 0's parent is `NO_PARENT`. So a scan of `/Users`
+        // recognised no home below it, skipped the home-level narrowing, and
+        // offered `~/Library/Caches` and `~/.cache` — the shared roots
+        // `CleanupGuard.tooBroad` refuses.
+        //
+        // That is not a dead row here: the panel's Move uses
+        // `authority: .userDirect` (`app/CleanupModel.swift`), which skips the
+        // guard because the user's tick *is* the authorization. Trashing the row
+        // would take every app's live cache with it.
+        //
+        // The two roots are reached through completely different rules — a
+        // `Caches` under a `Library`, and a home-level `.cache` — so both are
+        // asserted, and in both spellings the app can produce.
+        let pip = |t: &mut Tree, i: u32| {
+            add(t, i, "http-v2", true, MIN_BYTES);
+        };
+        for root in ["/Users", "/System/Volumes/Data/Users", "/Volumes/Ext/Users"] {
+            // `~/Library/Caches` — the broad root the panel must never offer.
+            let (scan, node) = rooted(root, "erkul/Library/Caches", pip);
+            assert_eq!(
+                kind(&scan, node),
+                None,
+                "root {root}: ~/Library/Caches is the shared root the guard refuses"
+            );
+            assert!(
+                find(&scan, MIN_BYTES).is_empty(),
+                "root {root}: it must not reach the candidate list either"
+            );
+
+            // `~/.cache` — the same narrowing, on the other rule.
+            let (scan, node) = rooted(root, "erkul/.cache", pip);
+            assert_eq!(kind(&scan, node), None, "root {root}: ~/.cache is too broad");
+            assert!(find(&scan, MIN_BYTES).is_empty(), "root {root}: nor in the list");
+
+            // The control: a *named* subfolder of the same roots is fair game,
+            // so the fix must not have silenced the whole subtree.
+            let (scan, node) = rooted(root, "erkul/Library/Caches/pip", pip);
+            assert_eq!(
+                kind(&scan, node),
+                Some(Kind::ToolCache("pip")),
+                "root {root}: a named cache under the broad root still goes"
+            );
+        }
+    }
+
+    #[test]
+    fn a_folder_scan_of_the_folder_holding_a_cache_finds_it() {
+        // RC-2. The shape rules compared `t.name(parent)`, but a scan root's
+        // name is its **whole absolute path**: scanning `~/Library/Developer/Xcode`
+        // makes that the parent's name, so `parent_name == "Xcode"` was false
+        // and `DerivedData` — 2.0 GB on the machine this was measured on — was
+        // never offered. Same for `.../CoreSimulator`, `~/.bun/install` and
+        // `~/Library` (whose `Caches` is the broad root, so it must stay out).
+        //
+        // The measured pair: a `$HOME` scan offered DerivedData, and a scan of
+        // its own parent — the folder a user picks precisely to clean it —
+        // offered nothing.
+        let (scan, node) = rooted("/Users/me/Library/Developer/Xcode", "DerivedData", |t, i| {
+            add(t, i, "build", true, MIN_BYTES);
+        });
+        assert_eq!(
+            kind(&scan, node),
+            Some(Kind::XcodeDerivedData),
+            "a folder scan of the folder holding DerivedData must find it"
+        );
+        assert_eq!(find(&scan, MIN_BYTES).len(), 1, "and reach the candidate list");
+
+        // The same for the `.bun` identity rule, which compared two bare names.
+        let (scan, node) = rooted("/Users/me/.bun/install", "cache", |_, _| {});
+        assert_eq!(kind(&scan, node), Some(Kind::BunCache), "~/.bun/install/cache");
+
+        // A folder scan of `~/Library` must NOT offer its own `Caches`: that is
+        // the too-broad root, now that node 0 is recognised as the boundary.
+        let pip = |t: &mut Tree, i: u32| {
+            add(t, i, "http-v2", true, MIN_BYTES);
+        };
+        let (scan, node) = rooted("/Users/me/Library", "Caches", pip);
+        assert_eq!(kind(&scan, node), None, "~/Library/Caches stays too broad");
+
+        // Control: the same scan one level deeper still finds the tool cache.
+        let (scan, node) = rooted("/Users/me/Library", "Caches/pip", pip);
+        assert_eq!(kind(&scan, node), Some(Kind::ToolCache("pip")));
+    }
+
+    #[test]
     fn a_service_folder_is_not_a_home() {
         // B5: the no-`Users` fallback used to accept any absolute root, so
         // `/Library/Caches`, `/Library` and `/private/tmp/notahome` were read as
@@ -1553,6 +1704,7 @@ mod tests {
         }
     }
 }
+
 
 
 

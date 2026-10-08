@@ -107,6 +107,32 @@ func canonical(_ path: String) -> String {
     URL(fileURLWithPath: path).resolvingSymlinksInPath().path
 }
 
+/// One Swift function's body, from its signature to its matching closing brace.
+///
+/// Scoping a source-shaped assertion to the function that owns the behaviour is
+/// what gives it meaning: `ScopedAccess.covers(` occurs in several places, so a
+/// whole-file `contains` cannot say *where* the gate calls it — and cannot fail
+/// when the gate stops calling it at all (audit SW-21).
+func functionBody(startingAt signature: String, in code: String) -> String {
+    guard let start = code.range(of: signature),
+          let open = code.range(of: "{", range: start.upperBound..<code.endIndex) else {
+        return ""
+    }
+    var depth = 0
+    var i = open.lowerBound
+    while i < code.endIndex {
+        let c = code[i]
+        if c == "{" {
+            depth += 1
+        } else if c == "}" {
+            depth -= 1
+            if depth == 0 { return String(code[start.lowerBound...i]) }
+        }
+        i = code.index(after: i)
+    }
+    return ""
+}
+
 @main
 enum ScopedAccessTests {
     static func main() {
@@ -340,19 +366,35 @@ enum ScopedAccessTests {
 
         // --- 6. Structural: the UI gate asks the coverage question -------------
         //
-        // ContentView does not compile into this target, so this is the one
-        // source-shaped assertion: the scan gate must call `covers`, and must no
+        // ContentView does not compile into this target, so these are the
+        // source-shaped assertions: the scan gate must call `covers`, and must no
         // longer decide on the mere existence of a bookmark (B3). Comments are
-        // stripped first, so prose cannot satisfy it.
+        // stripped first, so prose cannot satisfy them.
+        //
+        // The gate is read from `requestScan`'s OWN body, not the whole file. A
+        // whole-file `contains("ScopedAccess.covers(")` passed even when the gate
+        // was unreachable, because `chooseFolder` calls `covers` too — so the
+        // assertion could not see the defect (SW-21). Scoping it to the function
+        // that decides means a gate that stops firing fails here.
         let contentPath = root.appendingPathComponent("app/ContentView.swift")
         let content = strippingComments((try? String(contentsOf: contentPath, encoding: .utf8)) ?? "")
         check("ContentView.swift was read", !content.isEmpty, contentPath.path)
+        let gate = functionBody(startingAt: "private func requestScan(", in: content)
+        check("the scan gate's own body was found [structural]", !gate.isEmpty,
+              "the assertions below cannot be evaluated without it")
         check("the scan gate asks whether the grant covers the target [structural]",
-              content.contains("ScopedAccess.covers("),
+              gate.contains("!ScopedAccess.covers("),
               "coverage, not existence: an unrelated grant must not disable the gate")
         check("the scan gate no longer decides on a stored bookmark's existence [structural]",
-              !content.contains("ScopedAccess.hasUsableBookmark"),
+              !gate.contains("ScopedAccess.hasUsableBookmark"),
               "existence is the B3 bug")
+        // Coverage must be the ONLY condition that gates a scan. A second
+        // predicate (`isSandboxGatedTarget`) meant only the targets the UI's own
+        // list happened to name were gated, so a user-chosen folder scanned
+        // uncovered and came back empty (SW-2).
+        check("no second predicate narrows which targets are gated [structural]",
+              !gate.contains("isSandboxGatedTarget"),
+              "coverage alone decides; a target allowlist goes stale")
 
         print("")
         if substitutions > 0 { print("\(substitutions) substituted (see NOTE/SUBSTITUTED above)\n") }

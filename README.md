@@ -246,8 +246,8 @@ make build             # build/AppleTree.app
 make deploy            # build and install to /Applications
 make open              # build and launch
 make package           # notarize when possible, and package AppleTree.dmg locally
-make test              # guard unit tests, l10n check and the Swift suites
-cargo test --release   # engine tests
+make test              # the full suite: Rust engine tests, Swift suites, JSON CLI, l10n
+make test-rust         # cargo test --release only (also runs inside `make test`)
 ```
 
 The Rust engine hands the finished tree to the Swift UI as flat arrays over a C
