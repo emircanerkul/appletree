@@ -326,6 +326,126 @@ func run() async {
             try? fm.removeItem(at: modules.deletingLastPathComponent())
             try? fm.removeItem(at: pip)
         }
+
+        // --- The scan picker must offer drives, not virtual disks ------------
+        //
+        // `ScanTargets.mountedDrives()` excludes a volume whose media is backed
+        // by a file (`Physical Interconnect Location == "File"` — a mounted
+        // `.dmg`/installer). A RAM disk reports `"RAM"` for the same key, and
+        // that value was missing, so a memory disk appeared in the picker as if
+        // it were a drive: a 100 MB `hdiutil attach -nomount ram://…` volume
+        // showed as "BZRam" in the target list while owning no storage anyone
+        // wants in a "why is my disk full" scan.
+        //
+        // Asserted against real devices on this machine rather than a stub: a
+        // RAM disk is created here, and the fixture is removed afterwards. The
+        // positive half matters as much as the negative — a filter that hid
+        // every volume would pass the exclusion checks alone, so the boot
+        // volume's own classification is asserted too.
+        do {
+            // A mounted probe image and a RAM disk, built here so the test does
+            // not depend on either existing. `/usr/bin/hdiutil` is the supported
+            // way to make both.
+            func run(_ launchPath: String, _ args: [String]) -> String {
+                let p = Process()
+                p.executableURL = URL(fileURLWithPath: launchPath)
+                p.arguments = args
+                let pipe = Pipe()
+                p.standardOutput = pipe
+                p.standardError = pipe
+                try? p.run()
+                p.waitUntilExit()
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                return String(decoding: data, as: UTF8.self)
+            }
+
+            let imgPath = fm.temporaryDirectory.appendingPathComponent("bz-picker-\(pid).dmg").path
+            _ = run("/usr/bin/hdiutil", ["create", "-size", "10m", "-fs", "HFS+",
+                                         "-volname", "BZPickerImg", imgPath, "-quiet"])
+            // NOT `-quiet`: that suppresses the mount-point line this needs. The
+            // output is `<device>\t<filesystem>\t/mount/point` per partition.
+            let attachOut = run("/usr/bin/hdiutil", ["attach", imgPath])
+            var imgVolume: String? = nil
+            for line in attachOut.split(separator: "\n") {
+                for field in line.split(separator: "\t")
+                where field.trimmingCharacters(in: .whitespaces).hasPrefix("/Volumes/") {
+                    imgVolume = field.trimmingCharacters(in: .whitespaces)
+                }
+            }
+
+            let ramOut = run("/usr/bin/hdiutil", ["attach", "-nomount", "ram://204800"])
+            // The device line looks like `/dev/disk10\t\t\t`; the deprecation
+            // warning also goes to the same stream, so the device is found by
+            // matching the `/dev/` prefix rather than by taking the first field.
+            var ramDev = ""
+            for line in ramOut.split(separator: "\n") {
+                let first = line.split(whereSeparator: { $0 == " " || $0 == "\t" }).first.map(String.init) ?? ""
+                if first.hasPrefix("/dev/") { ramDev = first }
+            }
+
+            // The classification, asked directly about the device we just made.
+            //
+            // This is the assertion that actually pins the fix. Asking the
+            // PICKER whether the RAM disk is absent passes either way, because a
+            // bare `ram://` device carries no filesystem and `mountedVolumeURLs`
+            // never lists it — so that check cannot fail and proves nothing. The
+            // defect was in the classifier, which reported a RAM-backed device
+            // as a real drive, and that is what a mounted, browsable RAM volume
+            // (a formatted one) would then be offered on. Asserting the class
+            // makes the test fail on the old rule.
+            if !ramDev.isEmpty {
+                let ramBSD = (ramDev as NSString).lastPathComponent
+                check("a RAM-backed device is classified as virtual storage",
+                      ScanTargets.classifyVolumeForTest(bsdName: ramBSD) == .virtual,
+                      "\(ramBSD) classified as a drive — it would be offered if it held a filesystem")
+            }
+
+            let offered = ScanTargets.mountedDrives()
+            let offeredPaths = Set(offered.map(\.path))
+
+            // The fixture proves the classification works on a device we control.
+            if !ramDev.isEmpty {
+                // The RAM device is not a browsable volume (no filesystem), so
+                // it may not appear at all — that is also correct. What must NOT
+                // happen is it appearing as an offerable target.
+                check("a RAM disk is not offered as a scan target",
+                      !offeredPaths.contains(ramDev),
+                      "offered paths: \(offeredPaths.sorted())")
+            }
+            if let imgVolume {
+                check("a mounted disk image is not offered as a scan target",
+                      !offeredPaths.contains(imgVolume),
+                      "offered \(imgVolume); paths: \(offeredPaths.sorted())")
+            }
+
+            // The positive half: real storage must still be offered, or the
+            // filter has simply hidden everything. This machine's boot volume is
+            // the one device guaranteed to exist.
+            let bootBSD: String? = {
+                guard let s = DASessionCreate(kCFAllocatorDefault),
+                      let d = DADiskCreateFromVolumePath(kCFAllocatorDefault, s,
+                                                          URL(fileURLWithPath: "/") as CFURL),
+                      let desc = DADiskCopyDescription(d) as? [String: Any] else { return nil }
+                return desc[kDADiskDescriptionMediaBSDNameKey as String] as? String
+            }()
+            check("the boot volume is classified as real storage",
+                  ScanTargets.classifyVolumeForTest(bsdName: bootBSD) == .drive,
+                  "boot volume classified as excluded — the filter is too broad")
+
+            // Clean up both fixtures, unconditionally.
+            //
+            // `diskutil eject`, not `hdiutil detach`: the latter is deprecated
+            // and, on a bare `ram://` device with no mount, exits 1 with
+            // "No such file or directory" while leaving the device attached. The
+            // suite then accumulated `diskNN` nodes on every run — a test that
+            // leaks real devices is worse than no test.
+            func eject(_ target: String) {
+                _ = run("/usr/sbin/diskutil", ["eject", target])
+            }
+            if let imgVolume { eject(imgVolume) }
+            if !ramDev.isEmpty { eject(ramDev) }
+            try? fm.removeItem(atPath: imgPath)
+        }
     }
 }
 

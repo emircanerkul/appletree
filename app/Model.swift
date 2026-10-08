@@ -298,15 +298,43 @@ nonisolated enum ScanTargets {
         return description[kDADiskDescriptionMediaBSDNameKey as String] as? String
     }
 
-    /// True when the device behind `bsdName` is backed by a file — a mounted
-    /// disk image, not a drive. `Physical Interconnect Location` is "File" for
-    /// those and "Internal"/"External" for storage hardware, as the IOKit
-    /// storage protocol characteristics define it.
+    /// The volume classification, for the picker and for tests.
+    enum VolumeClass: Equatable {
+        /// Real storage media: offered as a scan target.
+        case drive
+        /// A disk image or a RAM disk: not a drive, never offered.
+        case virtual
+    }
+
+    /// What backs the device behind `bsdName`.
+    ///
+    /// One owner for the question, so a test cannot assert a rule the picker
+    /// does not use. See `isDiskImage` for what the property means.
+    static func classifyVolumeForTest(bsdName: String?) -> VolumeClass {
+        isDiskImage(bsdName: bsdName) ? .virtual : .drive
+    }
+
+    /// True when the device behind `bsdName` is *backed by something other than
+    /// storage hardware* — a mounted disk image, or a RAM disk.
+    ///
+    /// `Physical Interconnect Location` answers this, and there are two values
+    /// that mean "not a drive": `File` for a `.dmg`/installer whose bytes are a
+    /// file, and `RAM` for a memory disk. Both are `Virtual Interface` devices;
+    /// real storage reports `Internal`/`External`/`Thunderbolt`/…
+    ///
+    /// `RAM` was missing, so a RAM disk appeared in the picker as if it were a
+    /// drive. Measured with `hdiutil attach -nomount ram://204800` (a 100 MB
+    /// memory disk): path `/private/tmp/bzram`, name `BZRam`, protocol
+    /// `Virtual Interface`, interconnect `RAM` — offered as a scan target while
+    /// its 100 MB of system memory is not a disk anyone wants in a
+    /// "why is my disk full" list. Apple's own header defines the value: "If the
+    /// device is system memory that is being represented as a storage device,
+    /// this key should be set."
     ///
     /// Searched upwards through the IOService plane: the property sits on the
     /// storage device above the volume's media, not on the media itself.
-    /// A missing property reads as "not an image" — the volume keeps its
-    /// place in the list, so an unexpected device is never silently hidden.
+    /// A missing property reads as "a real drive" — the volume keeps its place
+    /// in the list, so an unexpected device is never silently hidden.
     private static func isDiskImage(bsdName: String?) -> Bool {
         guard let bsdName, let matching = IOBSDNameMatching(kIOMainPortDefault, 0, bsdName) else { return false }
         let service = IOServiceGetMatchingService(kIOMainPortDefault, matching)
@@ -318,6 +346,7 @@ nonisolated enum ScanTargets {
             kCFAllocatorDefault,
             IOOptionBits(kIORegistryIterateRecursively | kIORegistryIterateParents)) as? String
         return location == kIOPropertyInterconnectFileKey
+            || location == kIOPropertyInterconnectRAMKey
     }
 }
 
