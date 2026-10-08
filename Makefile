@@ -183,6 +183,7 @@ bundle: engine
 	    '    <key>NSHighResolutionCapable</key><true/>' \
 	    '    <key>NSHumanReadableCopyright</key><string>Emircan ERKUL</string>' \
 	    '    <key>CFBundleDevelopmentRegion</key><string>en</string>' \
+	    '    <key>ITSAppUsesNonExemptEncryption</key><false/>' \
 	    '    <key>NSAppTransportSecurity</key>' \
 	    '    <dict>' \
 	    '        <key>NSAllowsLocalNetworking</key><true/>' \
