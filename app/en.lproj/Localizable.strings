@@ -3,7 +3,7 @@
    back to an arbitrary available table. */
 
 "AppleTree needs Full Disk Access" = "AppleTree needs Full Disk Access";
-"System Settings → Privacy & Security → Full Disk Access.\nRemove any old AppleTree rows, then add /Applications/AppleTree.app.\nmacOS only applies the permission to a freshly launched app." = "System Settings → Privacy & Security → Full Disk Access.\nRemove any old AppleTree rows, then add /Applications/AppleTree.app.\nmacOS only applies the permission to a freshly launched app.";
+"System Settings → Privacy & Security → Full Disk Access.\nRemove any old AppleTree rows, then add %@.\nmacOS only applies the permission to a freshly launched app." = "System Settings → Privacy & Security → Full Disk Access.\nRemove any old AppleTree rows, then add %@.\nmacOS only applies the permission to a freshly launched app.";
 "Open System Settings" = "Open System Settings";
 "I granted it — Relaunch" = "I granted it — Relaunch";
 "Scan without it" = "Scan without it";
@@ -18,7 +18,7 @@
 "View" = "View";
 "Treemap" = "Treemap";
 "Rings" = "Rings";
-"Treemap (WizTree-style) or rings (DaisyDisk-style)" = "Treemap (WizTree-style) or rings (DaisyDisk-style)";
+"Treemap or concentric rings" = "Treemap or concentric rings";
 "Free Space" = "Free Space";
 "Show free space in the map" = "Show free space in the map";
 "Directory List" = "Directory List";
@@ -242,3 +242,4 @@
    the pane where providers are added and edited. */
 "Edit %@" = "Edit %@";
 "Manage model providers" = "Manage model providers";
+

@@ -98,7 +98,7 @@ nonisolated struct ShellEnvironment: Sendable {
     /// find `brew` or `uv`.
     static var fallbackPath: String {
         "/usr/bin:/bin:/usr/sbin:/sbin"
-            + ":\(NSHomeDirectory())/.local/bin"
+            + ":\(AppEnvironment.realHome)/.local/bin"
             + ":/opt/homebrew/bin"
             + ":/usr/local/bin"
     }
@@ -179,7 +179,7 @@ nonisolated enum ShellRunner {
     ///
     /// The bug this guards: a login shell that fails or times out produces no
     /// `BZPATH=`, and the code kept the bare Apple default — under which every
-    /// allowlisted tool row (`brew cleanup`, `uv cache clean`) fails with
+    /// allowlisted tool row (`brew cleanup`, `docker system prune`) fails with
     /// "command not found" even though the tool is installed. The fallback must
     /// therefore include the tool directories, and the LAST `BZPATH=` wins
     /// because a profile may echo more than one.

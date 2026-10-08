@@ -40,7 +40,7 @@ final class PlanItem: Identifiable {
         // A known tool cache named without its folder: use the standard one,
         // so its size is measured instead of guessed.
         if spec.action == .command, asked.isEmpty {
-            let home = NSHomeDirectory()
+            let home = AppEnvironment.realHome
             let known: [(String, String)] = [
                 ("uv cache", "\(home)/.cache/uv"), ("npm cache", "\(home)/.npm/_cacache"),
                 ("bun pm cache", "\(home)/.bun/install/cache"), ("pip cache", "\(home)/Library/Caches/pip"),
@@ -153,7 +153,11 @@ final class AgentRun {
         preparationTask = Task { [weak self] in
             guard !Task.isCancelled else { return }
             let input = await Task.detached(priority: .userInitiated) {
-                AgentPrompt.build(tree: tree, scanRoot: scanRoot, known: known, running: running)
+                // A sandboxed build cannot launch a tool, so it must not offer
+                // one: the planner would nominate command cards that silently do
+                // nothing. The folder candidates are unaffected.
+                AgentPrompt.build(tree: tree, scanRoot: scanRoot, known: known, running: running,
+                                  commandsAvailable: !AppEnvironment.isSandboxed)
                 + AgentPrompt.appData(tree: tree)
             }.value
             // Closing or replacing a run while its prompt was being built
@@ -483,7 +487,7 @@ final class AgentRun {
     /// Plain available space (statfs), exact to the block.
     nonisolated static func freeBytes() -> UInt64 {
         var fs = statfs()
-        guard statfs(NSHomeDirectory(), &fs) == 0 else { return 0 }
+        guard statfs(AppEnvironment.realHome, &fs) == 0 else { return 0 }
         return UInt64(fs.f_bavail) * UInt64(fs.f_bsize)
     }
 
@@ -499,8 +503,9 @@ final class AgentRun {
             var environment = ProcessInfo.processInfo.environment
             environment["PATH"] = path
             process.environment = environment
-            // Some tools only run inside a project (`bun pm cache rm` wants a
-            // package.json), so they run in an empty stand-in one.
+            // Some tools only run inside a project (`npm cache clean` is happy
+            // anywhere, but the command path is generically tool-shaped), so they
+            // run in an empty stand-in one.
             let folder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
                 .appendingPathComponent("AppleTree/tools", isDirectory: true)
             try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)

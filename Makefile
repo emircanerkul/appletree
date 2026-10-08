@@ -51,7 +51,7 @@ SWIFT_FLAGS := -O -parse-as-library -swift-version 6 -default-isolation MainActo
                -framework DiskArbitration -framework IOKit
 
 .DEFAULT_GOAL := help
-.PHONY: help all build engine bundle open deploy deploy-sandbox deploy-sandbox-undo package test test-drawer test-deletion test-selection test-links test-readme test-doclinks test-router test-privacy test-planner-selection test-prompt-scope test-shellenv test-engine-writer test-l10n test-mapweights test-rust icon clean
+.PHONY: help all build engine bundle open deploy deploy-sandbox deploy-sandbox-undo package test test-fda-grant test-scoped-access test-drawer test-deletion test-selection test-links test-readme test-doclinks test-router test-privacy test-planner-selection test-prompt-scope test-shellenv test-engine-writer test-l10n test-mapweights test-rust icon clean
 
 help:
 	@echo 'AppleTree targets:'
@@ -262,11 +262,25 @@ deploy: build
 # `app/AppleTree.entitlements`, install to a DIFFERENT /Applications name, and let
 # the user click through the app.
 #
-# Measured result on this codebase (2026-10-06): the app launches and the scan,
-# treemap, rings, Clean Up panel and the custom-provider AI path work; the
-# user's login shell still runs but sees a container filesystem, so the cleanup
-# tools it resolves through PATH are not found and exec of an absolute path
-# fails with "doesn't exist".
+# Measured result on this codebase (2026-10-07): the app launches and the scan,
+# treemap, rings, Clean Up panel and the custom-provider AI path work, and the
+# file grant in `app/AppleTree.entitlements` lets the Clean Up panel Trash a real
+# cache folder with no subprocess. What the sandbox still denies is `exec`: the
+# login shell runs but sees a container filesystem, so the cleanup tools it
+# resolves through PATH are not found and exec of an absolute path fails with
+# "doesn't exist". The app therefore offers no command item at all — it tells the
+# planner the sandbox forbids one (`AgentPrompt.build(commandsAvailable:)`), so
+# the panel cannot propose a card that would silently do nothing.
+#
+# Earlier measurement (2026-10-06), kept because it is what motivated the file
+# grant: with no file access at all, enumerate/mkdir/trashItem/removefile all
+# fail in the real home, so the Clean Up panel could not clean anything.
+#
+# The grant is now Route B, a bookmark for a folder the user picks: the
+# home-relative temporary exception was retired (2026-10-08), so this rehearsal
+# ASKS for the folder once and remembers it. Measured on a build with only the
+# surviving three keys, `/Users` and `/` are DENIED until that pick, while
+# `/Applications`, `/System/Volumes/Data/Library` and `/Volumes` are readable.
 #
 # Uses an ad-hoc signature. That is deliberate and sufficient for THIS question:
 # the sandbox is enforced from the entitlement, not from the certificate, so a
@@ -282,14 +296,46 @@ deploy-sandbox: build
 	@echo '==> Building the sandboxed rehearsal bundle'
 	rm -rf '$(SANDBOX_APP)'
 	ditto '$(APP)' '$(SANDBOX_APP)'
+	# Sign with a real identity when one exists, and fall back to ad-hoc only
+	# when there is none.
+	#
+	# Why this is not optional. TCC identifies an app by its *designated
+	# requirement*, and an ad-hoc signature pins that to a cdhash — which changes
+	# on every rebuild. So the Full Disk Access permission the user grants is
+	# dropped by the next `make deploy-sandbox`, which reads as "I already granted
+	# it and restarted" while the app keeps asking. That is exactly the failure
+	# this rehearsal exists to let a person find, so it must not manufacture it.
+	# The main `build` target already selects an identity for the same reason; see
+	# its own WARNING a few targets above.
+	#
+	# Full Disk Access stays a TCC grant, and a sandboxed app still needs one to
+	# read the protected paths a whole-disk scan covers. With an Apple Development
+	# identity the designated requirement is certificate-based and survives a
+	# rebuild, which is what makes granting it once meaningful.
+	#
 	# --deep is required: assets, the Rust-built executable and the icon are
 	# sealed as one unit, and the entitlement has to end up on the process the
 	# kernel actually launches.
-	codesign --force --deep --sign - --entitlements '$(SANDBOX_ENTITLEMENTS)' '$(SANDBOX_APP)'
+	IDS=$$(security find-identity -v -p codesigning 2>/dev/null); \
+	DEVID=$$(awk -F'"' '/Developer ID Application/{print $$2; exit}' <<<"$$IDS"); \
+	DEV=$$(awk -F'"' '/Apple Development/{print $$2; exit}' <<<"$$IDS"); \
+	if [[ -n "$$DEVID" ]]; then \
+	    SIGN="$$DEVID"; \
+	elif [[ -n "$$DEV" ]]; then \
+	    SIGN="$$DEV"; \
+	else \
+	    echo '    NOTE: no codesigning identity found; signing AD-HOC.' >&2; \
+	    echo '          An ad-hoc signature pins the designated requirement to a cdhash,' >&2; \
+	    echo '          so macOS drops the Full Disk Access grant on every rebuild and the' >&2; \
+	    echo '          app keeps asking for it. Add an Apple Development identity in' >&2; \
+	    echo '          Xcode > Settings > Accounts > Manage Certificates > + to avoid that.' >&2; \
+	    SIGN="-"; \
+	fi; \
+	codesign --force --deep --sign "$$SIGN" --entitlements '$(SANDBOX_ENTITLEMENTS)' '$(SANDBOX_APP)'
 	codesign --verify --strict '$(SANDBOX_APP)'
 	@echo '==> Entitlements sealed into the bundle:'
 	@codesign -d --entitlements - '$(SANDBOX_APP)' 2>/dev/null \
-	    | grep -E 'app-sandbox|network|user-selected|library-validation' | sed 's/^/      /' || true
+	    | grep -E 'app-sandbox|network|user-selected|library-validation|bookmarks' | sed 's/^/      /' || true
 	@echo '==> Installing to /Applications/AppleTree (Sandboxed).app'
 	rm -rf '/Applications/AppleTree (Sandboxed).app'
 	ditto '$(SANDBOX_APP)' '/Applications/AppleTree (Sandboxed).app'
@@ -298,8 +344,12 @@ deploy-sandbox: build
 	@echo '    different name, so your normal install at /Applications/AppleTree.app'
 	@echo '    is untouched. Launch it and try:'
 	@echo '      - the Clean Up panel, the treemap, the rings, Delete  (expected: work)'
-	@echo '      - "Clean up with <provider>"                           (expected: no local cleanup tool)'
-	@echo '      - the shell-command rows (brew/npm/uv/xcrun cleanups)  (expected: fail)'
+	@echo '      - a Home or whole-disk scan, then Move to Trash        (expected: work, and'
+	@echo '        the pnpm store / npm cache / Homebrew cache are offered as folders)'
+	@echo '      - "Clean up with <provider>"                           (expected: work; the plan'
+	@echo '        contains trash items only, never a command row)'
+	@echo '      - a command item in the plan                           (expected: impossible —'
+	@echo '        the prompt is told the sandbox forbids one)'
 	@echo ''
 	@echo '    Then remove it with:  make deploy-sandbox-undo'
 
@@ -395,13 +445,13 @@ test-rust:
 # bz_cleanup_allowlist FFI (fail-closed).
 # The .strings check runs first: it is instant, and a table that drifted is a
 # bug the Swift tests cannot see, so there is no reason to compile first.
-test: engine test-l10n test-drawer test-deletion test-selection test-mapweights test-links test-readme test-doclinks test-router test-privacy test-planner-selection test-prompt-scope test-shellenv test-engine-writer
+test: engine test-l10n test-drawer test-deletion test-selection test-mapweights test-links test-readme test-doclinks test-router test-privacy test-planner-selection test-prompt-scope test-shellenv test-engine-writer test-fda-grant test-scoped-access
 	@mkdir -p .build
-	swiftc tests/swift/main.swift app/CleanupGuard.swift \
+	swiftc tests/swift/main.swift app/CleanupGuard.swift app/AppEnvironment.swift \
 	    -import-objc-header app/bz.h \
 	    -swift-version 6 -default-isolation MainActor \
 	    -target arm64-apple-macos$(MIN_MACOS) \
-	    -L target/release -lappletree \
+	    -L target/release -lappletree -framework Security \
 	    -o .build/guard-tests
 	.build/guard-tests
 
@@ -548,7 +598,7 @@ test-privacy:
 test-planner-selection:
 	@mkdir -p .build
 	swiftc tests/swift/planner-selection.swift app/ModelProvider.swift \
-	    app/AgentSupport.swift app/PlanParsing.swift \
+	    app/AgentSupport.swift app/AppEnvironment.swift app/PlanParsing.swift \
 	    -parse-as-library -swift-version 6 -default-isolation MainActor \
 	    -target arm64-apple-macos$(MIN_MACOS) -framework Security \
 	    -o .build/planner-selection-tests
@@ -583,8 +633,8 @@ test-prompt-scope: engine
 # test-deletion note). `shellenv.swift` vs `app/AgentSupport.swift` is safe.
 test-shellenv:
 	@mkdir -p .build
-	swiftc tests/swift/shellenv.swift app/AgentSupport.swift app/PlanParsing.swift \
-	    app/ModelProvider.swift \
+	swiftc tests/swift/shellenv.swift app/AgentSupport.swift app/AppEnvironment.swift \
+	    app/PlanParsing.swift app/ModelProvider.swift \
 	    -parse-as-library -swift-version 6 -default-isolation MainActor \
 	    -target arm64-apple-macos$(MIN_MACOS) -framework Security \
 	    -o .build/shellenv-tests
@@ -605,6 +655,43 @@ test-engine-writer:
 	    -target arm64-apple-macos$(MIN_MACOS) \
 	    -o .build/engine-writer-tests
 	.build/engine-writer-tests
+
+# Route B: reaching folders the sandbox denies, via a security-scoped bookmark.
+#
+# A sandboxed build cannot reach /Users, /private/var or /opt, and measured,
+# Full Disk Access does NOT lift App Sandbox — so whole-disk coverage needs the
+# user to choose the folder once and the app to store a bookmark. This suite
+# pins the entitlement the route depends on (without
+# `files.bookmarks.app-scope` bookmark creation fails outright, error 256) and
+# the state contract the scan path reads: no bookmark grants nothing, a corrupt
+# one fails safe, `forget()` really clears it, and a repeated `begin()` does not
+# leak the process-wide extension. The bookmark round-trip itself needs the
+# sandbox and the entitlement, so the user's own click is its end-to-end
+# evidence.
+test-scoped-access:
+	@mkdir -p .build
+	swiftc tests/swift/scoped-access.swift app/ScopedAccess.swift \
+	    -parse-as-library -swift-version 6 -default-isolation MainActor \
+	    -target arm64-apple-macos$(MIN_MACOS) \
+	    -o .build/scoped-access-tests
+	.build/scoped-access-tests
+
+# The Full Disk Access grant must be reachable for the running build.
+#
+# TCC identifies an app by its designated requirement, and two shapes in this
+# repo broke that: the FDA card named the *other* bundle (so the user granted the
+# wrong app), and `deploy-sandbox` signed ad-hoc, pinning the DR to a cdhash that
+# changes on every rebuild (so the grant was dropped by the next build). Both are
+# reported as "I already granted it and restarted" with the prompt still up.
+# Structural assertions on the sources, because neither can be reproduced without
+# installing both bundles and clicking through System Settings.
+test-fda-grant:
+	@mkdir -p .build
+	swiftc tests/swift/fda-grant.swift \
+	    -parse-as-library -swift-version 6 -default-isolation MainActor \
+	    -target arm64-apple-macos$(MIN_MACOS) \
+	    -o .build/fda-grant-tests
+	.build/fda-grant-tests
 
 # The Settings handoff: "Add a model provider" must select the Model Providers
 # pane AND raise the add form, including when the click arrives before Settings

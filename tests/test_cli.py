@@ -92,7 +92,118 @@ class AgentCLITests(unittest.TestCase):
         self.assertEqual(self.run_cli("quick-wins")["options"]["min_bytes"], 50_000_000)
         self.assertEqual(self.run_cli("quick-wins")["report"]["candidates"], [])
 
-    def test_unrecognized_folders_and_trash_are_not_candidates(self):
+    def test_a_folder_scan_finds_the_caches_inside_it(self):
+        # The panel lets the user scan ONE folder, and the detection table's
+        # rules are home-relative. Before this a scan rooted below the home had
+        # no home ancestor to measure from, so it found nothing: measured,
+        # scanning ~/Library/Caches offered neither pip nor Homebrew, and
+        # scanning ~/Library/pnpm offered no store — even though a home scan
+        # offered all three. The user picked that folder to clean what is in it.
+        self.file("Library/Caches/Homebrew/api/formula.json")
+        self.file("Library/Caches/pip/http-v2/x")
+        self.file("Library/pnpm/store/v11/files/x")
+        self.file("Library/pnpm/store/v11/index.db")
+
+        # Scanning the cache's own parent finds it.
+        caches = self.run_cli("quick-wins", "--root", str(self.home / "Library/Caches"),
+                              "--min-bytes", "1")["report"]["candidates"]
+        self.assertEqual([Path(c["path"]).relative_to(self.home).as_posix() for c in caches],
+                         ["Library/Caches/Homebrew", "Library/Caches/pip"])
+        # Scanning the store's parent finds the store.
+        pnpm = self.run_cli("quick-wins", "--root", str(self.home / "Library/pnpm"),
+                            "--min-bytes", "1")["report"]["candidates"]
+        self.assertEqual([c["category"] for c in pnpm], ["tool_caches"])
+        self.assertTrue(pnpm[0]["path"].endswith("Library/pnpm/store"))
+        # Scanning the home still finds both.
+        home = self.wins("--limit", "100")["candidates"]
+        paths = {Path(c["path"]).relative_to(self.home).as_posix() for c in home}
+        self.assertIn("Library/Caches/Homebrew", paths)
+        self.assertIn("Library/pnpm/store", paths)
+
+    def test_a_folder_scan_outside_the_home_finds_no_caches(self):
+        # The other half: a folder scan outside the user's home must not offer
+        # the user's *tool* caches, and a rule rooted in a system location must
+        # not fire there — the guard refuses those paths as outside the home, and
+        # recognition must not offer what authorization refuses.
+        #
+        # Scoped to `tool_caches`, the table's category: a `Caches` directory
+        # under a non-home `Library` is a separate, pre-existing rule for one
+        # app's own data and is expected to fire here.
+        outside = self.root / "Applications"
+        inner = outside / "Foo" / "Library" / "Caches" / "Homebrew" / "api"
+        inner.mkdir(parents=True)
+        (inner / "formula.json").write_text("{}")
+        report = self.run_cli("quick-wins", "--root", str(outside), "--min-bytes", "1")["report"]
+        self.assertEqual([c["path"] for c in report["candidates"] if c["category"] == "tool_caches"], [])
+        # Nothing it reports can be outside the folder that was scanned.
+        self.assertTrue(all(c["path"].startswith(str(outside)) for c in report["candidates"]))
+
+    def test_tool_cache_locations_are_recognised_by_structure(self):
+        # The §5 identity locations: a cache is found by *where it is* plus what
+        # the tool puts there, not by its folder name. Before this the pnpm store
+        # and the Homebrew cache were unreachable — measured 4.0 GB and 689 MB on
+        # a real machine, both present, neither nominated, because `store` and
+        # `Homebrew` were not names the engine knew.
+        #
+        # Each path below is the tool's fixed home-relative location, carrying
+        # the marker measured on this machine.
+        self.file(".npm/npmrc")
+        self.file(".cache/uv/CACHEDIR.TAG")
+        self.file(".cargo/registry/CACHEDIR.TAG")
+        self.file(".cargo/git/db/zed-a70e2ad075855582/FETCH_HEAD")
+        self.file("Library/pnpm/store/v11/files/x")
+        self.file("Library/pnpm/store/v11/index.db")
+        self.file("Library/Caches/pip/http-v2/x")
+        self.file("Library/Caches/Homebrew/api/formula.json")
+        self.file("Library/Caches/CocoaPods/Pods/x")
+        self.file("Library/Caches/org.swift.swiftpm/manifests/x")
+
+        candidates = self.wins("--limit", "100")["candidates"]
+        kinds = {Path(c["path"]).relative_to(self.home).as_posix(): c["category"] for c in candidates}
+        # `.npm` stays its own, older shape rule.
+        expected = {
+            ".npm": "tool_caches",
+            ".cache/uv": "tool_caches",
+            ".cargo/registry": "tool_caches",
+            ".cargo/git/db": "tool_caches",
+            "Library/pnpm/store": "tool_caches",
+            "Library/Caches/pip": "tool_caches",
+            "Library/Caches/Homebrew": "tool_caches",
+            "Library/Caches/CocoaPods": "tool_caches",
+            "Library/Caches/org.swift.swiftpm": "tool_caches",
+        }
+        self.assertEqual(kinds, expected)
+        self.assertTrue(all(c["requires_review"] for c in candidates))
+
+        # The two npm locations are *not* separate rows, and that is correct
+        # rather than a gap: `find` never descends into an already-recognised
+        # folder and `.npm` is recognised by shape, so a row for `_cacache` or
+        # `_npx` could never be consulted. The whole `.npm` tree is the candidate.
+
+    def test_a_folder_that_resembles_a_cache_is_not_proposed(self):
+        # The negative half of acceptance criterion 2, through the public CLI.
+        # A folder that merely *looks* like a cache must not be offered: the
+        # rule's two halves are the tool's fixed location AND its structure, so
+        # neither the name alone nor a marker alone is enough.
+        #
+        # Each fixture carries the real rows' markers, so only the location can
+        # refuse it — which is exactly the property under test.
+        markers = [
+            "CACHEDIR.TAG", "api", "v11/files", "v11/index.db", "index-v5",
+            "content-v2", "http-v2", "Pods", "manifests",
+        ]
+        for stem in ["Projects/foo/store", "tmp/Homebrew", "Library/Caches/placeholder",
+                     "projects/Library/pnpm/store", "Library/pnpm/store-old",
+                     ".cache/puppeteer"]:
+            for marker in markers:
+                self.file(f"{stem}/{marker}/x" if "." not in marker.split("/")[-1]
+                          else f"{stem}/{marker}")
+
+        # A `tmp` directory merely named `_cacache` is not npm's cache.
+        self.file("tmp/_cacache/index-v5/x")
+        self.file("tmp/_cacache/content-v2/x")
+
+        self.assertEqual(self.wins("--limit", "100")["candidates"], [])
         for path in ["unrelated/target/file", "unrelated/venv/file", "unrelated/.next/file",
                      "unrelated/Caches/file", "unrelated/DerivedData/file", "unrelated/install/cache/file",
                      "swift/Package.swift", "swift/.build/file", ".Trash/node_modules/file"]:

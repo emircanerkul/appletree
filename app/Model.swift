@@ -192,7 +192,7 @@ nonisolated final class Tree: @unchecked Sendable {
 enum FDA {
     /// FDA-protected paths deny silently (no dialog), so probing is safe.
     static func isActive() -> Bool {
-        let home = NSHomeDirectory()
+        let home = AppEnvironment.realHome
         for p in ["\(home)/Library/Messages", "\(home)/Library/Mail", "\(home)/Library/Safari"] {
             if (try? FileManager.default.contentsOfDirectory(atPath: p)) != nil {
                 return true
@@ -233,7 +233,7 @@ nonisolated enum ScanTargets {
     static let macintoshHD = ScanTarget(title: String(localized: "Macintosh HD"),
                                        path: "/System/Volumes/Data")
     static let home = ScanTarget(title: String(localized: "Home"),
-                                 path: NSHomeDirectory())
+                                 path: AppEnvironment.realHome)
     /// Installed applications, usually the biggest thing in a "why is my disk
     /// full" scan. `/Applications` is a firmlink into the Data volume, which
     /// the engine follows like any directory.
@@ -1046,6 +1046,12 @@ final class ScanModel {
 
     private var handle: OpaquePointer?
     private var timer: Timer?
+    /// The sandbox extension for the folder the user chose — the app's only
+    /// route to their files now that the home-relative temporary exception is
+    /// retired. Held for the **session**, not one scan: cleanup runs after a
+    /// scan and reaches the same paths, so releasing at the end of the walk
+    /// would make every Move to Trash fail. See `ScopedAccess.Grant`.
+    private let scopedGrant = ScopedAccess.Grant()
     private var startedAt: Date?
     private var activity: NSObjectProtocol?
     private var volumeTask: Task<VolumeSpace, Never>?
@@ -1089,6 +1095,11 @@ final class ScanModel {
         // the main thread never waits synchronously on that service.
         let volumePath = scanRoot
         volumeTask = Task.detached(priority: .userInitiated) { VolumeSpace.read(volumePath) }
+        // Keep the sandbox extension held around the engine call: the engine
+        // stats the scan root before walking it, so a root the sandbox denies
+        // yields a one-node tree and an empty panel rather than an error. The
+        // hold outlives the walk on purpose — cleanup happens afterwards.
+        scopedGrant.hold()
         handle = bz_scan_start(scanRoot)
 
         // 60 Hz: the elapsed time ticks every frame, so the screen keeps

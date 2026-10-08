@@ -361,14 +361,22 @@ mod tests {
             assert_eq!(cmd.to_str().unwrap(), *expected);
         }
         // Known commands that must stay allowed, and one that must not appear.
-        for known in ["uv cache clean", "brew cleanup --prune=all", "pod cache clean --all"] {
+        for known in ["uv cache prune", "brew cleanup --prune=all", "gem cleanup"] {
             assert!(cleanup::ALLOWLIST.contains(&known));
         }
         assert!(!cleanup::ALLOWLIST.contains(&"rm -rf /"));
+        // The retired cache-clean forms (see `cleanup::ALLOWLIST`): each one's
+        // target is a cache folder `CACHE_RULES` now nominates, so the folder
+        // carries the capability and the command was the `exec` dependency the
+        // App Store sandbox cannot honour.
+        for retired in ["uv cache clean", "bun pm cache rm", "pip cache purge",
+                        "pip3 cache purge", "pod cache clean --all"] {
+            assert!(!cleanup::ALLOWLIST.contains(&retired), "{retired} should be retired");
+        }
         // Entries are individually NUL-terminated C strings: each stops at its
         // own terminator rather than running into the next command's bytes.
         let last = unsafe { CStr::from_ptr(*table.add(count as usize - 1)) };
-        assert_eq!(last.to_bytes(), b"pod cache clean --all");
+        assert_eq!(last.to_bytes(), b"gem cleanup");
     }
 
     /// Port of the deleted Swift `Tree.node(at:)` extension (Agent.swift,

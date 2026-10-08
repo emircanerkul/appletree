@@ -115,6 +115,9 @@ struct ContentView: View {
     }
 
     @State private var needsFDA = false
+    /// Whether the sandboxed build is asking the user to choose the folder it
+    /// may scan. Distinct from `needsFDA`: that card asks for a permission this
+    /// build cannot receive, while this one asks for the folder itself.
     /// The path the FDA card is asking permission for, so "Scan without it"
     /// resumes the target the user actually picked instead of silently
     /// switching to the whole disk.
@@ -140,7 +143,41 @@ struct ContentView: View {
         // would otherwise forget it.
         guard model.canScan else { return }
         let target = path ?? model.scanRoot
-        guard target == ScanTargets.macintoshHD.path, !FDA.isActive() else {
+        // The sandboxed build cannot read the user's files until they have handed
+        // it a folder, so a request for a target outside its own container goes
+        // straight to the picker.
+        //
+        // Measured on a build with only the sandbox, picker and bookmark
+        // entitlements (the home-relative exception is now retired): `~/` and
+        // `/System/Volumes/Data/Users` are DENIED, while `/Applications`,
+        // `/System/Volumes/Data/Library` and `/Volumes` are readable. The denied
+        // ones would silently produce the empty panel that reads as "Nothing
+        // large to clean up" rather than as a missing permission.
+        //
+        // The Home target is gated now that the exception is gone: `~/` is
+        // exactly what it scans. `/Applications` and a mounted drive are
+        // deliberately not gated — both are readable on the entitlements alone,
+        // and asking for a folder the app can already read is a prompt for
+        // nothing.
+        //
+        // Opening the panel here, rather than showing a card that tells the user
+        // to open it, is the point: only the panel can extend the sandbox, so a
+        // button that merely displays instructions cannot make the click work.
+        if AppEnvironment.isSandboxed, !ScopedAccess.hasUsableBookmark,
+           target == ScanTargets.macintoshHD.path || target == ScanTargets.home.path {
+            chooseFolder()
+            return
+        }
+        // A sandboxed build must never raise the FDA card, because it can never
+        // satisfy it. Measured with the same bundle identifier and the same
+        // signing identity, so the same TCC grant applied to both builds: the
+        // unsandboxed one reported `FDA.isActive() == true` and could read
+        // ~/Library/Messages, while the sandboxed one reported false and was
+        // denied. tccd logged the grant (`Modify kTCCServiceSystemPolicyAllFiles`
+        // for this bundle), so the denial is App Sandbox's own and no amount of
+        // granting or restarting clears it: the card would loop forever.
+        guard !AppEnvironment.isSandboxed,
+              target == ScanTargets.macintoshHD.path, !FDA.isActive() else {
             model.startScan(path: path)
             return
         }
@@ -148,13 +185,15 @@ struct ContentView: View {
         needsFDA = true
     }
 
+
+
     private var fdaOverlay: some View {
         // Top-anchored like the window's other states: dead-center made the
         // permission card float in the middle of an empty scan area.
         VStack(alignment: .leading, spacing: 14) {
             Label("AppleTree needs Full Disk Access", systemImage: "lock.shield")
                 .font(.title3.weight(.semibold))
-            Text("System Settings → Privacy & Security → Full Disk Access.\nRemove any old AppleTree rows, then add /Applications/AppleTree.app.\nmacOS only applies the permission to a freshly launched app.")
+            Text("System Settings → Privacy & Security → Full Disk Access.\nRemove any old AppleTree rows, then add \(Bundle.main.bundleURL.path).\nmacOS only applies the permission to a freshly launched app.")
                 .multilineTextAlignment(.leading)
                 .foregroundStyle(.secondary)
                 .font(.callout)
@@ -277,7 +316,11 @@ struct ContentView: View {
                 Label("Rings", systemImage: "circle.circle").tag(MapStyle.rings)
             }
             .pickerStyle(.segmented)
-            .help("Treemap (WizTree-style) or rings (DaisyDisk-style)")
+            // Neutral wording, deliberately: a tooltip is user-visible content,
+            // so naming a competitor here carries the same 5.2.1 exposure as
+            // naming one in the App Store metadata. The old string said
+            // "(WizTree-style)" / "(DaisyDisk-style)" in all seven languages.
+            .help("Treemap or concentric rings")
         }
 
         if #available(macOS 26, *) {
@@ -387,9 +430,35 @@ struct ContentView: View {
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
-        if panel.runModal() == .OK, let url = panel.url {
-            requestScan(path: url.path)
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        // The panel extends this process's sandbox for the session; the bookmark
+        // is what makes the choice survive a relaunch. Measured: without one, a
+        // sandboxed build cannot read the folder at all next launch, so the scan
+        // would come back empty with no explanation.
+        //
+        // The result is checked rather than ignored. Measured: picking the
+        // sidebar's "Macintosh HD" yields `file:///`, and bookmarking `/` FAILED
+        // (0 bytes) from a build holding only the home-relative grant, while
+        // bookmarking `/System/Volumes/Data` succeeded. Ignoring that failure
+        // stored nothing, so the next whole-disk click asked again — the same
+        // choose-card-choose loop as the FDA card, which is the bug this check
+        // prevents.
+        //
+        // The scan target is then the path that actually carries the
+        // authorization. `/` and its data volume are the same subtree to the
+        // sandbox (`/` is a firmlink into it), but only the latter can be
+        // bookmarked, so a `file:///` choice scans — and must request —
+        // `ScanTargets.macintoshHD.path`. Requesting `/` instead would re-enter
+        // this method through the whole-disk gate and loop.
+        var scanPath = url.path
+        if !ScopedAccess.remember(url) {
+            let volume = ScanTargets.macintoshHD.path
+            if ScopedAccess.remember(URL(fileURLWithPath: volume)) {
+                scanPath = volume
+            }
         }
+        requestScan(path: scanPath)
     }
 
     private func openFDASettings() { openFullDiskAccessSettings() }
@@ -436,9 +505,12 @@ private struct ScanStatusBar: View {
                     Text("\(Fmt.num(UInt64(tree.nFiles[model.viewRoot]))) files · \(Fmt.size(tree.alloc[model.viewRoot]))")
                     Spacer()
                     if tree.errors > 0 {
-                        if FDA.isActive() {
-                            // Root-owned system dirs: unreadable by design,
-                            // not a permissions problem the user can fix.
+                        if FDA.isActive() || AppEnvironment.isSandboxed {
+                            // Either the grant is held, or this is the sandboxed
+                            // build where it cannot be held at all (see
+                            // `requestScan`). Both cases are root-owned or
+                            // sandbox-denied system folders: unreadable by
+                            // design, not a permission problem the user can fix.
                             let gap = model.unscannedBytes > 1_000_000_000
                                 ? " · ~\(Fmt.size(model.unscannedBytes)) root-only" : ""
                             Text("\(String(tree.errors)) system folders unreadable\(gap)")

@@ -2,7 +2,7 @@
 
 /* Main window */
 "AppleTree needs Full Disk Access" = "AppleTreeにはフルディスクアクセスが必要です";
-"System Settings → Privacy & Security → Full Disk Access.\nRemove any old AppleTree rows, then add /Applications/AppleTree.app.\nmacOS only applies the permission to a freshly launched app." = "システム設定 → プライバシーとセキュリティ → フルディスクアクセス。\n古いAppleTreeの項目を削除してから、/Applications/AppleTree.appを追加してください。\nmacOSはこの権限を新しく起動したアプリにのみ適用します。";
+"System Settings → Privacy & Security → Full Disk Access.\nRemove any old AppleTree rows, then add %@.\nmacOS only applies the permission to a freshly launched app." = "システム設定 → プライバシーとセキュリティ → フルディスクアクセス。\n古いAppleTreeの項目を削除してから、%@を追加してください。\nmacOSはこの権限を新しく起動したアプリにのみ適用します。";
 "Open System Settings" = "システム設定を開く";
 "I granted it — Relaunch" = "許可しました — 再起動";
 "Scan without it" = "許可せずにスキャン";
@@ -17,7 +17,7 @@
 "View" = "表示";
 "Treemap" = "ツリーマップ";
 "Rings" = "リング";
-"Treemap (WizTree-style) or rings (DaisyDisk-style)" = "ツリーマップ（WizTree風）またはリング（DaisyDisk風）";
+"Treemap or concentric rings" = "ツリーマップまたは同心円リング";
 "Free Space" = "空き領域";
 "Show free space in the map" = "マップに空き領域を表示";
 "Directory List" = "フォルダリスト";
@@ -246,3 +246,4 @@
    the pane where providers are added and edited. */
 "Edit %@" = "%@ を編集";
 "Manage model providers" = "モデルプロバイダーを管理";
+

@@ -200,7 +200,8 @@ and AppleTree then acts on that plan behind its own checks, whatever the plan
 says:
 
 - Only paths inside your home folder, never Documents, Desktop, Photos, iCloud Drive, Mail, keychains or `~/.ssh` (build output such as `node_modules` inside them is allowed), never a git repository, never a whole folder such as `~/Library/Caches`, and never anything inside a signed app bundle — a bundle's own folders are sealed by its code signature, so removing one invalidates the app
-- Only each tool's own cleanup commands (`uv cache clean`, `brew cleanup`, `npm cache clean` and similar, plus `xcrun simctl` for Xcode simulator runtimes and device data), with no shell syntax
+- Only each tool's own cleanup commands (`npm cache clean`, `brew cleanup`, `docker system prune` and similar, plus `xcrun simctl` for Xcode simulator runtimes and device data), with no shell syntax
+- Every cache is offered as the folder it is, found by the tool's own location and structure — the pnpm store, the npm cache, Homebrew's, Cargo's — so cleanup needs no external command. The Mac App Store build runs no commands at all, and offers no command item
 - Projects you used in the last 2 days are left alone
 - Caches belonging to apps that are open are skipped until you quit them
 - "Delete permanently" removes only what this cleanup moved to the Trash
@@ -213,7 +214,7 @@ Every allowlisted cleanup command it runs inherits that same grant while it
 runs; what that command does with it is the tool's own behaviour, not a policy
 AppleTree sets.
 
-Cleanup commands (`uv cache clean`, `brew cleanup` and so on) are resolved
+Cleanup commands (`npm cache clean`, `brew cleanup` and so on) are resolved
 through the shell's PATH, by design: these tools live in Homebrew, `~/.local/bin`,
 nvm and other tool-manager locations, and AppleTree does not guess where they
 are installed. Only commands matching a small allowlist of tool-specific

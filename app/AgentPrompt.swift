@@ -73,17 +73,47 @@ nonisolated enum AgentPrompt {
         return (Array(folders.prefix(250)), Array(files.prefix(80)))
     }
 
-    static func build(tree: Tree, scanRoot: String, known: [CleanupItem], running: [String]) -> String {
-        let home = NSHomeDirectory()
+    /// `commandsAvailable` says whether this build can run a cleanup command at
+    /// all. The App Store build cannot: the sandbox denies `exec`, so every
+    /// allowlisted form dies and its card reports success while the bytes stay
+    /// on disk. Offering one is therefore worse than offering nothing, and the
+    /// planner is told the reason in words rather than left to infer it from an
+    /// empty list — a planner given no list and no reason invents command items.
+    ///
+    /// The list itself still reads straight from the Rust-owned allowlist, so
+    /// the prompt cannot drift from what the guard accepts. The one-argument
+    /// forms stay literal: they have placeholders, not allowlist entries.
+    static func build(tree: Tree, scanRoot: String, known: [CleanupItem], running: [String],
+                      commandsAvailable: Bool = true) -> String {
+        let home = AppEnvironment.realHome
         func shown(_ i: Int) -> String { tree.displayPath(i) }
 
         let (folders, files) = largestNodes(in: tree)
 
-        // The command list reads straight from the Rust-owned allowlist so
-        // the prompt can never drift from what the guard actually accepts.
-        // The one-argument forms stay literal: they have placeholders, not
-        // allowlist entries.
         let allowlist = CleanupGuard.allowlistCommands.map { "`\($0)`" }.joined(separator: ", ")
+        let action: String
+        if commandsAvailable {
+            action = """
+            - action: "command" when the owning tool has its own cleanup and the item is that tool's \
+            cache, otherwise "trash" (AppleTree moves the paths to the Trash itself). AppleTree only runs \
+            exactly one of these commands — no extra arguments or flags: \(allowlist) — \
+            or exactly one of: `ollama rm <model>`, `xcrun simctl runtime delete <id>`, \
+            `xcrun simctl erase <udid>`. \
+            Nothing else, no pipes, `;`, `$` or globs; it must not prompt.          - command: the exact command for "command", "" for "trash".
+            `npm cache clean` only empties `~/.npm/_cacache`; `~/.npm/_npx` is a separate "trash" item. Only \
+            list caches that appear in the tables above with their real size; skip ones that are not there.
+            """
+        } else {
+            action = """
+            - action: always "trash". This build runs inside the App Store sandbox, which forbids \
+            launching any external tool, so AppleTree cannot run a cleanup command at all and no \
+            "command" item could be honoured — the card would silently do nothing. Every item is a \
+            folder AppleTree moves to the Trash itself. \
+            Do not propose a command, a shell invocation, or a tool's own cleanup flag; nominate the \
+            cache folder instead.          - command: always "".
+            Only list caches that appear in the tables above with their real size; skip ones that are not there.
+            """
+        }
         var md = """
         You are the cleanup agent inside AppleTree, a macOS disk-space app. The user clicked \
         "Clean up" and is watching a live view of your steps, so be fast. Their home folder is \(home).
@@ -103,14 +133,7 @@ nonisolated enum AgentPrompt {
         fine but the user should decide (old downloads, models, whole old projects).
           - bytes: size in bytes.
           - paths: the absolute paths it covers.
-          - action: "command" when the owning tool has its own cleanup and the item is that tool's \
-        cache, otherwise "trash" (AppleTree moves the paths to the Trash itself). AppleTree only runs \
-        exactly one of these commands — no extra arguments or flags: \(allowlist) — \
-        or exactly one of: `ollama rm <model>`, `xcrun simctl runtime delete <id>`, \
-        `xcrun simctl erase <udid>`. \
-        Nothing else, no pipes, `;`, `$` or globs; it must not prompt.          - command: the exact command for "command", "" for "trash".
-        `npm cache clean` only empties ~/.npm/_cacache; ~/.npm/_npx is a separate "trash" item. Only \
-        list caches that appear in the tables above with their real size; skip ones that are not there.
+          \(action)
         Name specific folders. Never a whole ~/Library, ~/Library/Caches, ~/Library/Application \
         Support, ~/Library/Containers, ~/Downloads or ~/.config: list the large subfolders instead.
         Never include: ~/Documents, ~/Desktop, ~/Pictures, the Photos library, ~/Movies, ~/Music, Mail, \

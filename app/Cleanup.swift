@@ -720,7 +720,7 @@ private struct PlanCard: View {
 
     /// Where the folders are, shortest form.
     private var where_: String {
-        let home = NSHomeDirectory()
+        let home = AppEnvironment.realHome
         let shown = item.paths.map { $0.hasPrefix(home) ? "~" + $0.dropFirst(home.count) : $0 }
         guard let first = shown.first else { return "" }
         return shown.count == 1 ? first : "\(first) +\(shown.count - 1)"

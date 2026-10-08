@@ -1,6 +1,6 @@
 // Guard unit tests (plan T8): the trust boundary gets a regression net.
 // Build (from repo root, same flags as the Makefile):
-//   swiftc tests/swift/main.swift app/CleanupGuard.swift \
+//   swiftc tests/swift/main.swift app/CleanupGuard.swift app/AppEnvironment.swift \
 //       -import-objc-header app/bz.h -swift-version 6 \
 //       -default-isolation MainActor -target arm64-apple-macos14.0 \
 //       -L target/release -lappletree -o .build/guard-tests
@@ -275,6 +275,65 @@ for broad in [home + "/Library/Caches", home + "/.cache"] {
 check("a named cache subfolder is permitted",
       CleanupGuard.blockReason(path: home + "/Library/Caches/pip") == nil,
       CleanupGuard.blockReason(path: home + "/Library/Caches/pip") ?? "")
+
+// The structural cache table's locations (src/cleanup.rs::CACHE_RULES) are
+// nominated by recognition, so every one of them must pass authorization. A
+// location the guard refused would be a card offering a Move that always fails,
+// which is the invariant the Rust module doc states and this file enforces from
+// the other side. These are the added rows; the pre-existing ones (`.npm`,
+// `.gradle`) are covered above.
+//
+// The broad roots are checked just as deliberately: `~/Library`,
+// `~/Library/Caches` and `~/.cache` must stay refused, or narrowing recognition
+// would have widened authorization. `~/Library/pnpm` is *not* broad — it is one
+// tool's directory, and only the `store` under it is the cache, so it stays
+// permitted; that asymmetry is the point of the narrowing.
+for location in [".cache/uv", ".cargo/registry", ".cargo/git/db", ".cargo",
+                 "Library/pnpm/store", "Library/pnpm", "Library/Caches/pip",
+                 "Library/Caches/Homebrew", "Library/Caches/CocoaPods",
+                 "Library/Caches/org.swift.swiftpm"] {
+    check("a table location is permitted: \(location)",
+          CleanupGuard.blockReason(path: path(location)) == nil,
+          CleanupGuard.blockReason(path: path(location)) ?? "")
+}
+for broad in ["Library", "Library/Caches", ".cache"] {
+    check("a table rule's broad root stays refused: \(broad)",
+          CleanupGuard.blockReason(path: path(broad)) != nil,
+          CleanupGuard.blockReason(path: path(broad)) ?? "allowed!")
+}
+
+// --- the home owner and sandbox detection (Task 4) ------------------------------
+//
+// `CleanupGuard.home` was `NSHomeDirectory()`, which is the *process* home. Under
+// the App Store sandbox that is `~/Library/Containers/<id>/Data`, so every real
+// cache path was judged "Outside your home folder" — even though the file grant
+// lets the very same process read and Trash those folders. Measured on a
+// sandboxed bundle built from these sources: `CleanupGuard.home` and the app's
+// own "Home" scan target both became the container, and all eight table
+// locations were refused.
+//
+// These assert the property that makes the fix real, not the mechanism: the two
+// owners agree, and the home is a real directory. A future change back to
+// `NSHomeDirectory()` would still pass these tests *unsandboxed*, which is why
+// the key assertion is the agreement (`CleanupGuard.home == AppEnvironment.realHome`)
+// plus `make deploy-sandbox` for the sandboxed half.
+check("the guard and the environment owner share one home",
+      CleanupGuard.home == AppEnvironment.realHome, CleanupGuard.home)
+check("the home owner reports an absolute path",
+      AppEnvironment.realHome.hasPrefix("/"), AppEnvironment.realHome)
+check("the home owner has no trailing slash",
+      !AppEnvironment.realHome.hasSuffix("/"), AppEnvironment.realHome)
+check("the home owner is a real directory",
+      fm.fileExists(atPath: AppEnvironment.realHome),
+      "\(AppEnvironment.realHome) does not exist")
+// The Developer-ID build under test is not sandboxed. The opposite assertion
+// (a sandboxed bundle reports true) needs a signed sandbox, so it is made by
+// `make deploy-sandbox` rather than here — the same posture as Task 4's plan.
+check("the unsandboxed build reports itself unsandboxed", !AppEnvironment.isSandboxed)
+// The Home scan target and the shell fallback PATH are asserted in the suites
+// that link those owners (`prompt-scope` and `shellenv`). This suite compiles
+// the guard and this owner alone, deliberately, so the trust boundary stays
+// testable without the whole app.
 
 // --- recentlyUsed with injected windows ------------------------------------------
 // `within` is the date-injection point: cutoff = now - within.

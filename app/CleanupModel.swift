@@ -16,7 +16,7 @@ nonisolated enum Cleanup {
     /// The Rust engine selects candidates for both the panel and JSON CLI.
     /// Swift only supplies presentation paths; rules and labels live in cleanup.rs.
     static func find(in tree: Tree) -> [CleanupItem] {
-        let home = NSHomeDirectory()
+        let home = AppEnvironment.realHome
         return (0..<tree.cleanupCount).map { index in
             let node = Int(tree.cleanupNode(index))
             let path = tree.path(node)

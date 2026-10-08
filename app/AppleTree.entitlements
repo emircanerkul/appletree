@@ -22,12 +22,78 @@
 	<key>com.apple.security.app-sandbox</key>
 	<true/>
 
-	<!-- The user picks the folder or volume to scan. Note that the scan itself
-	     does NOT need this: Full Disk Access remains available to a sandboxed app
-	     and is still granted by the user in System Settings, which is what makes
-	     a whole-disk scan work. This key covers the picker. -->
+	<!-- The user picks the folder or volume to scan. Needed by the picker
+	     (`NSOpenPanel`), which is the only sanctioned way to reach a folder
+	     outside this app's sandbox.
+
+	     This comment used to claim the scan itself did not need it because
+	     "Full Disk Access remains available to a sandboxed app". That is false
+	     here, and measuring it is what this file's grant exists to replace:
+	     with the SAME bundle identifier and signing identity, so the same TCC
+	     grant applied to both, an unsandboxed build reported
+	     `FDA.isActive() == true` and read ~/Library/Messages, while a sandboxed
+	     build reported false and was denied. tccd logged the grant
+	     (`Modify kTCCServiceSystemPolicyAllFiles` for this bundle), so the
+	     denial is App Sandbox's own. Full Disk Access does not lift the
+	     sandbox, which is why the app neither asks for it when sandboxed nor
+	     depends on it for cleanup. -->
 	<key>com.apple.security.files.user-selected.read-write</key>
 	<true/>
+
+	<!--
+	  Keep the access the user's folder choice granted, across launches.
+
+	  This is what makes a whole-disk scan possible in the sandbox. No
+	  entitlement can grant `/Users`, `/private/var` or `/opt`, and Full Disk
+	  Access does not lift App Sandbox — measured with the same bundle
+	  identifier and signing identity, the unsandboxed build read
+	  `~/Library/Messages` while the sandboxed one was denied, with tccd having
+	  logged the grant. So the user chooses the folder once and the app stores a
+	  security-scoped bookmark, which is Apple's documented route for exactly
+	  this ("Persist file access with security-scoped URL bookmarks").
+
+	  Required, not optional: measured, creating the bookmark without this key
+	  fails outright with error 256. An app-scoped bookmark is also bound to the
+	  creating bundle identifier — one created by another bundle id failed with
+	  error 259 — so each install grants its own folder.
+
+	  Measured effect of resolving one: with no other grant, `~`, `~/Documents`,
+	  `~/Downloads` and `~/Projects` went from all DENIED to all readable once
+	  `startAccessingSecurityScopedResource()` was called, and back to denied
+	  after `stopAccessingSecurityScopedResource()`. The extension is
+	  process-wide and must be held only while a scan runs (see
+	  `app/ScopedAccess.swift`).
+	-->
+	<key>com.apple.security.files.bookmarks.app-scope</key>
+	<true/>
+
+	<!--
+	  RETIRED (2026-10-08): com.apple.security.temporary-exception.files.home-relative-path.read-write.
+
+	  This granted the app's own cache folders (`~/.npm`, `~/Library/Caches`,
+	  …) so that a Home scan and cleaning worked with no user action. It is
+	  gone, for two reasons that were both measured rather than assumed:
+
+	  1. The bookmark route below replaces it. One folder the user picks —
+	     `Macintosh HD` — grants the home *and* the rest of the disk, and it is
+	     Apple's documented, sanctioned route rather than a temporary exception
+	     that has to be justified item by item in review.
+	  2. It never covered what the product needs. Measured, with this exception
+	     the app still could not read `/System/Volumes/Data/Users`,
+	     `/System/Volumes/Data/private/var` or `/opt`, so a whole-disk scan was
+	     blind to most of the volume and reported the remainder as the whole.
+
+	  What replaced it, measured on a build with only the sandbox, picker and
+	  bookmark entitlements: `/Applications`, `/System/Volumes/Data/Library` and
+	  `/Volumes` are readable on the entitlements alone; `/Users` and `/` are
+	  not, and are reached through the user's chosen folder. The app therefore
+	  asks the user to pick a folder before scanning the disk or the home (see
+	  `ScopedAccess` and `ContentView.requestScan`), rather than assuming access
+	  it does not have.
+
+	  Retiring this is a review-surface reduction: fewer granted paths, no
+	  temporary-exception justification, and one mechanism instead of two.
+	-->
 
 	<!-- Outbound HTTP to the model provider the user configured (a local Ollama
 	     or LM Studio endpoint, or a hosted one). Without this the custom-provider

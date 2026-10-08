@@ -41,7 +41,10 @@ func check(_ name: String, _ condition: Bool, _ detail: String = "") {
 @main
 enum ShellEnvironmentTests {
     static func main() {
-        let home = NSHomeDirectory()
+        // The home the fallback names must be the one owner's answer, not the
+        // process home: under the sandbox `NSHomeDirectory()` is the container,
+        // so a `~/.local/bin` built from it pointed at an empty directory (Task 4).
+        let home = AppEnvironment.realHome
 
         // --- B2: a failed login shell must NOT leave the bare Apple default ---
         //

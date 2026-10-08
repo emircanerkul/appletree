@@ -2,7 +2,7 @@
 
 /* Main window */
 "AppleTree needs Full Disk Access" = "AppleTree a besoin de l'accès complet au disque";
-"System Settings → Privacy & Security → Full Disk Access.\nRemove any old AppleTree rows, then add /Applications/AppleTree.app.\nmacOS only applies the permission to a freshly launched app." = "Réglages Système → Confidentialité et sécurité → Accès complet au disque.\nSupprimez les anciennes lignes AppleTree, puis ajoutez /Applications/AppleTree.app.\nmacOS n'applique l'autorisation qu'à une app fraîchement lancée.";
+"System Settings → Privacy & Security → Full Disk Access.\nRemove any old AppleTree rows, then add %@.\nmacOS only applies the permission to a freshly launched app." = "Réglages Système → Confidentialité et sécurité → Accès complet au disque.\nSupprimez les anciennes lignes AppleTree, puis ajoutez %@.\nmacOS n'applique l'autorisation qu'à une app fraîchement lancée.";
 "Open System Settings" = "Ouvrir les Réglages Système";
 "I granted it — Relaunch" = "C'est accordé — Relancer";
 "Scan without it" = "Scanner sans";
@@ -17,7 +17,7 @@
 "View" = "Affichage";
 "Treemap" = "Treemap";
 "Rings" = "Anneaux";
-"Treemap (WizTree-style) or rings (DaisyDisk-style)" = "Treemap (à la WizTree) ou anneaux (à la DaisyDisk)";
+"Treemap or concentric rings" = "Treemap ou anneaux concentriques";
 "Free Space" = "Espace libre";
 "Show free space in the map" = "Afficher l'espace libre dans la carte";
 "Directory List" = "Liste des dossiers";
@@ -248,3 +248,4 @@
    the pane where providers are added and edited. */
 "Edit %@" = "Modifier %@";
 "Manage model providers" = "Gérer les fournisseurs de modèles";
+

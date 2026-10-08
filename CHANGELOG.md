@@ -1,5 +1,66 @@
 # Changelog
 
+## Unreleased
+
+Cleanup works in the App Store build. The blocker was never only the shell: a
+sandboxed app cannot reach the user's caches by *file access* either, so the
+command path was half the problem.
+
+**Cleanup recognises caches by structure, not by name.** The engine matched
+folder names, so `~/Library/pnpm/store` — 4.0 GB on the machine this was
+measured on — and `~/Library/Caches/Homebrew` (689 MB) were never offered: it did
+not know the words `store` or `Homebrew`. A tool cache is now found by the tool's
+own fixed location *plus* the structure that tool creates (`CACHEDIR.TAG`, npm's
+`index-v5`+`content-v2`, pnpm's `version/files`+`index.db`, pip's `http-v2`,
+Cargo's registry tag), so a folder that merely resembles a cache is still not
+proposed. A row is added only when its marker was observed on a real machine; a
+row that could not be confirmed is left out rather than guessed.
+
+**A folder scan now finds the caches inside it.** Scanning one folder — the
+panel's own "choose a folder" — found nothing at all before: the rules were
+home-relative and a scan rooted below the home had no home ancestor to measure
+from. Selecting `~/Library/Caches` offered neither pip nor Homebrew even though a
+home scan offered both. The location test is now anchored to the home boundary,
+so a home, whole-disk and folder scan agree, while a scan outside your home still
+never offers your caches.
+
+**The App Store build can actually clean.** Two changes that only work together.
+A file-access grant lets a sandboxed AppleTree enumerate, write, Trash and delete
+a cache folder — measured on a bundle signed with the shipping entitlements. And
+`AppEnvironment` becomes the single owner of "where is home": `NSHomeDirectory()`
+is the container's `Data` directory under the sandbox, so the guard was refusing
+every real cache as "Outside your home folder" and the "Home" scan target scanned
+an empty container. The grant alone would have fixed nothing.
+
+**The sandboxed build reaches your whole disk through one folder you pick.** It
+cannot read `/Users`, `/private/var` or `/opt` on any entitlement, and Full Disk
+Access does not lift App Sandbox — measured with the same bundle identifier and
+signing identity, the unsandboxed build read `~/Library/Messages` while the
+sandboxed one was denied, with the grant logged by the system. So `Macintosh HD`
+(or Home) now asks you to choose the folder once; the choice is stored as a
+security-scoped bookmark and later scans need no prompt. Measured, that one
+choice covers the entire disk.
+
+Because of that, the **home-relative temporary exception is retired**: the
+bookmark route subsumes it, it never covered the whole disk anyway, and removing
+it drops the item-by-item justification from App Store review. The sandboxed
+build now carries only Apple's sanctioned keys.
+
+**The sandboxed build no longer offers commands it cannot run.** The planner was
+shown all the allowlisted cleanup commands regardless of build, so in the App
+Store build it proposed "command" cards that silently did nothing — the panel
+reported success while the bytes stayed on disk. The prompt is now told the
+sandbox forbids a command and asks only for folders.
+
+**Five cleanup commands were retired** because a folder now carries them:
+`uv cache clean`, `bun pm cache rm`, `pip cache purge`, `pip3 cache purge` and
+`pod cache clean --all`. Each one's target *is* the tool's own cache directory
+(measured for uv: it empties `uv cache dir` entirely), so the command was just
+another way to need `exec`. The forms a folder cannot express stay: `npm cache
+clean` (npm's folder also holds `_npx` and `_logs`), `yarn cache clean`,
+`uv cache prune` and `pnpm store prune` (both remove only unreferenced entries),
+and the `brew`/`gem`/`go`/`conda`/`docker`/`xcrun simctl` forms.
+
 ## 1.0.1 — 2026-10-07
 
 One planner instead of three, and four fixes that each removed a way the app

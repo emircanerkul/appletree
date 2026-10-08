@@ -6,7 +6,14 @@ import SwiftUI
 // Guards (enforced here, never left to the model)
 
 nonisolated enum CleanupGuard {
-    static let home = NSHomeDirectory()
+    /// The user's real home directory, from the one owner of that fact.
+    ///
+    /// This was `NSHomeDirectory()`, which is the *process* home: under the App
+    /// Store sandbox that is the container's `Data` directory, so every real
+    /// cache was judged "Outside your home folder" and refused even though the
+    /// file grant let this process touch it. `AppEnvironment.realHome` answers
+    /// the same in both builds — see its doc comment for the measurement.
+    static let home = AppEnvironment.realHome
 
     /// Folders AppleTree never cleans, whatever the plan says.
     static let protected = [

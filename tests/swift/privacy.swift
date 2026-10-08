@@ -343,7 +343,23 @@ enum PrivacyTests {
                   promptSource.contains("prefix(\(count))") && policy.contains("up to \(count)"),
                   "the document and AgentPrompt.swift disagree")
         }
-        // The 30-form allowlist §5.5 quotes: 27 exact + 3 one-argument.
+        // The 25-form allowlist §5.5 quotes: 22 exact + 3 one-argument.
+        //
+        // Five cache-clean forms were retired (2026-10-07): `uv cache clean`,
+        // `bun pm cache rm`, `pip cache purge`, `pip3 cache purge` and
+        // `pod cache clean --all`. Each one's target IS the tool's own cache
+        // folder, and each folder is now a first-class candidate the panel
+        // offers and Trashes, so the command carried no capability the folder
+        // does not — it was the `exec` dependency §7 Task 6 exists to drop.
+        // Measured for `uv cache clean`: it empties the `uv cache dir` folder
+        // entirely, which is exactly what trashing that folder does.
+        //
+        // The forms with no folder equivalent stay: `npm cache clean` (npm's
+        // folder is `~/.npm`, which also holds `_npx`, `_logs` and `_prebuilds`,
+        // so they are not the same operation), `yarn cache clean`, `uv cache
+        // prune` and `pnpm store prune` (both remove only *unreferenced* entries,
+        // which a folder move cannot express), and `brew`/`gem`/`go`/`conda`/
+        // `docker`/`xcrun simctl`, which have no folder equivalent at all.
         let allowlistSource = (try? String(contentsOf: root.appendingPathComponent("src/cleanup.rs"),
                                            encoding: .utf8)) ?? ""
         let exactForms = allowlistSource.components(separatedBy: "pub const ALLOWLIST").count > 1
@@ -353,8 +369,22 @@ enum PrivacyTests {
                 .components(separatedBy: "\"").count / 2
             : 0
         check("§5.5's allowlist count matches Rust (\(exactForms) exact forms)",
-              exactForms == 27 && policy.contains("**27**"),
-              "the policy quotes 27 exact forms; Rust has \(exactForms)")
+              exactForms == 22 && policy.contains("**25**"),
+              "the policy quotes 25 forms; Rust has \(exactForms)")
+        // A retired form must be gone from the allowlist, or the guard would
+        // still accept a command the panel no longer needs.
+        for retired in ["uv cache clean", "bun pm cache rm", "pip cache purge",
+                        "pip3 cache purge", "pod cache clean --all"] {
+            check("retired command is out of the allowlist: \(retired)",
+                  !allowlistSource.contains("\"\(retired)\""),
+                  "it should be gone; the folder carries it now")
+        }
+        // The forms kept for good reason must stay, or this retirement overran.
+        for kept in ["npm cache clean", "yarn cache clean", "uv cache prune",
+                     "pnpm store prune", "brew cleanup", "docker system prune"] {
+            check("command with no folder equivalent stays: \(kept)",
+                  allowlistSource.contains("\"\(kept)\""), "it must not be retired")
+        }
 
         print("\(passed) passed, \(failed) failed")
         exit(failed == 0 ? 0 : 1)

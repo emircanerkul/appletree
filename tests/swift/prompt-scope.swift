@@ -44,6 +44,59 @@ func scanTree(_ path: String) -> Tree? {
 }
 
 func run() {
+    // --- the Home scan target (Task 4) ------------------------------------
+    //
+    // The "Home" button offered `NSHomeDirectory()`, which is the *process*
+    // home: under the App Store sandbox that is the container's empty `Data`
+    // directory, so a sandboxed Home scan found nothing at all. Measured on a
+    // sandboxed bundle built from these sources. It must name the user's real
+    // home, which is what `AppEnvironment.realHome` answers in both builds.
+    check("the Home scan target is the user's real home",
+          ScanTargets.home.path == AppEnvironment.realHome, ScanTargets.home.path)
+    check("the Home scan target exists",
+          FileManager.default.fileExists(atPath: ScanTargets.home.path),
+          ScanTargets.home.path)
+
+    // --- the command list is conditional on being able to run one (Task 5) --
+    //
+    // The prompt offered all 27 exact command forms regardless of build. In the
+    // App Store build none of them can run — measured: no `exec`, no `PATH`, no
+    // subprocess — so the planner produced "command" cards that silently did
+    // nothing. That is worse than absent: the user clicks Move and the item
+    // reports success while the bytes stay on disk.
+    //
+    // `AgentPrompt.build` now takes an empty allowlist when the app is
+    // sandboxed, and says so in words, so the planner has no command to
+    // nominate. This suite asserts the contract at the seam that decides it.
+    //
+    // The Developer-ID build under test is NOT sandboxed, so the honest check
+    // here is the *mechanism*: the rendered prompt's command section is a
+    // function of the passed list. The sandboxed rendering is asserted directly,
+    // with an empty list, which is exactly what the sandboxed app passes.
+    let tree = scanTree("/Applications")
+    if let tree {
+        let unsandboxed = AgentPrompt.build(tree: tree, scanRoot: "/Applications",
+                                           known: [], running: [])
+        check("an unsandboxed prompt lists the allowlist",
+              unsandboxed.contains("`brew cleanup`"),
+              String(unsandboxed.prefix(400)))
+        let sandboxed = AgentPrompt.build(tree: tree, scanRoot: "/Applications",
+                                          known: [], running: [],
+                                          commandsAvailable: false)
+        check("a sandboxed prompt names no allowlisted command",
+              !sandboxed.contains("`brew cleanup`") && !sandboxed.contains("`npm cache clean`"),
+              String(sandboxed.prefix(400)))
+        check("a sandboxed prompt still asks for trash items",
+              sandboxed.contains("trash"),
+              "the folder candidates must survive; only the command path goes")
+        check("a sandboxed prompt says why there are no commands",
+              sandboxed.lowercased().contains("sandbox"),
+              "a planner that cannot see the reason invents command items anyway")
+    } else {
+        check("an /Applications scan can be taken for the prompt checks", false,
+              "bz_scan_start returned nil")
+    }
+
     // --- the pure path parsing -------------------------------------------
     //
     // `simctl runtime list -j` reports the runtime's inner `.dmg`; the plan

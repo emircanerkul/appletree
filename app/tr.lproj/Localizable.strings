@@ -2,7 +2,7 @@
 
 /* Main window */
 "AppleTree needs Full Disk Access" = "AppleTree'nin Tam Disk Erişimi gerekli";
-"System Settings → Privacy & Security → Full Disk Access.\nRemove any old AppleTree rows, then add /Applications/AppleTree.app.\nmacOS only applies the permission to a freshly launched app." = "Sistem Ayarları → Gizlilik ve Güvenlik → Tam Disk Erişimi.\nEski AppleTree satırlarını kaldırın, ardından /Applications/AppleTree.app uygulamasını ekleyin.\nmacOS izni yalnızca yeni başlatılan bir uygulamaya uygular.";
+"System Settings → Privacy & Security → Full Disk Access.\nRemove any old AppleTree rows, then add %@.\nmacOS only applies the permission to a freshly launched app." = "Sistem Ayarları → Gizlilik ve Güvenlik → Tam Disk Erişimi.\nEski AppleTree satırlarını kaldırın, ardından %@ uygulamasını ekleyin.\nmacOS izni yalnızca yeni başlatılan bir uygulamaya uygular.";
 "Open System Settings" = "Sistem Ayarları'nı Aç";
 "I granted it — Relaunch" = "İzni verdim — Yeniden Başlat";
 "Scan without it" = "Bu olmadan tara";
@@ -17,7 +17,7 @@
 "View" = "Görünüm";
 "Treemap" = "Treemap";
 "Rings" = "Halkalar";
-"Treemap (WizTree-style) or rings (DaisyDisk-style)" = "Treemap (WizTree tarzı) veya halkalar (DaisyDisk tarzı)";
+"Treemap or concentric rings" = "Treemap veya eşmerkezli halkalar";
 "Free Space" = "Boş Alan";
 "Show free space in the map" = "Haritada boş alanı göster";
 "Directory List" = "Dizin Listesi";
@@ -246,3 +246,4 @@
    the pane where providers are added and edited. */
 "Edit %@" = "%@ düzenle";
 "Manage model providers" = "Model sağlayıcılarını yönet";
+
