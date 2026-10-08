@@ -57,7 +57,7 @@ SWIFT_TEST_FLAGS := -parse-as-library -swift-version 6 -default-isolation MainAc
                     -target arm64-apple-macos$(MIN_MACOS)
 
 .DEFAULT_GOAL := help
-.PHONY: help all build engine bundle open deploy deploy-sandbox deploy-sandbox-undo package test test-cli test-fda-grant test-scoped-access test-drawer test-deletion test-selection test-links test-readme test-doclinks test-router test-privacy test-planner-selection test-prompt-scope test-shellenv test-engine-writer test-l10n test-mapweights test-rust icon clean
+.PHONY: help all build engine bundle open deploy deploy-sandbox deploy-sandbox-undo package pkg test test-cli test-fda-grant test-scoped-access test-drawer test-deletion test-selection test-links test-readme test-doclinks test-router test-privacy test-planner-selection test-prompt-scope test-shellenv test-engine-writer test-l10n test-mapweights test-rust icon clean
 
 help:
 	@echo 'AppleTree targets:'
@@ -66,6 +66,7 @@ help:
 	@echo '  make deploy-sandbox     install the Mac App Store sandbox rehearsal alongside it'
 	@echo '  make deploy-sandbox-undo  remove the sandbox rehearsal build'
 	@echo '  make package            notarize (when possible) and package AppleTree.dmg locally'
+	@echo '  make pkg                App Store .pkg for Transporter (Apple Distribution + installer cert)'
 	@echo '  make test               the full suite: Rust engine, Swift unit tests, JSON CLI, l10n'
 	@echo '  make test-cli           JSON CLI black-box contract (shipped interface)'
 	@echo '  make test-rust          cargo test --release'
@@ -445,6 +446,99 @@ package:
 	echo "==> packaged AppleTree.dmg"; \
 	cat SHA256SUMS.txt; \
 	echo "    Uploading it anywhere is a separate, deliberate act; this target does not."
+
+# ---------------------------------------------------------------------------
+# App Store submission (.pkg for Transporter)
+# ---------------------------------------------------------------------------
+#
+# Transporter takes a **signed .pkg** for a macOS app. (.ipa is iOS-only and .aar
+# is Android; neither applies here.) This target produces exactly that one file,
+# and refuses to produce a misleading one: every prerequisite is checked before
+# anything is built, because an unsigned or wrongly-entitled pkg uploads fine and
+# is then rejected by review with no useful message.
+#
+# The four things App Store submission needs, and what this target does about
+# each:
+#
+#   1. **Apple Distribution certificate** — signs the .app. Present on this
+#      machine (see `security find-identity -v`). NOT "Developer ID Application",
+#      which is for direct download and notarization; uploading a Developer
+#      ID-signed app is the most common way this fails.
+#   2. **Embedded provisioning profile** naming com.erklab.apps.appletree. A
+#      macOS App Store build has no profile embedded in the binary the way iOS
+#      does, but the submission still has to match one in the account, and
+#      `macOS App Store` profiles are what `-exportArchive`/Xcode would use. If
+#      you have one, point PROVISIONING_PROFILE at it and it is copied in.
+#   3. **Sandbox entitlements** — app/AppleTree.entitlements, the sealed 5-key
+#      set this repo already ships and rehearses.
+#   4. **Installer certificate** ("3rd Party Mac Developer Installer" or the
+#      newer "Mac Installer Distribution") — signs the .pkg itself. This is a
+#      SEPARATE certificate from the app-signing one and is NOT on this machine
+#      as of 1.1.0, so the target stops and tells you rather than emitting an
+#      unsigned pkg.
+#
+# Usage:
+#   make pkg                                  # uses the first Apple Distribution identity
+#   make pkg INSTALLER_ID="Mac Installer Distribution: ..."   # pin the installer cert
+#   make pkg PROVISIONING_PROFILE=~/path/to.provisionprofile
+#
+# Verify before uploading:
+#   pkgutil --check-signature AppleTree.pkg
+#   xcrun altool --validate-app -f AppleTree.pkg -t macos -u <apple-id> -p <app-pw>
+# or just drag AppleTree.pkg into Transporter, which validates on delivery.
+pkg: build
+	@test -f '$(SANDBOX_ENTITLEMENTS)' || { \
+	    echo "error: $(SANDBOX_ENTITLEMENTS) is missing; it is the App Store entitlement set." >&2; exit 1; }
+	@IDS=$$(security find-identity -v 2>/dev/null); \
+	DIST=$$(awk -F'"' '/Apple Distribution/{print $$2; exit}' <<<"$$IDS"); \
+	INST=$$(awk -F'"' '/Mac Installer Distribution|3rd Party Mac Developer Installer/{print $$2; exit}' <<<"$$IDS"); \
+	if [[ -n '$(INSTALLER_ID)' ]]; then INST='$(INSTALLER_ID)'; fi; \
+	if [[ -z "$$DIST" ]]; then \
+	    echo 'error: no "Apple Distribution" certificate found.' >&2; \
+	    echo '       App Store submission needs it (Developer ID is for direct download).' >&2; \
+	    echo '       Xcode > Settings > Accounts > Manage Certificates > + > Apple Distribution' >&2; \
+	    exit 1; \
+	fi; \
+	if [[ -z "$$INST" ]]; then \
+	    echo 'error: no installer certificate found.' >&2; \
+	    echo '       Signing the .pkg needs "Mac Installer Distribution" (or the older' >&2; \
+	    echo '       "3rd Party Mac Developer Installer"), which is a DIFFERENT certificate' >&2; \
+	    echo '       from the one that signs the .app.' >&2; \
+	    echo '       Xcode > Settings > Accounts > Manage Certificates > + > Mac Installer Distribution' >&2; \
+	    echo '       Transporter will reject an unsigned pkg, so this target stops here.' >&2; \
+	    exit 1; \
+	fi; \
+	echo "==> Signing the app with: $$DIST"; \
+	echo "==> Signing the pkg with: $$INST"; \
+	STAGE=$$(mktemp -d); \
+	ditto '$(APP)' "$$STAGE/AppleTree.app"; \
+	if [[ -n '$(PROVISIONING_PROFILE)' ]]; then \
+	    cp '$(PROVISIONING_PROFILE)' "$$STAGE/AppleTree.app/Contents/embedded.provisionprofile"; \
+	    echo "    embedded provisioning profile: $(PROVISIONING_PROFILE)"; \
+	fi; \
+	codesign --force --deep --options runtime --timestamp \
+	    --sign "$$DIST" \
+	    --entitlements '$(SANDBOX_ENTITLEMENTS)' \
+	    "$$STAGE/AppleTree.app"; \
+	codesign --verify --strict --verbose=2 "$$STAGE/AppleTree.app"; \
+	echo '==> Entitlements sealed into the app:'; \
+	codesign -d --entitlements - "$$STAGE/AppleTree.app" 2>/dev/null \
+	    | grep -E 'app-sandbox|network|user-selected|library-validation|bookmarks' | sed 's/^/      /' || true; \
+	echo '==> Building the pkg'; \
+	rm -f AppleTree.pkg; \
+	productbuild --component "$$STAGE/AppleTree.app" /Applications \
+	    --sign "$$INST" AppleTree.pkg; \
+	rm -rf "$$STAGE"; \
+	echo '==> Verifying the pkg signature'; \
+	pkgutil --check-signature AppleTree.pkg; \
+	shasum -a 256 AppleTree.pkg > SHA256SUMS.pkg.txt; \
+	echo ''; \
+	echo '==> AppleTree.pkg is ready to upload with Transporter'; \
+	cat SHA256SUMS.pkg.txt; \
+	echo ''; \
+	echo '    Transporter: drag AppleTree.pkg in, or'; \
+	echo '      xcrun altool --validate-app -f AppleTree.pkg -t macos -u <apple-id> -p <app-specific-password>'; \
+	echo '    Uploading is a separate, deliberate act; this target does not.'
 
 # ---------------------------------------------------------------------------
 # Tests

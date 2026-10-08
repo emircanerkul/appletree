@@ -71,13 +71,49 @@ xcrun notarytool store-credentials appletree-notary \
     --apple-id <apple-id> --team-id <TEAM_ID> --password <app-specific-password>
 ```
 
-### App Store route
+### App Store route (Transporter)
 
-`make package` does **not** produce a submittable artifact. That route needs an
-Apple Distribution certificate, an embedded provisioning profile, and the sandbox
-entitlements in `app/AppleTree.entitlements`. `make deploy-sandbox` installs a
-rehearsal build locally to check behaviour under the sandbox before paying a
-review cycle; see `docs/appstore/app-store-metadata.md` section 3.
+```sh
+make pkg                  # -> AppleTree.pkg, ready for Transporter
+```
+
+Transporter takes a **signed `.pkg`** for a macOS app. (`.ipa` is iOS-only and
+`.aar` is Android; neither applies.) `make package` produces a `.dmg` for direct
+download and is **not** submittable — it signs with Developer ID, which is the
+wrong certificate for the store.
+
+`make pkg` checks all four prerequisites **before building anything**, because an
+unsigned or wrongly-entitled pkg uploads fine and is then rejected during review
+with no useful message:
+
+| Prerequisite | Signs | Status here |
+| --- | --- | --- |
+| **Apple Distribution** certificate | the `.app` | check with `security find-identity -v` |
+| **Mac Installer Distribution** certificate | the `.pkg` | **install in Xcode first** |
+| Sandbox entitlements (`app/AppleTree.entitlements`) | — | in the repo |
+| Provisioning profile for `com.erklab.apps.appletree` | — | pass via `PROVISIONING_PROFILE=` if you have one |
+
+The two certificates are **different** and both are required: one signs the app,
+the other signs the container. Developer ID Application is a third, for direct
+download only.
+
+To get the installer certificate: **Xcode → Settings → Accounts → Manage
+Certificates → + → Mac Installer Distribution**. Without it the target stops
+rather than emitting an unsigned pkg.
+
+Then verify and upload:
+
+```sh
+pkgutil --check-signature AppleTree.pkg     # must not say "no signature"
+xcrun altool --validate-app -f AppleTree.pkg -t macos \
+    -u <apple-id> -p <app-specific-password>
+```
+
+or drag `AppleTree.pkg` into Transporter, which validates on delivery.
+
+Before spending a review cycle, `make deploy-sandbox` installs a rehearsal build
+locally to check behaviour under the sandbox; see
+`docs/appstore/app-store-metadata.md` section 3.
 
 ## Contribution License — please read carefully
 
