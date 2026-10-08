@@ -89,7 +89,7 @@ with no useful message:
 | Prerequisite | Signs | Status here |
 | --- | --- | --- |
 | **Apple Distribution** certificate | the `.app` | check with `security find-identity -v` |
-| **Mac Installer Distribution** certificate | the `.pkg` | **install in Xcode first** |
+| **Mac Installer Distribution** certificate | the `.pkg` | check with `security find-identity -v` |
 | Sandbox entitlements (`app/AppleTree.entitlements`) | — | in the repo |
 | Provisioning profile for `com.erklab.apps.appletree` | — | pass via `PROVISIONING_PROFILE=` if you have one |
 
@@ -97,9 +97,10 @@ The two certificates are **different** and both are required: one signs the app,
 the other signs the container. Developer ID Application is a third, for direct
 download only.
 
-To get the installer certificate: **Xcode → Settings → Accounts → Manage
-Certificates → + → Mac Installer Distribution**. Without it the target stops
-rather than emitting an unsigned pkg.
+The installer certificate is the one people miss: it is **not** issued by default
+and must be requested from **Xcode → Settings → Accounts → Manage Certificates →
++ → Mac Installer Distribution**. The target stops without it rather than emitting
+an unsigned pkg.
 
 Then verify and upload:
 
