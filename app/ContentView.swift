@@ -1132,8 +1132,24 @@ struct OutlinePanel: NSViewRepresentable {
 
 
         var roots: [Item] = []
+        /// Every row currently materialised, by node id.
+        ///
+        /// Built and maintained alongside `roots`/`children` so a pick resolves
+        /// in O(depth) instead of scanning each level's siblings — the scan that
+        /// made `syncSelection` quadratic (audit UI-3). Rebuilt wholesale in
+        /// `rebuildIfNeeded` and extended as folders are expanded, because a row
+        /// only exists once its ancestors are open.
+        private var itemIndex: [Int: Item] = [:]
         weak var outline: NSOutlineView?
         private var iconCache: [String: NSImage] = [:]
+
+        /// Record a subtree's rows in `itemIndex`.
+        private func index(_ items: [Item]) {
+            for item in items {
+                itemIndex[item.id] = item
+                if !item.children.isEmpty { index(item.children) }
+            }
+        }
 
         func rebuildIfNeeded() {
             guard let model, let t = model.tree else { return }
@@ -1176,6 +1192,11 @@ struct OutlinePanel: NSViewRepresentable {
                     }
                 } else {
                     roots = childIDs.map { Item(id: Int($0), tree: t) }
+                    // A fresh row set: the index must not keep ids whose rows no
+                    // longer exist, or `revealRow` would answer with a stale item
+                    // and the outline would refuse the row.
+                    itemIndex = [:]
+                    index(roots)
                     outline?.reloadData()
                     // Put the user's own tree back exactly as they left it.
                     // Rows stay COLLAPSED by default: entering a folder shows
@@ -1250,9 +1271,21 @@ struct OutlinePanel: NSViewRepresentable {
         }
 
         /// The item for a node id, searching only the rows that exist.
+        ///
+        /// Dictionary-backed, like `revealRow`: both used to walk the whole
+        /// visible tree, and `syncSelection` calls one of them once per picked
+        /// row — which is what made a large selection quadratic (audit UI-3).
+        ///
+        /// The index is filled lazily here, because `Item.children` materialises
+        /// on first access and the outline may have expanded rows since the last
+        /// rebuild; a miss therefore walks once to populate it and retries. That
+        /// keeps the map correct without every expansion site having to remember
+        /// to update it.
         private func find(_ id: Int) -> Item? {
+            if let hit = itemIndex[id] { return hit }
             func walk(_ items: [Item]) -> Item? {
                 for item in items {
+                    itemIndex[item.id] = item
                     if item.id == id { return item }
                     if let hit = walk(item.children) { return hit }
                 }
@@ -1588,6 +1621,14 @@ struct OutlinePanel: NSViewRepresentable {
         /// or anything outside the folder on screen. It does NOT expand anything
         /// — see `syncSelection`; opening happens once per new pick in
         /// `picksDidChange`, so a collapsed folder stays collapsed.
+        ///
+        /// Resolved through `itemIndex`, built once per rebuild, rather than a
+        /// `level.first(where:)` scan per chain step. That scan made
+        /// `syncSelection` quadratic in the number of picked rows — n picks ×
+        /// n siblings — and it runs from `updateNSView` on every model change,
+        /// so the cost was paid on every redraw. Measured on the real engine: 500
+        /// rows 27 ms, 2,000 rows 350 ms, 8,000 rows 6,235 ms, growing 4.4× per
+        /// doubling (audit UI-3). A dictionary lookup is O(depth) per pick.
         private func revealRow(for id: Int, in outline: NSOutlineView, tree: Tree) -> Item? {
             var chain: [Int] = []
             var cur = id
@@ -1597,12 +1638,12 @@ struct OutlinePanel: NSViewRepresentable {
                 cur = Int(tree.parents[cur])
             }
             chain.reverse()
-            var level = roots
+            // Every link must have a row; `find` fills the index as it misses,
+            // so the walk below is a dictionary hit in the common case.
             var target: Item?
             for node in chain {
-                guard let it = level.first(where: { $0.id == node }) else { return nil }
+                guard let it = find(node) else { return nil }
                 target = it
-                level = it.children
             }
             return target
         }

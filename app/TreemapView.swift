@@ -693,37 +693,24 @@ final class TreemapNSView: NSView {
     /// folder's own border. Retired rather than kept: two lookups answering one
     /// question is how the two drifted apart in the first place.
 
-    /// The folder whose separation frame is painted at `point`, if any.
-    ///
-    /// A folder narrower than the title-strip threshold gets no label, and its
-    /// children tile its box exactly, so every pixel of it belongs to a file
-    /// tile instead — a `MacOS`, a `.xpc`, a small `Headers` had no clickable
-    /// point anywhere and could not be selected or right-clicked at all.
-    /// The frame is painted *over* those children, so that pixel is visibly
-    /// the folder's own and is the folder's only handle.
-    ///
-    /// Where frames overlap they are a nested chain, and `draw` paints the
-    /// outer one last, so the first match in draw order is the one on top:
-    /// the folder whose border the user is actually looking at.
-    private func frame(at point: CGPoint) -> Int? {
-        for r in rects where r.onFrame(point) { return r.node }
-        return nil
-    }
-
     /// What a click at `point` picks, in paint order: a title strip (it paints
-    /// above its own folder), a folder's separation frame (painted over the
-    /// children), a file tile, then the folder underneath any of them.
+    /// above its own folder), then the same resolver `hover(at:)` uses.
+    ///
+    /// **`resolve` is the single owner of "which node is under this point".**
+    /// This function used to have its own frame lookup — `frame(at:)`, a
+    /// first-match linear scan over every rect — while `hover` walked the
+    /// tile's ancestry through `frameBands()`. The two orders disagreed wherever
+    /// an unheaded folder's box sits exactly on a child folder's box: measured
+    /// on such a fixture, 3,192 of 281,600 sampled points gave `pick = 1` and
+    /// `hover = 6`, so the user clicked one folder while the highlight and ⌘↑
+    /// named a different one (audit UI-1). Two owners of one question is the
+    /// whole bug; the resolver is O(depth) and already handles the no-tile case.
     ///
     /// Internal, like `hover(at:)`, so the click geometry is exercised
     /// directly instead of through a synthesized event.
     func pick(at point: CGPoint, slop: CGFloat = 0) -> Int? {
         if let lab = Scan.hit(labelHits, point, slop: slop) { return lab }
-        // Before the file tiles: a frame is painted over the children, so
-        // these pixels visibly belong to the folder, even though a child's
-        // rect also contains the point.
-        if let framed = frame(at: point) { return framed }
-        if let leaf = hit(point) { return leaf.node }
-        return folder(at: point)
+        return resolve(point, leaf: hit(point))
     }
 
     override func mouseMoved(with event: NSEvent) {

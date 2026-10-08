@@ -447,6 +447,67 @@ func run() {
               "usedEnd=\(usedEnd) expected=\(expectedUsedSpan)")
     }
 
+    // --- UI-2: the rings must not draw 0-byte children ----------------------
+    //
+    // The divisor counted only siblings carrying bytes, but the loop drew every
+    // child and `ShareWeight.share` gives any sibling a positive pool floor — so
+    // a 0-byte child got a real arc. Ring 0 then overran the whole circle
+    // (measured: 8.168 rad against 6.283) and wrapped over arc 0, so the picture
+    // disagreed with what hover and click resolve.
+    //
+    // A directory with one real child and several empty ones is the smallest
+    // fixture that exposes it, and it is an ordinary shape: empty files and
+    // folders are everywhere on a whole-disk scan.
+    do {
+        let zeroRoot = fm.temporaryDirectory.appendingPathComponent("bz-rings-zero-\(UUID().uuidString)")
+        try? fm.createDirectory(at: zeroRoot, withIntermediateDirectories: true)
+        // TWO real children, so the pooled (`siblings > 1`) path runs — that is
+        // the path that gave a 0-byte sibling its floor. With a single real child
+        // the strict-bytes branch gives an empty sibling a zero span, and the
+        // defect cannot appear at all.
+        for name in ["big-a", "big-b"] {
+            let big = zeroRoot.appendingPathComponent(name)
+            try? fm.createDirectory(at: big, withIntermediateDirectories: true)
+            try? Data(count: 60_000_000).write(to: big.appendingPathComponent("blob"))
+        }
+        // Several empty siblings, each with bytes == 0.
+        for i in 0..<6 {
+            let empty = zeroRoot.appendingPathComponent("empty-\(i)")
+            try? fm.createDirectory(at: empty, withIntermediateDirectories: true)
+            try? Data().write(to: empty.appendingPathComponent("nothing"))
+        }
+        let handle = zeroRoot.path.withCString { bz_scan_start($0) }
+        if let handle {
+            var done: Int32 = 0
+            var f: UInt64 = 0, d: UInt64 = 0, b: UInt64 = 0
+            while done == 0 {
+                bz_progress(handle, &f, &d, &b, &done)
+                if done == 0 { usleep(5_000) }
+            }
+            if let zeroTree = Tree(handle: handle) {
+                let radii = SunburstNSView.ringRadii(outer: 340)
+                let segs = SunburstNSView.layout(tree: zeroTree, root: 0, radii: radii, freeBytes: 0)
+                let ring0: [SBSegment] = segs.filter { $0.ring == 0 && $0.node >= 0 }
+                check("ring 0 draws no 0-byte arc",
+                      !ring0.contains(where: { $0.bytes == 0 }),
+                      "empty arcs: \(ring0.filter { $0.bytes == 0 }.map(\.node))")
+                let end = ring0.map(\.end).max() ?? 0
+                check("ring 0 stays inside the full circle",
+                      end <= 2 * Double.pi + 1e-9,
+                      "end=\(end) exceeds \(2 * Double.pi)")
+                let sorted = ring0.sorted { $0.start < $1.start }
+                let overlapping = zip(sorted, sorted.dropFirst()).contains { $0.end > $1.start + 1e-9 }
+                check("ring 0's arcs do not overlap", !overlapping)
+            } else {
+                check("the rings fixture produced a tree", false, "no tree for \(zeroRoot.path)")
+                bz_free(handle)
+            }
+        } else {
+            check("the rings fixture scan started", false, "bz_scan_start failed")
+        }
+        try? fm.removeItem(at: zeroRoot)
+    }
+
     try? fm.removeItem(at: root)
     print("\(passed) passed, \(failed) failed")
     exit(failed == 0 ? 0 : 1)
