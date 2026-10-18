@@ -434,6 +434,23 @@ func run() async {
     // on screen when a .pnpm store puts its long hash in the MIDDLE). Widths are
     // now allocated from the name lengths, so cheap crumbs are paid in full before
     // a long one gets a point.
+    // Deleting the folder you are INSIDE must step one level out, not all the way
+    // to the scan root.
+    //
+    // `remove_node` sets a removed node's parent to `NO_PARENT`, so the link is
+    // unrecoverable afterwards and `attachedAncestor` legitimately answers 0 for a
+    // detached node. The repair therefore has to capture the surviving parent
+    // BEFORE the cut. Without it the list and the map jumped to the scan root
+    // ("it goes all the way up in directory") along with their scroll position.
+    let modelSrc2 = source("app/Model.swift")
+    check("the view root's landing spot is captured before the link is cut",
+          modelSrc2.contains("var repairRootTo: Int? = nil")
+              && modelSrc2.contains("repairRootTo ?? tree.attachedAncestor(of: viewRoot)"),
+          "the parent is unrecoverable after remove_node severs the link")
+    check("the captured ancestor is a strict ancestor of the view root",
+          modelSrc2.contains("var rootChain = Set(tree.ancestry(viewRoot).dropLast())"),
+          "a removed sibling would otherwise be chosen as the new root")
+
     // The scan root must never be dropped to save room.
     //
     // The model used to cap the ancestors at five, so any path deeper than that

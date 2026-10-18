@@ -153,6 +153,12 @@ nonisolated final class Tree: @unchecked Sendable {
     }
 
     /// The closest still-attached node at or above `node`, or 0.
+    ///
+    /// Only meaningful for a node that is still IN the tree: `remove_node` sets a
+    /// removed node's parent to `NO_PARENT`, which severs the link this would have
+    /// to follow, so a detached node legitimately has no answer here and 0 is the
+    /// honest one. Callers repairing a view root after a removal must capture the
+    /// parent BEFORE the removal — see `forgetPaths`, which does.
     func attachedAncestor(of node: Int) -> Int {
         guard node > 0, node < count else { return 0 }
         for candidate in ancestry(node).reversed() where isAttached(candidate) {
@@ -670,11 +676,30 @@ final class ScanModel {
         // Kept for the single-path log line only, so `forgetPath`'s diagnostic
         // output stays byte-for-byte what it was.
         var only: (name: String, node: Int)?
+        // Where the view root should go if the folder it names is one of the
+        // removed subtrees.
+        //
+        // It has to be captured BEFORE the cut, because `remove_node` sets the
+        // removed node's parent to `NO_PARENT` and the link is then unrecoverable
+        // from the tree. Without this the repair fell through to 0 and deleting
+        // the folder you were browsing jumped the list and the map to the scan
+        // root ("it goes all the way up") instead of stepping one level out to the
+        // parent the user came from. The nearest surviving ancestor of the FIRST
+        // removed node that is an ancestor of the current view root is the answer;
+        // the loop below keeps the last match, so a batch that removes an outer
+        // folder still lands above all of them.
+        var repairRootTo: Int? = nil
+        var rootChain = Set(tree.ancestry(viewRoot).dropLast())   // strict ancestors
         for path in paths {
             // Cheap (microseconds): a path lookup walks name components, a cut
             // is one `Vec::remove`. Doing every cut before any of the shared
             // work is what makes that work happen once.
-            guard let node = tree.node(at: path), tree.removeNode(node) else { continue }
+            guard let node = tree.node(at: path) else { continue }
+            // Strict ancestors of the node, nearest first, before the link goes.
+            for ancestor in tree.ancestry(node).dropLast().reversed() {
+                if rootChain.contains(ancestor) { repairRootTo = ancestor; break }
+            }
+            guard tree.removeNode(node) else { continue }
             if removed == 0 { only = (tree.name(node), node) }
             removed += 1
         }
@@ -694,7 +719,11 @@ final class ScanModel {
         // reach an intermediate answer nothing observes.
         validateSelection()
         if let hovered, !tree.isAttached(hovered) { self.hovered = nil }
-        if !tree.isAttached(viewRoot) { viewRoot = tree.attachedAncestor(of: viewRoot) }
+        if !tree.isAttached(viewRoot) {
+            // Prefer the ancestor captured before the cut; fall back to the tree
+            // walk for any root detach this batch did not cause.
+            viewRoot = repairRootTo ?? tree.attachedAncestor(of: viewRoot)
+        }
         treeRevision &+= 1
         if removed == 1, let only {
             NSLog("[bz] forgot %@ (node %d) in place; tree now %llu nodes",
