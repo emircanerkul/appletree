@@ -101,6 +101,9 @@
 "%@ items couldn't be cleaned." = "%@ 个项目无法清理。";
 "The map is up to date." = "图示已是最新。";
 "Nothing needed doing." = "无需任何操作。";
+"Deleting %@…" = "正在删除 %@…";
+"Deleting %@ — %@ of %@" = "正在删除 %@ — 第 %@ 个，共 %@ 个";
+"Updating the view…" = "正在更新视图…";
 "Safe to remove" = "可安全移除";
 "Your call" = "由你决定";
 

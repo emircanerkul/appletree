@@ -592,11 +592,19 @@ private struct ScanProgress: View {
 }
 
 /// Pointer movement changes only the status text, not the window's view graph.
-private struct ScanStatusBar: View {
+/// `internal`, not `private`: `.build/perf-probes/deletion-progress.swift` renders
+/// this exact view so the deletion-progress line is judged from pixels of shipping
+/// code rather than a re-description of it.
+struct ScanStatusBar: View {
     let model: ScanModel
     var body: some View {
         HStack(spacing: 8) {
-            if let tree = model.tree {
+            // A deletion in flight takes the bar over. It can run for seconds on a
+            // big tree and the app stays responsive throughout, so without this the
+            // user sees an unchanged window and reads it as "nothing happened".
+            if let deletion = model.deletion {
+                deleting(deletion)
+            } else if let tree = model.tree {
                 if let sel = model.hovered ?? model.selection {
                     Text(tree.displayPath(sel))
                         .lineLimit(1)
@@ -663,6 +671,30 @@ private struct ScanStatusBar: View {
         .font(.callout)
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
+    }
+
+    /// One line describing a deletion in flight.
+    ///
+    /// Leads with the spinner and the verb so the bar is unmistakably "working",
+    /// names the item being removed, and shows how far the batch is. `finished`
+    /// only counts ITEMS, and one item can be minutes of work, so the item name
+    /// carries the sense of progress that a counter cannot.
+    @ViewBuilder
+    private func deleting(_ deletion: ScanModel.DeletionProgress) -> some View {
+        ProgressView().controlSize(.small)
+        if deletion.removingFromViewOnly {
+            Text("Updating the view…")
+        } else if deletion.total > 1 {
+            Text("Deleting \(deletion.current) — \(deletion.finished + 1) of \(deletion.total)")
+        } else {
+            Text("Deleting \(deletion.current)…")
+        }
+        Spacer()
+        if deletion.bytes > 0 {
+            Text(Fmt.size(deletion.bytes))
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+        }
     }
 }
 

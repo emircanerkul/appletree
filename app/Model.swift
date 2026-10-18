@@ -1165,6 +1165,31 @@ final class ScanModel {
         let last = (p as NSString).lastPathComponent
         return last.isEmpty ? p : last
     }
+    /// What a deletion is doing right now, for the status bar to show.
+    ///
+    /// A permanent delete of a big tree is not instant: `removefile` on a
+    /// 120,000-file `node_modules` measured 6.2 s, and a real one is larger. The
+    /// work runs off the main thread — measured, the main actor kept ticking
+    /// throughout — so the app stays responsive, but with nothing on screen the
+    /// user reads that as "nothing happened" and clicks again. This is the model's
+    /// record of that gap, and the status bar is its only reader.
+    struct DeletionProgress: Equatable {
+        /// How many items the batch holds, and how many are done.
+        var finished: Int
+        var total: Int
+        /// The item being removed right now, so the bar can name it.
+        var current: String
+        /// Bytes the batch was expected to free, for the "of N GB" line.
+        var bytes: UInt64
+        /// True once the disk work is done and only the in-place forget remains,
+        /// which is fast. Kept separate so "deleting" never describes a phase that
+        /// has already finished.
+        var removingFromViewOnly: Bool = false
+    }
+
+    /// Non-nil while a trash or permanent delete is in flight.
+    var deletion: DeletionProgress? = nil
+
     var hovered: Int? = nil
     var freeBytes: UInt64 = 0
     /// Rebuildable folders worth deleting, largest first.

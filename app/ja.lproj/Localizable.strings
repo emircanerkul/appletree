@@ -101,6 +101,9 @@
 "%@ items couldn't be cleaned." = "%@件の項目をクリーンアップできませんでした。";
 "The map is up to date." = "マップは最新です。";
 "Nothing needed doing." = "作業は不要でした。";
+"Deleting %@…" = "%@ を削除中…";
+"Deleting %@ — %@ of %@" = "%@ を削除中 — %@ / %@";
+"Updating the view…" = "表示を更新中…";
 "Safe to remove" = "安全に削除できる";
 "Your call" = "あなたが決める";
 

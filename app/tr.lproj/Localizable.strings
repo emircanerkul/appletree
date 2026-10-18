@@ -101,6 +101,9 @@
 "%@ items couldn't be cleaned." = "%@ öge temizlenemedi.";
 "The map is up to date." = "Harita güncel.";
 "Nothing needed doing." = "Yapılacak bir şey gerekmedi.";
+"Deleting %@…" = "%@ siliniyor…";
+"Deleting %@ — %@ of %@" = "%@ siliniyor — %@ / %@";
+"Updating the view…" = "Görünüm güncelleniyor…";
 "Safe to remove" = "Güvenle kaldırılabilir";
 "Your call" = "Karar sizin";
 

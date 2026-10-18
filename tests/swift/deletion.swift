@@ -387,6 +387,27 @@ func run() async {
           source("app/CleanupModel.swift").contains("strerror"),
           "the cause is not read from errno, so the user sees a bare status again")
 
+    // A big delete must say it is working.
+    //
+    // `removefile` on a 120,000-file tree measured 6.2 s, and the work runs off
+    // the main thread, so the window stays live but nothing changes on screen.
+    // The user reads that as "nothing happened". The status bar now shows the
+    // item and the batch position while it runs.
+    check("a delete in flight is reported to the status bar",
+          source("app/Model.swift").contains("var deletion: DeletionProgress?")
+              && content.contains("if let deletion = model.deletion {"),
+          "a silent multi-second delete reads as a hang")
+    check("the deleting line names the item, not just a count",
+          content.contains("Deleting " + "\\" + "(deletion.current)"),
+          "one item can be minutes of work, so a bare counter reads as stuck")
+    check("both delete routes publish progress",
+          source("app/TreemapView.swift").components(separatedBy: "model.deletion = ScanModel.DeletionProgress").count >= 3,
+          "one route would still delete silently")
+    // The DANGEROUS failure: leaving the bar on "Deleting…" after the work ended.
+    check("progress is cleared even if the task is cancelled",
+          source("app/TreemapView.swift").components(separatedBy: "defer { model.deletion = nil }").count >= 3,
+          "a stuck bar is worse than no bar: it claims work that is not happening")
+
     // The window title: readable, and the LONG name is what gets cropped.
     //
     // This used to be pinned as "the chain has a fixed 320pt width bound", on the

@@ -1336,6 +1336,17 @@ enum NodeActions {
 
         let paths = items.map(\.path)
         Task { @MainActor in
+            // A move to the Trash is usually instant (it is a rename on the same
+            // volume), but not always — a big tree on a full disk, or across
+            // volumes, takes real time. The same progress record covers it so the
+            // two delete routes report the same way.
+            model.deletion = ScanModel.DeletionProgress(
+                finished: 0, total: paths.count, current: items.first?.name ?? "", bytes: bytes)
+            // `defer`, not a trailing assignment: if this task is cancelled the
+            // function returns through the await and a plain assignment at the end
+            // would never run, leaving the status bar saying "Deleting…" forever —
+            // worse than the missing progress it replaces.
+            defer { model.deletion = nil }
             let outcomes = await Trash.trash(paths, authority: .userDirect)
             // Forget in place rather than rescanning: the engine cuts each
             // node's link where it sits, so every other id keeps its meaning and
@@ -1397,7 +1408,17 @@ enum NodeActions {
             // once. The erase itself stays sequential: it is I/O, and its order
             // is what the per-item failure messages are built in.
             var forgotten: [String] = []
-            for path in paths {
+            // Report progress, because this loop can run for seconds. A big tree
+            // is ONE item to this loop but minutes of `removefile` on disk, so the
+            // counter alone would sit at "0 of 1" and read as a hang; the bar
+            // shows the item's name and that it is working.
+            model.deletion = ScanModel.DeletionProgress(
+                finished: 0, total: paths.count, current: items.first?.name ?? "", bytes: bytes)
+            // See the trash route: `defer` so a cancelled task cannot leave the bar
+            // stuck on a deletion that is no longer running.
+            defer { model.deletion = nil }
+            for (i, path) in paths.enumerated() {
+                model.deletion?.current = items[i].name
                 if let failure = await Erase.erase(path) {
                     failures.append(failure.message)
                     if case .permission = failure.cause { someWerePermission = true }
@@ -1406,9 +1427,12 @@ enum NodeActions {
                     // trash, so the map, the list and the totals agree at once.
                     forgotten.append(path)
                 }
+                model.deletion?.finished = i + 1
             }
             // ONE forget for the batch, before the failures are reported, so the
-            // alert and the picture it describes cannot disagree.
+            // alert and the picture it describes cannot disagree. The bar says so,
+            // rather than claiming the disk work is still running.
+            if model.deletion != nil { model.deletion?.removingFromViewOnly = true }
             model.forgetPaths(forgotten)
             // Its own title: nothing was "moved" on this route, and a failure
             // notice that names the wrong gesture sends the user looking in the

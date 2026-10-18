@@ -101,6 +101,9 @@
 "%@ items couldn't be cleaned." = "%@ éléments n'ont pas pu être nettoyés.";
 "The map is up to date." = "La carte est à jour.";
 "Nothing needed doing." = "Rien n'était nécessaire.";
+"Deleting %@…" = "Suppression de %@…";
+"Deleting %@ — %@ of %@" = "Suppression de %@ — %@ sur %@";
+"Updating the view…" = "Mise à jour de la vue…";
 "Safe to remove" = "Suppression sans risque";
 "Your call" = "À vous de voir";
 
