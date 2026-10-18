@@ -51,6 +51,15 @@ final class TreemapNSView: NSView {
 
     func relayout() {
         guard let model, let tree = model.tree, bounds.width > 4, bounds.height > 4 else {
+            // A new tree must still release the old one's renders here. There
+            // is no size to key them by, but the entries name a `Tree` that is
+            // gone, so keeping them would just hold tens of megabytes until LRU
+            // happened to evict them.
+            if let tree = model?.tree {
+                let id = ObjectIdentifier(tree)
+                if let previous = lastTreeID, previous != id { dropRenderCache() }
+                lastTreeID = id
+            }
             rects = []; leaves = []; labels = []; labelText = []; labelHits = []
             hoveredLabel = nil; litRects = nil; bitmap = nil
             lastSize = .zero
@@ -58,16 +67,42 @@ final class TreemapNSView: NSView {
             needsDisplay = true
             return
         }
+        let treeID = ObjectIdentifier(tree)
+        // A new `Tree` (a rescan) renumbers every node, so nothing keyed by the
+        // old one can ever be hit again. Dropping it here frees the memory now
+        // rather than leaving unreachable entries for LRU to sweep out later.
+        if let previous = lastTreeID, previous != treeID { dropRenderCache() }
+        let (pw, ph, scale) = pixelSize()
+        let key = RenderCacheKey(
+            treeID: treeID, root: model.viewRoot, revision: model.treeRevision,
+            pw: pw, ph: ph, scale: scale,
+            showFree: model.showFreeSpace, freeBytes: model.freeBytes
+        )
         lastSize = bounds.size
         lastRoot = model.viewRoot
-        lastTreeID = ObjectIdentifier(tree)
+        lastTreeID = treeID
         lastRevision = model.treeRevision
         lastShowFree = model.showFreeSpace
+
+        if let cached = cachedPayload(for: key, tree: tree) {
+            // The overlay is presentation state, never cached: re-read it from
+            // the model so a hit cannot inherit the previous frame's hover or
+            // selection. `resetLookups` rebuilds `leafIndex`/`dirRects`/… for
+            // the geometry just restored.
+            apply(cached)
+            resetLookups()
+            hoveredNode = model.hovered
+            shown = Overlay(hovered: hoveredNode, label: hoveredLabel,
+                            picked: model.picks.members, primary: model.picks.primary)
+            needsDisplay = true
+            return
+        }
 
         rects.removeAll(keepingCapacity: true)
         leaves.removeAll(keepingCapacity: true)
         labels.removeAll(keepingCapacity: true)
-        renderBitmap(tree: tree)
+        renderBitmap(tree: tree, pw: pw, ph: ph, scale: scale)
+        rememberRender(key, tree: tree)
         // Everything redraws, so the overlay simply starts from the model
         // (a zoom clears the selection, a rescan the hover).
         hoveredNode = model.hovered
@@ -76,10 +111,15 @@ final class TreemapNSView: NSView {
         needsDisplay = true
     }
 
-    private func renderBitmap(tree: Tree) {
+    /// The pixel dimensions `renderBitmap` works in, computed in one place so
+    /// the cache key and the render can never disagree about them.
+    private func pixelSize() -> (pw: Int, ph: Int, scale: CGFloat) {
         let scale = window?.backingScaleFactor ?? 2
-        let pw = max(1, Int((bounds.width * scale).rounded()))
-        let ph = max(1, Int((bounds.height * scale).rounded()))
+        return (max(1, Int((bounds.width * scale).rounded())),
+                max(1, Int((bounds.height * scale).rounded())), scale)
+    }
+
+    private func renderBitmap(tree: Tree, pw: Int, ph: Int, scale: CGFloat) {
         let r = TreemapRenderer.render(
             tree: tree, pw: pw, ph: ph, scale: scale, root: model?.viewRoot ?? 0,
             showFree: model?.showFreeSpace ?? false, freeBytes: model?.freeBytes ?? 0
@@ -97,6 +137,210 @@ final class TreemapNSView: NSView {
         labelText = labels.map { LabelText($0, tree: tree, freeBytes: model?.freeBytes ?? 0) }
         labelHits = Scan.hits(labels)
     }
+
+    // ---- Render cache ----
+    //
+    // The reported symptom: entering a folder, then another, then coming back
+    // re-renders a picture that was on screen moments ago (~1.8–2.0 s at
+    // 1400×900 pt on the 1.82 M-node home scan). `renderBitmap` is a pure
+    // function of the key below, so the whole payload — geometry AND bitmap —
+    // is memoised.
+    //
+    // The overlay is deliberately absent: `shown`, `hoveredNode`, `hoveredLabel`
+    // and `litRects` are per-frame presentation state read from
+    // `model.picks`/`model.hovered`, and a cached frame must pick them up fresh.
+
+    /// Everything `TreemapRenderer.render` plus `LabelText` reads. Omitting any
+    /// one of these serves a stale picture:
+    ///
+    /// - `treeID`: a rescan builds a new `Tree` and renumbers every node.
+    /// - `root`, `revision`: a zoom, or an in-place edit that keeps the object.
+    /// - `pw`/`ph`/`scale`: the renderer lays out and paints in device pixels.
+    /// - `showFree`/`freeBytes`: the free-space block's geometry comes from
+    ///   `freeBytes` (and from `showFree`), and so does its label text, so a
+    ///   disk-space update must not reuse the old tag.
+    private struct RenderCacheKey: Hashable {
+        var treeID: ObjectIdentifier
+        var root: Int
+        var revision: Int
+        var pw: Int
+        var ph: Int
+        var scale: CGFloat
+        var showFree: Bool
+        var freeBytes: UInt64
+    }
+
+    /// One rendered map: exactly what `renderBitmap` assigns to the view.
+    private struct RenderPayload {
+        var rects: [TMRect]
+        var leaves: [TMRect]
+        var labels: [TMLabel]
+        var labelText: [LabelText]
+        var labelHits: [(rect: CGRect, node: Int)]
+        var bitmap: CGImage?
+        /// The tree this geometry belongs to, held WEAKLY.
+        ///
+        /// `ObjectIdentifier` is just an address, so a rescan that frees one
+        /// `Tree` and allocates the next at the same address would produce the
+        /// same key — and serve the dead tree's node ids against the new tree's
+        /// arrays. Comparing through a weak reference closes that exactly: a
+        /// dead tree reads back `nil`, which is a miss, while the cache still
+        /// never keeps a scan alive (an `ObjectIdentifier` alone cannot tell a
+        /// live tree from a reused address).
+        weak var tree: Tree?
+        /// Approximate resident bytes, computed once on store.
+        var bytes: Int
+    }
+
+    /// How much rendered map to keep. Bounded in BYTES, not entries: one entry
+    /// measured 44.2 MB (42.1 MiB) at 1400×900 pt @2x — a 20.2 MB bitmap plus
+    /// 23.9 MB of geometry — and 113.7 MiB at 2400×1543 pt, so an entry count
+    /// would either let a big window hold hundreds of megabytes or a small one
+    /// hold nothing useful.
+    ///
+    /// Sized from the measured payload, not from an estimate. The reported
+    /// symptom is root → subfolder → *back*, which needs TWO entries resident:
+    /// at 1400×900 that measured 84.5 MB (80.6 MiB), so a 64 MB budget kept
+    /// only one and the return leg still paid the full render (measured: 9.4 s
+    /// back at 64 MB, 0.1 ms at this budget). 128 MiB keeps two at an ordinary
+    /// window and three at a small one, with headroom. That is still less than
+    /// the ~152 MB of dead `Item`s this view's sibling list held before the
+    /// outline was fixed (see `OutlinePanel.Coordinator.itemIndex`), and it is
+    /// bounded so it cannot grow with window size.
+    static let renderCacheBudgetBytes = 128 << 20
+
+    private var renderCache: [RenderCacheKey: RenderPayload] = [:]
+    /// Least recently used first. The dictionary itself has no order, so an
+    /// eviction that took "the first key" would be arbitrary — the recorded
+    /// finding about `dirMemo`. Recency is tracked explicitly here instead.
+    private var renderCacheOrder: [RenderCacheKey] = []
+    private var renderCacheBytes = 0
+    private var renderCacheHits = 0
+    private var renderCacheMisses = 0
+
+    /// A hit, moved to the most-recently-used end. Returns the shared payload;
+    /// the view adopts its arrays without copying.
+    ///
+    /// `tree` is compared through the payload's weak reference, not just by the
+    /// key's `ObjectIdentifier`: the latter is an address, and a rescan can free
+    /// one `Tree` and allocate the next at the same one.
+    private func cachedPayload(for key: RenderCacheKey, tree: Tree) -> RenderPayload? {
+        guard let payload = renderCache[key], payload.tree === tree else {
+            // An entry whose tree has died is unreachable for every current
+            // key: drop it rather than leaving it to LRU.
+            if let dead = renderCache[key], dead.tree == nil {
+                if let i = renderCacheOrder.firstIndex(of: key) { renderCacheOrder.remove(at: i) }
+                if let gone = renderCache.removeValue(forKey: key) {
+                    renderCacheBytes -= gone.bytes
+                }
+            }
+            renderCacheMisses += 1
+            return nil
+        }
+        renderCacheHits += 1
+        if let i = renderCacheOrder.firstIndex(of: key) {
+            renderCacheOrder.remove(at: i)
+            renderCacheOrder.append(key)
+        }
+        if ProcessInfo.processInfo.environment["BZ_TIMING"] != nil {
+            NSLog("BZ render cache HIT %dx%d (%.1f MB cached)", key.pw, key.ph,
+                  Double(renderCacheBytes) / 1_048_576)
+        }
+        return payload
+    }
+
+    private func rememberRender(_ key: RenderCacheKey, tree: Tree) {
+        let payload = RenderPayload(
+            rects: rects, leaves: leaves, labels: labels, labelText: labelText,
+            labelHits: labelHits, bitmap: bitmap, tree: tree,
+            bytes: Self.cacheCost(rects: rects, leaves: leaves, labels: labels,
+                                  labelText: labelText, labelHits: labelHits, bitmap: bitmap)
+        )
+        // A payload bigger than the whole budget can never be retained: storing
+        // it and letting eviction remove it again would leave the bookkeeping
+        // churning and — worse — report a footprint that implies retention while
+        // a hit is impossible. A large window therefore simply runs uncached,
+        // which is the honest answer and costs nothing but the render it was
+        // already paying for.
+        guard payload.bytes <= Self.renderCacheBudgetBytes else {
+            if ProcessInfo.processInfo.environment["BZ_TIMING"] != nil {
+                NSLog("BZ render cache SKIP: one entry is %.1f MB, budget is %.1f MB",
+                      Double(payload.bytes) / 1_048_576,
+                      Double(Self.renderCacheBudgetBytes) / 1_048_576)
+            }
+            return
+        }
+        if let old = renderCache.updateValue(payload, forKey: key) {
+            renderCacheBytes -= old.bytes
+            renderCacheOrder.removeAll { $0 == key }
+        }
+        renderCacheOrder.append(key)
+        renderCacheBytes += payload.bytes
+        evictRenderCache()
+    }
+
+    private func evictRenderCache() {
+        while renderCacheBytes > Self.renderCacheBudgetBytes, let oldest = renderCacheOrder.first {
+            renderCacheOrder.removeFirst()
+            if let gone = renderCache.removeValue(forKey: oldest) {
+                renderCacheBytes -= gone.bytes
+            }
+        }
+    }
+
+    /// A rescan's cache: every key names the old `Tree` object, so none of it
+    /// can ever be hit again.
+    private func dropRenderCache() {
+        renderCache.removeAll()
+        renderCacheOrder.removeAll()
+        renderCacheBytes = 0
+    }
+
+    /// Approximate resident cost of one payload: the bitmap exactly, and the
+    /// geometry by `stride`, plus the labels' name bytes. The attributed
+    /// strings' attribute dictionaries are not counted; they are a few KB per
+    /// entry next to a multi-megabyte bitmap.
+    private static func cacheCost(rects: [TMRect], leaves: [TMRect], labels: [TMLabel],
+                                  labelText: [LabelText], labelHits: [(rect: CGRect, node: Int)],
+                                  bitmap: CGImage?) -> Int {
+        var bytes = rects.count * MemoryLayout<TMRect>.stride
+            + leaves.count * MemoryLayout<TMRect>.stride
+            + labels.count * MemoryLayout<TMLabel>.stride
+            + labelText.count * MemoryLayout<LabelText>.stride
+            + labelHits.count * MemoryLayout<(rect: CGRect, node: Int)>.stride
+        for label in labels { bytes += label.name.utf8.count }
+        if let bitmap { bytes += bitmap.bytesPerRow * bitmap.height }
+        return bytes
+    }
+
+    private func apply(_ payload: RenderPayload) {
+        rects = payload.rects
+        leaves = payload.leaves
+        labels = payload.labels
+        labelText = payload.labelText
+        labelHits = payload.labelHits
+        bitmap = payload.bitmap
+        litRects = nil
+    }
+
+    // ---- Read-only diagnostics (external probes only) ----
+
+    /// The rendered map, for a probe that compares a cached render against an
+    /// uncached one. Internal for the same reason `SunburstView.ringRadii` and
+    /// `pick(at:)` are: the geometry is exercised directly rather than guessed
+    /// at from a screenshot.
+    var bitmapSnapshot: CGImage? { bitmap }
+    var geometrySnapshot: (rects: [TMRect], leaves: [TMRect], labels: [TMLabel]) {
+        (rects, leaves, labels)
+    }
+    /// What the render cache currently retains, and across how many entries.
+    var cacheFootprintBytes: Int { renderCacheBytes }
+    var cacheEntryCount: Int { renderCache.count }
+    /// Hits and misses since the view was created. A timing assertion cannot
+    /// tell a hit from a fast miss — the first render happens in `model.didSet`
+    /// — so a probe asserts against these instead.
+    var cacheHitCount: Int { renderCacheHits }
+    var cacheMissCount: Int { renderCacheMisses }
 
     /// A label's strings and their sizes in the resting (unhovered) look.
     private struct LabelText {
