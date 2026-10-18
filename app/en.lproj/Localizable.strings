@@ -54,6 +54,9 @@
 "OK" = "OK";
 "Some folders couldn't be moved" = "Some folders couldn't be moved";
 "Some items couldn't be deleted" = "Some items couldn't be deleted";
+"Move it to the Trash in Finder, then empty the Trash — macOS will ask for the password." = "Move it to the Trash in Finder, then empty the Trash — macOS will ask for the password.";
+"This needs an administrator." = "This needs an administrator.";
+"Items owned by macOS or an administrator can't be deleted by AppleTree. Drag them to the Trash in Finder and empty the Trash — macOS will ask for the password." = "Items owned by macOS or an administrator can't be deleted by AppleTree. Drag them to the Trash in Finder and empty the Trash — macOS will ask for the password.";
 "Reclaimable" = "Reclaimable";
 "Nothing large to clean up" = "Nothing large to clean up";
 "%@ in %@ folders" = "%@ in %@ folders";

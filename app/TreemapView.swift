@@ -1098,15 +1098,12 @@ enum NodeActions {
             // the zoom, the selection and the size totals stay consistent.
             var failures: [String] = []
             for outcome in outcomes {
-                if outcome.moved {
-                    model.forgetPath(outcome.source)
-                } else if outcome.reason == String(localized: "Already gone") {
-                    // Nothing left on disk, so nothing to report — but the node
-                    // still has to leave the map. Its path is gone, and the tree
-                    // was built from an earlier scan, so the map would otherwise
-                    // keep showing bytes that no longer exist and count them in
-                    // every total. Forgetting is what makes the picture match
-                    // the disk; there is no failure to name.
+                // One verdict for "no longer at that path": moved, or already
+                // absent before the Trash was asked. Both mean the tree still
+                // names something that is not on disk, and forgetting is what
+                // makes the picture match. The already-gone case is not a
+                // failure — nothing is left to remove — so it is not reported.
+                if outcome.leftTheDisk {
                     model.forgetPath(outcome.source)
                 } else if let reason = outcome.reason {
                     failures.append("\((outcome.source as NSString).lastPathComponent): \(reason)")
@@ -1141,9 +1138,15 @@ enum NodeActions {
         let paths = items.map(\.path)
         Task { @MainActor in
             var failures: [String] = []
+            // Whether ANY failure was a permission refusal, so one extra line
+            // can point at the route that does work. Tracked separately from the
+            // per-item messages: the alert lists what failed, and a remedy
+            // repeated on every line would bury the paths it is about.
+            var someWerePermission = false
             for path in paths {
                 if let failure = await Erase.erase(path) {
-                    failures.append("\((path as NSString).lastPathComponent): \(failure)")
+                    failures.append(failure.message)
+                    if case .permission = failure.cause { someWerePermission = true }
                 } else {
                     // Gone permanently, and forgotten the same in-place way as a
                     // trash, so the map, the list and the totals agree at once.
@@ -1153,7 +1156,18 @@ enum NodeActions {
             // Its own title: nothing was "moved" on this route, and a failure
             // notice that names the wrong gesture sends the user looking in the
             // Trash for something that never went there.
-            reportFailures(failures, title: String(localized: "Some items couldn't be deleted"))
+            //
+            // The advice is offered only when it is true. The app cannot delete a
+            // root-owned bundle, and a Mac App Store build may not ask for the
+            // privileges that would (Guideline 2.4.5(v)), but Finder can: the
+            // Trash needs write access only to the parent folder, and emptying
+            // the Trash is where macOS itself prompts for the administrator
+            // password. Naming that route turns a dead end into a working path.
+            reportFailures(failures,
+                           title: String(localized: "Some items couldn't be deleted"),
+                           advice: someWerePermission
+                               ? String(localized: "Items owned by macOS or an administrator can't be deleted by AppleTree. Drag them to the Trash in Finder and empty the Trash — macOS will ask for the password.")
+                               : nil)
         }
     }
 
@@ -1162,8 +1176,10 @@ enum NodeActions {
     /// One dialog for the batch, not one per item: a user who selected 30 files
     /// and lost 3 to permissions needs the three named once, not 30 modals.
     /// `title` is passed in because the two routes fail differently — a Trash
-    /// move that did not happen, a delete that did not.
-    private static func reportFailures(_ failures: [String], title: String) {
+    /// move that did not happen, a delete that did not. `advice` is an optional
+    /// sentence naming the route that WOULD work, appended once after the list.
+    private static func reportFailures(_ failures: [String], title: String,
+                                       advice: String? = nil) {
         guard !failures.isEmpty else { return }
         let alert = NSAlert()
         alert.alertStyle = .warning
@@ -1171,9 +1187,15 @@ enum NodeActions {
         // Bounded so a 500-item failure cannot produce a dialog taller than the
         // screen; the count still tells the user the true scale.
         let shown = failures.prefix(12).joined(separator: "\n")
-        alert.informativeText = failures.count > 12
+        var body = failures.count > 12
             ? shown + "\n" + String(localized: "…and \(String(failures.count - 12)) more")
             : shown
+        if let advice {
+            // After the list, separated by a blank line, so it reads as the
+            // answer to what is above it rather than as another failure.
+            body += "\n\n" + advice
+        }
+        alert.informativeText = body
         alert.addButton(withTitle: String(localized: "OK"))
         alert.runModal()
     }

@@ -84,6 +84,25 @@ nonisolated struct TrashOutcome: Sendable, Equatable {
     let reason: String?
 
     var moved: Bool { trashed != nil }
+
+    /// Whether the path is no longer at `source` — because it was moved, or
+    /// because it was already absent before anything was asked of the Trash.
+    ///
+    /// The distinction matters and only one answer is right for a caller that
+    /// holds a tree built from an earlier scan: the node must be forgotten
+    /// either way, or the list, the map and every byte total keep counting
+    /// something that is not on disk any more.
+    ///
+    /// Not `String(localized: "Already gone")` compared at each call site: a
+    /// reason string is prose for the user and is translated, so a comparison
+    /// against it is a different question in each language. `deletion.swift`
+    /// pinned that comparison in `TreemapView`, which is how the same decision
+    /// came to be written twice — and the planner path never got it at all.
+    var leftTheDisk: Bool { moved || reason == Self.alreadyGone }
+
+    /// The one "there was nothing left to move" verdict, so every producer and
+    /// consumer of it names the same fact rather than re-spelling a sentence.
+    static let alreadyGone = String(localized: "Already gone")
 }
 
 /// The one trash pathway: moves each path and reports one outcome per path.
@@ -142,7 +161,7 @@ nonisolated enum Trash {
                 // would have moved it. Same non-resolving test `Erase` uses.
                 guard Trash.exists(source) else {
                     return TrashOutcome(source: source, trashed: nil,
-                                        reason: String(localized: "Already gone"))
+                                        reason: TrashOutcome.alreadyGone)
                 }
                 if authority == .plannerPlan, let reason = CleanupGuard.blockReason(path: source) {
                     return TrashOutcome(source: source, trashed: nil, reason: reason)
@@ -174,6 +193,92 @@ nonisolated enum Trash {
 /// same call, which is what makes one function enough here. It is the same
 /// primitive `AgentRun`'s parallel sweep uses, so "delete permanently" means one
 /// thing in this app.
+/// Why a permanent delete did not happen, in a shape the caller can act on.
+///
+/// A `String` was not enough: the caller has to decide whether to offer the
+/// user a different route, and "Permission denied" must not be matched by
+/// searching the message for words. The same lesson `TrashOutcome.leftTheDisk`
+/// records — a translated sentence is prose, not a verdict — so the cause is a
+/// value here and the wording happens at the edge.
+nonisolated struct EraseFailure: Sendable, Equatable {
+    enum Cause: Sendable, Equatable {
+        /// The system refused: the item or a folder inside it is owned by
+        /// someone else (root-owned App Store bundles), or is immutable/SIP
+        /// protected. Nothing the app can do about it without privileges.
+        ///
+        /// Carries `errno` so the message can still show the exact detail —
+        /// `errno` is thread-local and long gone by the time the alert is built
+        /// on the main actor, so it has to be captured at the failing call.
+        case permission(errno: Int32)
+        /// Anything else, kept as the raw status + errno so a new cause is still
+        /// diagnosable rather than swallowed.
+        case other(status: Int32, errno: Int32)
+    }
+
+    /// The path as it was asked for, standardized.
+    let path: String
+    let cause: Cause
+
+    /// Whether the Trash is a route that would work where delete did not.
+    ///
+    /// A rename needs write access to the PARENT directory only; a recursive
+    /// delete needs it on every directory inside the item. That asymmetry is why
+    /// a root-owned bundle can be trashed but not deleted: measured, `/Applications`
+    /// is group-writable and the bundle's own directories are not. So for a
+    /// permission failure the honest advice is "move it to the Trash and empty
+    /// it", which is exactly what Finder does — and emptying is the step where
+    /// macOS asks for the administrator password, in Finder's own dialog rather
+    /// than one this app would have to request (App Review Guidelines 2.4.5(v)
+    /// forbids a Mac App Store app from requesting root escalation).
+    var trashWouldWork: Bool {
+        guard case .permission = cause else { return false }
+        // The item's own name must be removable from its folder, which is a
+        // write test on the parent. If the parent is read-only too, the Trash
+        // cannot take it either and saying so would be a second failure.
+        let parent = (path as NSString).deletingLastPathComponent
+        return FileManager.default.isWritableFile(atPath: parent)
+    }
+
+    /// The message to put in the failure alert.
+    ///
+    /// Always names the cause. A bare `removefile failed (-1)` was the original
+    /// bug: it reports that something failed without saying what, so the only
+    /// reading available to the user is "the delete is broken".
+    var message: String {
+        switch cause {
+        case .other(let status, let code):
+            let cause = code == 0 ? "" : String(cString: strerror(code))
+            return cause.isEmpty
+                ? "\(path): removefile failed (\(status))"
+                : "\(path): \(cause) (removefile \(status), errno \(code))"
+        case .permission(let code):
+            // Two sentences, because the two cases need two different actions.
+            // Deliberately does NOT claim WHY the system refused: an immutable
+            // file and a root-owned bundle both surface as EPERM/EACCES, and
+            // guessing "owned by an administrator" for an immutable file states
+            // a cause that is not true. The remedy is what the message is for.
+            //
+            // The Trash route is the one that works for a root-owned app: a
+            // rename needs only the PARENT's write bit, and emptying the Trash is
+            // where macOS itself asks for the administrator password. Leading
+            // with the path keeps the alert's shape (one line per failed item),
+            // so a mixed batch still reads as a list.
+            //
+            // The errno TEXT is dropped when the remedy already says the same
+            // thing — "Permission denied … Permission denied" reads as a stutter
+            // — but the number always stays, because it is what diagnoses a cause
+            // this wording does not anticipate.
+            let text = String(cString: strerror(code))
+            let remedy = trashWouldWork
+                ? String(localized: "Move it to the Trash in Finder, then empty the Trash — macOS will ask for the password.")
+                : String(localized: "This needs an administrator.")
+            return remedy.localizedCaseInsensitiveContains(text)
+                ? "\(path): \(remedy) (errno \(code))"
+                : "\(path): \(text). \(remedy) (errno \(code))"
+        }
+    }
+}
+
 nonisolated enum Erase {
     /// Delete `path` permanently. Nil when it is gone, else why it is not.
     ///
@@ -192,20 +297,48 @@ nonisolated enum Erase {
     /// link owns no data, so the totals were only off by its own entry, but the
     /// item would reappear on the next scan with no sign the delete had failed.
     ///
-    /// The status is the whole story on failure: `removefile` returns less than
-    /// zero and does not set errno, so there is no message to read. A path that
+    /// The REASON is read from `errno`, which `removefile` does set. The comment
+    /// here and in `AgentRun.remove` used to claim it did not, so a failed
+    /// delete surfaced as "removefile failed (-1)" — a status with no cause.
+    /// Measured: a root-owned bundle under `/Applications` returns
+    /// `-1 / EACCES (Permission denied)`, and an absent path `-1 / ENOENT`.
+    /// Naming the cause is what tells the user this needs an administrator
+    /// rather than leaving them to guess the delete is broken. A path that
     /// survived the call is reported; one that did not is not a failure, even
     /// with a non-zero status (a partial sweep can still leave nothing behind).
-    static func erase(_ path: String) async -> String? {
+    static func erase(_ path: String) async -> EraseFailure? {
         await Task.detached(priority: .userInitiated) {
             let target = (path as NSString).standardizingPath
             guard exists(target) else { return nil }
+            errno = 0
             let status = removefile(target, nil, removefile_flags_t(REMOVEFILE_RECURSIVE))
+            let code = errno
             // Re-check with the same non-resolving test, or a dangling link
             // would look gone on both sides of a call that never touched it.
             guard status < 0, exists(target) else { return nil }
-            return "\(target): removefile failed (\(status))"
+            // EACCES and EPERM are the same answer to the user — the system
+            // refused, not the app — and the same remedy applies to both, so
+            // they collapse into one cause rather than two near-identical
+            // sentences. Everything else keeps its exact status and errno.
+            let cause: EraseFailure.Cause = (code == EACCES || code == EPERM)
+                ? .permission(errno: code)
+                : .other(status: status, errno: code)
+            return EraseFailure(path: target, cause: cause)
         }.value
+    }
+
+    /// Why a failed `removefile` failed, in words the user can act on.
+    ///
+    /// Reads `errno`, so it must be called immediately after the failing call —
+    /// that is the only window in which `errno` still describes it. Falls back
+    /// to the raw status when `errno` carries nothing (`0`, or a value with no
+    /// `strerror` text), so an unexpected failure still reports something exact.
+    nonisolated static func reason(status: Int32) -> String {
+        let code = errno
+        let cause = code == 0 ? "" : String(cString: strerror(code))
+        return cause.isEmpty
+            ? "removefile failed (\(status))"
+            : "\(cause) (removefile \(status), errno \(code))"
     }
 
     /// Whether anything occupies `path` — the link itself counted as a thing.

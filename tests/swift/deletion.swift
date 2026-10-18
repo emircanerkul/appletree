@@ -83,14 +83,14 @@ func run() async {
                    atomically: true, encoding: .utf8)
     let folderPath = folder.path
     check("fixture folder exists before the erase", fm.fileExists(atPath: folderPath))
-    let folderFailure = await Erase.erase(folderPath)
+    let folderFailure = await Erase.erase(folderPath)?.message
     check("erasing a folder reports no failure", folderFailure == nil, folderFailure ?? "")
     check("erasing a folder removes it from the disk", !fm.fileExists(atPath: folderPath))
 
     // A plain file.
     let file = root.appendingPathComponent("loose.txt")
     try? "x".write(toFile: file.path, atomically: true, encoding: .utf8)
-    let fileFailure = await Erase.erase(file.path)
+    let fileFailure = await Erase.erase(file.path)?.message
     check("erasing a file reports no failure", fileFailure == nil, fileFailure ?? "")
     check("erasing a file removes it from the disk", !fm.fileExists(atPath: file.path))
 
@@ -103,7 +103,7 @@ func run() async {
                          atomically: true, encoding: .utf8)
     let link = root.appendingPathComponent("shortcut")
     try? fm.createSymbolicLink(at: link, withDestinationURL: target)
-    let linkFailure = await Erase.erase(link.path)
+    let linkFailure = await Erase.erase(link.path)?.message
     check("erasing a symlink reports no failure", linkFailure == nil, linkFailure ?? "")
     check("erasing a symlink unlinks the link itself", !fm.fileExists(atPath: link.path))
     check("erasing a symlink leaves what it pointed at alone",
@@ -145,7 +145,7 @@ func run() async {
     check("the dangling-link fixture reads as absent to fileExists",
           !fm.fileExists(atPath: dangling.path),
           "the fixture does not exercise the trap it exists for")
-    let danglingFailure = await Erase.erase(dangling.path)
+    let danglingFailure = await Erase.erase(dangling.path)?.message
     check("erasing a dangling symlink reports no failure", danglingFailure == nil,
           danglingFailure ?? "")
     check("erasing a dangling symlink actually unlinks it",
@@ -172,18 +172,49 @@ func run() async {
     check("the immutable-child fixture was set up", flagged,
           "chflags failed, so the partial-delete path is not exercised")
     if flagged {
-        let partialFailure = await Erase.erase(partial.path)
+        let partialFailure = await Erase.erase(partial.path)?.message
         let survives = exists(partial.path)
         check("the fixture really survives the sweep", survives,
               "the fixture did not reproduce a partial delete")
         check("a PARTIAL delete reports failure, not success", partialFailure != nil,
               "reported success while the item is still on disk")
+        // …and the failure must NAME ITS CAUSE.
+        //
+        // The message used to be "…: removefile failed (-1)", because the code
+        // claimed `removefile` does not set errno. Measured, it does: a
+        // root-owned bundle under /Applications returns -1/EACCES, and an
+        // absent path -1/ENOENT. A status with no cause reads as "the delete is
+        // broken"; "Permission denied" reads as "this needs an administrator",
+        // which is the user's actual answer (the screenshots that prompted this
+        // were App Store bundles owned by root).
+        if let said = partialFailure {
+            // The exact errno depends on WHY the sweep was refused: an immutable
+            // file gives EPERM ("Operation not permitted"), a root-owned bundle
+            // gives EACCES ("Permission denied"). Both are the same class of
+            // answer to the user — the system refused, not the app — so the
+            // assertion is that a cause is NAMED, not that it is one sentence.
+            let named = said.contains("Permission denied") || said.contains("Operation not permitted")
+            check("a refused delete names the cause, not a bare status", named,
+                  "the user is told nothing actionable: \(said)")
+            // A permission failure keeps the exact errno text and number as a
+            // trailing detail. (A non-permission failure carries the status too;
+            // both are checked here by accepting either shape, because which one
+            // this fixture triggers depends on why the system refused.)
+            check("the named cause still carries the exact errno detail",
+                  said.contains("errno") && said.contains("Operation not permitted"),
+                  "a wording regression loses the detail needed to diagnose a new cause: \(said)")
+            // And the remedy must be stated, since that is the whole point of
+            // telling the user rather than showing a status code.
+            check("a refused delete names the route that works",
+                  said.contains("Trash") || said.contains("administrator"),
+                  "the user is told it failed but not what to do: \(said)")
+        }
         _ = chflags(locked.path, UInt32(0))
     }
 
     // Already gone: a success, because the caller must still forget its node.
     // Reporting a failure here would leave a removed item in the map forever.
-    let absentFailure = await Erase.erase(root.appendingPathComponent("never-was").path)
+    let absentFailure = await Erase.erase(root.appendingPathComponent("never-was").path)?.message
     check("erasing an absent path is a success, so its node is still forgotten",
           absentFailure == nil, absentFailure.map { "reported \($0)" } ?? "")
 
@@ -343,6 +374,38 @@ func run() async {
           content.contains("let rows = highlightedNodes") && content.contains("rows.isEmpty ? model.pickedNodes : rows"),
           "the list does not read the highlighted rows")
 
+    // The cause must survive the OTHER delete route too. `AgentRun.remove` runs
+    // the same removefile through four queue slots and records the first
+    // failure; it had the same stale "does not set errno" claim and rendered its
+    // own bare-status string, so the two routes could word one failure two ways.
+    check("both delete routes word a failure through one owner",
+          !source("app/AgentRun.swift").contains("removefile failed \\(status))")
+              && source("app/AgentRun.swift").contains("Erase.reason(status: status)")
+              && source("app/CleanupModel.swift").contains("Permission denied"),
+          "the bulk delete formats its own message again, so the two routes can disagree")
+    check("the failure reason reads errno",
+          source("app/CleanupModel.swift").contains("strerror"),
+          "the cause is not read from errno, so the user sees a bare status again")
+
+    // The window title must never be able to vanish.
+    //
+    // The breadcrumb chain sized itself to its content, so ONE long folder name
+    // asked the toolbar for more width than it had; AppKit then gave the
+    // navigation item ZERO width and the title disappeared entirely — no
+    // ellipsis, no crumb, nothing clickable to go back up. Measured on a real
+    // 175-character `.pnpm/react-native-reanimated@…` path: 1052pt at a 1258pt
+    // window, 0pt at 1000pt and below. The fix caps the chain's width, which is
+    // what makes the item always satisfiable.
+    check("the breadcrumb chain has a width bound",
+          content.contains("private static let crumbChainWidth")
+              && content.contains(".frame(maxWidth: Self.crumbChainWidth"),
+          "an unbounded title collapses to zero width on a long path, so the user sees no path at all")
+    // A bound alone is not enough: `.lineLimit(1)` on each crumb is what turns
+    // "too wide" into an ellipsis rather than a wrapped, taller toolbar.
+    check("each crumb truncates instead of wrapping",
+          content.contains(".lineLimit(1)"),
+          "a wrapped crumb would grow the toolbar and push the controls out")
+
     // --- 4. The real menu: rows, order and wiring ---------------------------
     //
     // `NodeMenu.menu` builds an actual `NSMenu`, so the shape the user sees can
@@ -430,9 +493,32 @@ func run() async {
     // tree built from an earlier scan: it must be forgotten or the map keeps
     // showing bytes that no longer exist and counts them in every total. It is
     // not a failure — nothing is left to remove — so it must NOT be reported.
-    check("an already-gone batch item is forgotten, not reported as a failure",
-          tm.contains("} else if outcome.reason == String(localized: \"Already gone\") {")
-              && tm.contains("model.forgetPath(outcome.source)\n                } else if let reason = outcome.reason {"),
+    //
+    // Asserted on the VALUE, not on a source string. The old check pinned
+    // `outcome.reason == String(localized: "Already gone")` in `TreemapView`,
+    // which was true of one call site in one language: the comparison is
+    // against translated prose, so it asked a different question in each
+    // .lproj table, and the same decision had to be re-written wherever else a
+    // tree needed forgetting — which is exactly how the planner's step one came
+    // to miss it. `leftTheDisk` is the one verdict now, and this pins it for a
+    // move, an already-gone path and a real failure.
+    check("a moved batch item left the disk",
+          TrashOutcome(source: "/x", trashed: URL(fileURLWithPath: "/tmp/x"), reason: nil).leftTheDisk)
+    check("an already-gone batch item left the disk",
+          TrashOutcome(source: "/x", trashed: nil, reason: TrashOutcome.alreadyGone).leftTheDisk,
+          "an already-gone item would stay in the map with phantom bytes")
+    check("a failed batch item did NOT leave the disk",
+          !TrashOutcome(source: "/x", trashed: nil, reason: "Permission denied").leftTheDisk,
+          "a failure must never be forgotten, or the bytes it still occupies vanish from the totals")
+    // The verdict must not depend on the language's wording: a reason that
+    // merely reads like the English sentence is not the verdict.
+    check("the verdict is the fact, not the English sentence",
+          !TrashOutcome(source: "/x", trashed: nil, reason: "Already gone" + " ").leftTheDisk)
+    // And the surface that forgets must consult that verdict, not re-spell it.
+    check("the map forgets on the shared verdict",
+          tm.contains("if outcome.leftTheDisk {")
+              && tm.contains("model.forgetPath(outcome.source)\n                } else if let reason = outcome.reason {")
+              && !tm.contains("outcome.reason == String(localized:"),
           "an already-gone item would stay in the map with phantom bytes")
 
     // The list's two-way sync must not oscillate: pushing the model into AppKit

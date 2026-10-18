@@ -486,7 +486,17 @@ final class ScanModel {
         ProviderStore.shared.select(engineTag: "provider:\(provider.id)")
         agentRun?.cancel()
         let run = AgentRun(provider: provider, tree: tree, scanRoot: scanRoot,
-                           known: cleanup) { [weak self] in
+                           known: cleanup,
+                           onMoved: { [weak self] paths in
+                               // Step one moved these out of the scan root. Forget
+                               // each in place, the way the list's own delete does:
+                               // the engine cuts one link at a time and no other id
+                               // is renumbered, so the open plan keeps naming the
+                               // same folders. A rescan here would renumber every
+                               // node the plan and the highlight overlay still hold.
+                               guard let self else { return }
+                               for path in paths { self.forgetPath(path) }
+                           }) { [weak self] in
             guard let self, !self.scanning else { return }
             self.startScan()
         }

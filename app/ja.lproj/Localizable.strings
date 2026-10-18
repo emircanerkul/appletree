@@ -55,6 +55,9 @@
 "OK" = "OK";
 "Some folders couldn't be moved" = "一部のフォルダを移動できませんでした";
 "Some items couldn't be deleted" = "一部の項目を削除できませんでした";
+"Move it to the Trash in Finder, then empty the Trash — macOS will ask for the password." = "macOS または管理者が所有しています。ゴミ箱に移動してから、ゴミ箱を空にしてください。";
+"This needs an administrator." = "許可されていません。管理者が必要です。";
+"Items owned by macOS or an administrator can't be deleted by AppleTree. Drag them to the Trash in Finder and empty the Trash — macOS will ask for the password." = "macOS または管理者が所有する項目は AppleTree では削除できません。Finder でゴミ箱に移動し、ゴミ箱を空にしてください。macOS がパスワードを求めます。";
 "Reclaimable" = "回収可能";
 "Nothing large to clean up" = "クリーンアップする大きなものはありません";
 "%@ in %@ folders" = "%@（%@個のフォルダ）";

@@ -55,6 +55,9 @@
 "OK" = "Tamam";
 "Some folders couldn't be moved" = "Bazı klasörler taşınamadı";
 "Some items couldn't be deleted" = "Bazı ögeler silinemedi";
+"Move it to the Trash in Finder, then empty the Trash — macOS will ask for the password." = "macOS'a veya bir yöneticiye ait. Çöp Kutusu'na taşıyıp Çöp Kutusu'nu boşaltın.";
+"This needs an administrator." = "İzin verilmiyor. Bunun için bir yönetici gerekir.";
+"Items owned by macOS or an administrator can't be deleted by AppleTree. Drag them to the Trash in Finder and empty the Trash — macOS will ask for the password." = "macOS'a veya bir yöneticiye ait ögeleri AppleTree silemez. Finder'da Çöp Kutusu'na sürükleyip Çöp Kutusu'nu boşaltın; macOS parola soracak.";
 "Reclaimable" = "Geri Kazanılabilir";
 "Nothing large to clean up" = "Temizlenecek büyük bir şey yok";
 "%@ in %@ folders" = "%@ klasörde %@";

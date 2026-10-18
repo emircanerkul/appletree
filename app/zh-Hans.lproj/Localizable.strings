@@ -55,6 +55,9 @@
 "OK" = "好";
 "Some folders couldn't be moved" = "部分文件夹无法移动";
 "Some items couldn't be deleted" = "部分项目无法删除";
+"Move it to the Trash in Finder, then empty the Trash — macOS will ask for the password." = "归 macOS 或管理员所有。请移到废纸篓，然后清空废纸篓。";
+"This needs an administrator." = "不允许。这需要管理员权限。";
+"Items owned by macOS or an administrator can't be deleted by AppleTree. Drag them to the Trash in Finder and empty the Trash — macOS will ask for the password." = "AppleTree 无法删除归 macOS 或管理员所有的项目。请在“访达”中将其拖到废纸篓，然后清空废纸篓，macOS 会要求输入密码。";
 "Reclaimable" = "可回收";
 "Nothing large to clean up" = "没有需要清理的大项目";
 "%@ in %@ folders" = "%@ 个文件夹，共 %@";

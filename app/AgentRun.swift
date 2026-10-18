@@ -141,14 +141,24 @@ final class AgentRun {
 
     private let scanRoot: String
     private let tree: Tree
+    /// What step one really moved out of the scan root, reported once per
+    /// `moveToTrash` with the source paths the Trash owner accepted.
+    ///
+    /// Step one makes the disk disagree with the tree, and only the caller
+    /// holds the tree (`ScanModel`), so the fact has to travel back out. Without
+    /// it the list, the map, the rings and the byte totals keep counting folders
+    /// that are already in the Trash until step two or a manual rescan.
+    private let onMoved: ([String]) -> Void
     private let onFinish: () -> Void
     private var preparationTask: Task<Void, Never>?
 
     init(provider: LLMProvider, tree: Tree, scanRoot: String,
-         known: [CleanupItem], onFinish: @escaping () -> Void) {
+         known: [CleanupItem], onMoved: @escaping ([String]) -> Void,
+         onFinish: @escaping () -> Void) {
         self.provider = provider
         self.scanRoot = scanRoot
         self.tree = tree
+        self.onMoved = onMoved
         self.onFinish = onFinish
         let running = NSWorkspace.shared.runningApplications
             .filter { $0.activationPolicy == .regular }
@@ -173,10 +183,19 @@ final class AgentRun {
     }
 
     /// Folders to light up on the treemap: what the plan would remove.
+    ///
+    /// Only nodes the shown tree still holds. Step one now forgets each folder
+    /// it moves, in place, while the run stays open — so a card's `nodes` can
+    /// name an id that is no longer attached. A detached id draws nothing
+    /// (`Tree.drawn` returns nil once its parent link is cut), but returning it
+    /// would make this answer "what the plan would remove" with folders that
+    /// have already gone. On a partial move the folders still on disk keep
+    /// their highlight, which is the signal worth keeping.
     func highlights(in shown: Tree?) -> [Int] {
-        guard shown === tree, phase != .done else { return [] }
+        guard let shown, shown === tree, phase != .done else { return [] }
         return items.filter { $0.selected && $0.blocked == nil && $0.status != .done }
             .flatMap(\.nodes)
+            .filter { shown.isAttached($0) }
     }
 
     /// What step one moves to the Trash (tool caches wait for step two).
@@ -310,7 +329,8 @@ final class AgentRun {
         current = work.first?.id
         Task {
             // Moving to the Trash is a rename; all of them at once, off the main thread.
-            await withTaskGroup(of: Void.self) { group in
+            var departed: [String] = []
+            await withTaskGroup(of: [String].self) { group in
                 for item in work {
                     let paths = item.paths
                     let dryRun = dryRun
@@ -337,7 +357,7 @@ final class AgentRun {
                         } else {
                             outcomes = dryRun ? [] : await Self.trash(paths)
                         }
-                        await MainActor.run {
+                        return await MainActor.run {
                             let moved = outcomes.compactMap(\.trashed)
                             let reason = outcomes.compactMap(\.reason).first
                             item.trashed = moved
@@ -354,11 +374,22 @@ final class AgentRun {
                                 }
                                 item.status = .inTrash
                             }
+                            // Only paths that really left the disk, so a
+                            // blocked or failed card is never forgotten. An
+                            // already-gone path counts: the tree was built from
+                            // an earlier scan, so its node is still there and
+                            // must go, or the list and the totals keep counting
+                            // a folder that is not on disk.
+                            return outcomes.filter(\.leftTheDisk).map(\.source)
                         }
                     }
                 }
+                for await gone in group { departed.append(contentsOf: gone) }
             }
             current = nil
+            // Tell the owner before the phase changes, so the views and the
+            // totals follow the disk the moment step one is on screen.
+            if !departed.isEmpty { onMoved(departed) }
             withAnimation(.snappy) { phase = .staged }
         }
     }
@@ -448,8 +479,9 @@ final class AgentRun {
     /// The return status of `removefile` used to be discarded, so this caller
     /// marked the item `.done` and added its bytes to the freed total even
     /// when nothing was deleted. `removefile` reports "less than 0 on error,
-    /// 0 on success" and does NOT set errno, so the status itself is the
-    /// message; a path that is already absent is not a failure (there is
+    /// 0 on success" AND sets `errno`, which is what names the cause: a
+    /// root-owned bundle reports `EACCES` (Permission denied), not a bare
+    /// `(-1)`. A path that is already absent is not a failure (there is
     /// nothing left to delete, and a retried item must not report one).
     nonisolated static func remove(_ urls: [URL]) async -> String? {
         await withCheckedContinuation { (done: CheckedContinuation<String?, Never>) in
@@ -477,11 +509,13 @@ final class AgentRun {
         }
     }
 
-    /// One `removefile(3)` call, recording a real failure. `removefile`
-    /// reports less than 0 on error and does not set errno, so the status is
-    /// the message; a path that is already absent is not reported, because
-    /// there is nothing left to delete (and a retried item must not claim one).
+    /// One `removefile(3)` call, recording a real failure. `errno` is read by
+    /// `DeleteFailure.note` immediately after the call, which is the only window
+    /// in which it still describes this failure; a path that is already absent is
+    /// not reported, because there is nothing left to delete (and a retried item
+    /// must not claim one).
     nonisolated private static func deleteItem(_ path: String, failure: DeleteFailure) {
+        errno = 0
         let status = removefile(path, nil, removefile_flags_t(REMOVEFILE_RECURSIVE))
         guard status < 0, FileManager.default.fileExists(atPath: path) else { return }
         failure.note(status, path)
@@ -553,8 +587,14 @@ nonisolated final class ErrTail: @unchecked Sendable {
 }
 
 /// The first failure from a parallel `removefile` sweep, kept behind a lock so
-/// the four delete slots can record one without a data race. `removefile` does
-/// not set errno, so the status is the whole story: path plus status.
+/// the four delete slots can record one without a data race.
+///
+/// `removefile` DOES set `errno` — the comment here used to claim it did not,
+/// which is why a blocked permanent delete read as "removefile failed (-1)".
+/// Measured on a root-owned bundle under `/Applications`: `-1` with
+/// `errno == EACCES`. The cause is captured by `DeleteFailure.note` at the
+/// failing call, where `errno` still describes it, and rendered by
+/// `Erase.reason`, so both delete routes word the same failure the same way.
 nonisolated final class DeleteFailure: @unchecked Sendable {
     private let lock = NSLock()
     private var message: String?
@@ -563,7 +603,8 @@ nonisolated final class DeleteFailure: @unchecked Sendable {
         return message
     }
     func note(_ status: Int32, _ path: String) {
+        let reason = Erase.reason(status: status)
         lock.lock(); defer { lock.unlock() }
-        if message == nil { message = "\(path): removefile failed (\(status))" }
+        if message == nil { message = "\(path): \(reason)" }
     }
 }

@@ -1818,6 +1818,25 @@ private struct TitleCrumbs: View {
         }
     }
 
+    /// The most width the path may take in the toolbar, and why it is a cap and
+    /// not "as wide as the text".
+    ///
+    /// The chain sized itself to its content, so ONE long folder name made the
+    /// navigation item ask for more than the toolbar had: AppKit then gave the
+    /// item zero width and the title vanished entirely — no ellipsis, no crumb,
+    /// nothing to click to go back up. Measured on a real 175-character
+    /// `.pnpm/react-native-reanimated@…` path: 1052pt wide at a 1258pt window,
+    /// and 0pt at 1000pt and below. The `crumbParents`/`crumbDepth` caps bound
+    /// the NUMBER of crumbs, which cannot help when one name is the whole width.
+    ///
+    /// A fixed cap keeps the item always satisfiable, so the toolbar buttons
+    /// beside it keep their room and the path truncates with an ellipsis. The
+    /// window's minimum is 760pt and the toolbar controls take roughly 400pt of
+    /// it, so 320 leaves the title visible at every allowed size. Bounded rather
+    /// than "the biggest that fits": the alternative needs a geometry read in the
+    /// toolbar, and a title that sometimes disappears is the bug being fixed.
+    private static let crumbChainWidth: CGFloat = 320
+
     private func crumbs(tree: Tree) -> some View {
         // The chain is built by the model, which guarantees the folder on
         // screen and its ancestors are never the part that gets dropped.
@@ -1830,6 +1849,11 @@ private struct TitleCrumbs: View {
             ForEach(path.nodes.indices, id: \.self) { i in
                 if i > 0 { chevron }
                 crumb(tree: tree, node: path.nodes[i], isLast: i == path.nodes.count - 1)
+                    // Squeeze the ancestors before the folder on screen: when the
+                    // cap bites, the LAST crumb is the one the user needs to read
+                    // (where they are), and the ones above it are still reachable
+                    // by clicking what is left of them.
+                    .layoutPriority(i == path.nodes.count - 1 ? 1 : 0)
             }
             // The pick sits below the folder on screen and the depth cap
             // dropped the folders in between. Without this mark the trail read
@@ -1840,6 +1864,10 @@ private struct TitleCrumbs: View {
                 Text("…").foregroundStyle(.tertiary)
             }
         }
+        .frame(maxWidth: Self.crumbChainWidth, alignment: .leading)
+        // Truncation is the visible answer, but the whole path is still one
+        // hover away — the alternative was no path at all.
+        .help(tree.displayPath(path.nodes.last ?? model.viewRoot))
     }
 
     private var chevron: some View {

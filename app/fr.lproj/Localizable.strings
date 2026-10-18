@@ -55,6 +55,9 @@
 "OK" = "OK";
 "Some folders couldn't be moved" = "Certains dossiers n'ont pas pu être déplacés";
 "Some items couldn't be deleted" = "Certains éléments n'ont pas pu être supprimés";
+"Move it to the Trash in Finder, then empty the Trash — macOS will ask for the password." = "Appartient à macOS ou à un administrateur. Déplacez-le à la Corbeille, puis videz la Corbeille.";
+"This needs an administrator." = "Non autorisé. Cela nécessite un administrateur.";
+"Items owned by macOS or an administrator can't be deleted by AppleTree. Drag them to the Trash in Finder and empty the Trash — macOS will ask for the password." = "AppleTree ne peut pas supprimer les éléments appartenant à macOS ou à un administrateur. Glissez-les à la Corbeille dans le Finder et videz la Corbeille : macOS demandera le mot de passe.";
 "Reclaimable" = "Récupérable";
 "Nothing large to clean up" = "Rien de volumineux à nettoyer";
 "%@ in %@ folders" = "%@ dans %@ dossiers";

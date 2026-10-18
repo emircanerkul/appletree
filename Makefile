@@ -574,7 +574,7 @@ test-rust:
 # coverage for recognition (`src/cleanup.rs`), the FFI bridge and the JSON CLI's
 # report shape, and there is no CI in this repository. Leaving it out made
 # `make test` green while all 31 engine tests never ran (audit CD-1/L1).
-test: test-rust engine test-l10n test-drawer test-deletion test-selection test-mapweights test-links test-readme test-doclinks test-router test-privacy test-planner-selection test-prompt-scope test-shellenv test-engine-writer test-cli test-fda-grant test-scoped-access
+test: test-rust engine test-l10n test-drawer test-deletion test-selection test-mapweights test-links test-readme test-doclinks test-router test-privacy test-planner-selection test-planner-refresh test-prompt-scope test-shellenv test-engine-writer test-cli test-fda-grant test-scoped-access
 	@mkdir -p .build
 	swiftc tests/swift/main.swift app/CleanupGuard.swift app/AppEnvironment.swift \
 	    -import-objc-header app/bz.h \
@@ -727,6 +727,35 @@ test-planner-selection:
 	    $(SWIFT_TEST_FLAGS) -framework Security \
 	    -o .build/planner-selection-tests
 	.build/planner-selection-tests
+
+# The planner's step one must make the views follow the disk.
+#
+# `AgentRun` holds a `Tree`, but only `ScanModel` may edit it, and the run had
+# exactly one refresh point — `onFinish`, called from step TWO. Step one really
+# moved folders out of the scan root and told nobody, so the list, the map, the
+# rings and every byte total kept counting folders already in the Trash; closing
+# the run with "Keep in the Trash" left them there until a manual Rescan.
+#
+# Compiled against the real shipping sources (whole app except Main.swift) and
+# driven through the REAL path — `ScanModel.startProvider` → `AgentRun` →
+# `moveToTrash` → the model's own closure → the real engine — because the defect
+# was a missing report at a seam between two owners, not a wrong calculation: a
+# test that called `forgetPath` itself would pass on the broken code. The plan is
+# served by a registered `URLProtocol`, so there is no server and no port.
+#
+# NOTE: the test file MUST NOT be named after any app/*.swift source (see the
+# test-deletion note).
+test-planner-refresh: engine
+	@mkdir -p .build
+	swiftc tests/swift/planner-refresh.swift $(filter-out app/Main.swift,$(wildcard app/*.swift)) \
+	    -import-objc-header app/bz.h \
+	    -parse-as-library \
+	    -swift-version 6 -default-isolation MainActor \
+	    -target arm64-apple-macos$(MIN_MACOS) \
+	    -L target/release -lappletree \
+	    -framework DiskArbitration -framework IOKit -framework Security \
+	    -o .build/planner-refresh-tests
+	.build/planner-refresh-tests
 
 # The planner prompt's scope: it may only describe folders the scan covered.
 # An /Applications scan used to hand the planner Xcode's /System simulator
