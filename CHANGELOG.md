@@ -1,6 +1,48 @@
 # Changelog
 
+## Unreleased
+
+**Browsing and bulk delete stop re-doing work they just finished.** Four
+independent causes, all in the UI layer; the scan engine is unchanged.
+
+*Coming back to a folder is instant.* The map re-rendered from scratch on every
+folder change, including the one you had just left. `renderBitmap` is a pure
+function of the tree, the folder, the tree revision, the pixel size and the free
+-space setting, so its whole payload — geometry and bitmap — is now memoised. The
+budget is 128 MiB, bounded in bytes rather than entries because one entry
+measures 26 MiB at 1000×700 pt and 117 MiB at 2400×1600. Measured on a 1.82M-node
+home scan: the return leg of root → subfolder → root went from **2,909 ms to
+0.1 ms**.
+
+*The list no longer indexes the whole disk to show one folder.* Its data source
+materialised every node below the visible folder into a dictionary on every
+rebuild — 1.82M objects, ~152 MB, 1.24 s — to populate 74 rows. Only the visible
+rows are indexed now and the rest are filled in lazily as folders open, with the
+lazy walk bounded to rows that actually exist (a collapsed row's children cannot
+be the answer, and materialising them was the cost). Rebuild: **2,040 ms → 0.4
+ms**.
+
+*Deleting a batch refreshes once, not once per item.* Both removal routes forgot
+each item individually, and because each delete is awaited the map, the rings and
+the list rebuilt between one item and the next. `forgetPaths` cuts every link and
+then invalidates once. A 12-item batch: **111 ms and 12 revisions → 24 ms and 1**.
+
+*A finished cleanup no longer rescans the disk.* Moving ticked rows to the Trash
+used to answer with a full walk (~12.5 s here), which also renumbered every node
+and discarded the zoom and selection. The panel now forgets what really left, in
+place. A planner run still rescans, but only when it included a tool-command card
+— `npm cache clean` empties a cache folder the tree still holds, and only a walk
+can re-measure that.
+
+Also fixed while there: the partial-selection hatch (the mark on a collapsed
+folder holding a pick) walked every pick's ancestry once per visible row —
+**96.5 ms per row**, so seconds per screenful with a large selection. It is one
+derived set now: 25 rows measured **2,412 ms → 114 ms**, and a warm redraw 0.07
+ms. And the finished-cleanup line no longer claims "Rescanned.", which stopped
+being true.
+
 ## 1.1.2 — 2026-10-08
+
 
 **The duplicate privacy policy is gone.** `docs/appstore/privacy-policy.md` was an
 untracked second copy of the policy, referenced by nothing: the app reads

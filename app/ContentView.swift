@@ -1493,10 +1493,9 @@ struct OutlinePanel: NSViewRepresentable {
         /// gets a chance to refresh everything). Every path that can change the
         /// answer passes through one of the inputs checked here: a selection
         /// change moves `heldPickMembers`, a rescan replaces the `Tree`, and an
-        /// in-place removal bumps
-        /// `treeRevision` — so a collapsed folder whose pick was just deleted
-        /// loses its hatch on the rebuild that follows, and one whose subtree
-        /// was reattached gains it.
+        /// in-place removal bumps `treeRevision` — so a collapsed folder whose
+        /// pick was just deleted loses its hatch on the rebuild that follows,
+        /// and one whose subtree was reattached gains it.
         ///
         /// A miss re-derives the WHOLE set rather than patching it. The delta
         /// would be cheaper on paper, but "which ancestors to add or remove"
