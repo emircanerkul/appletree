@@ -387,20 +387,53 @@ func run() async {
           source("app/CleanupModel.swift").contains("strerror"),
           "the cause is not read from errno, so the user sees a bare status again")
 
-    // The window title must never be able to vanish.
+    // The window title: readable, and the LONG name is what gets cropped.
     //
-    // The breadcrumb chain sized itself to its content, so ONE long folder name
-    // asked the toolbar for more width than it had; AppKit then gave the
-    // navigation item ZERO width and the title disappeared entirely — no
-    // ellipsis, no crumb, nothing clickable to go back up. Measured on a real
-    // 175-character `.pnpm/react-native-reanimated@…` path: 1052pt at a 1258pt
-    // window, 0pt at 1000pt and below. The fix caps the chain's width, which is
-    // what makes the item always satisfiable.
-    check("the breadcrumb chain has a width bound",
-          content.contains("private static let crumbChainWidth")
-              && content.contains(".frame(maxWidth: Self.crumbChainWidth"),
-          "an unbounded title collapses to zero width on a long path, so the user sees no path at all")
-    // A bound alone is not enough: `.lineLimit(1)` on each crumb is what turns
+    // This used to be pinned as "the chain has a fixed 320pt width bound", on the
+    // theory that an unbounded chain asks the toolbar for more than it has and
+    // AppKit answers with a zero-width item. Measured on the real toolbar
+    // (macOS 27, 760–1500pt windows, a 1052pt-intrinsic chain), the navigation
+    // item is actually granted ~798pt and never zero — so the cap was throwing
+    // away ~478pt that was always available. That is why the path looked cropped
+    // ("Macint… > Projects > deepsee…") while the toolbar sat half empty, and why
+    // the cap is now gone.
+    check("the breadcrumb chain takes the width the toolbar offers",
+          content.contains(".frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)")
+              && !content.contains("private static let crumbChainWidth"),
+          "a fixed cap wastes toolbar space the title is already granted")
+    // The other half of the defect: the OLD priority order gave the last crumb
+    // priority 1 and the ancestors 0, so the parents were squeezed to zero width
+    // and rendered as bare chevrons — "> > > > react-native-reanimated@…". The
+    // ancestors must outrank the long leaf, and each needs a floor to survive at
+    // all, or "squeezed" means "invisible".
+    // A single priority order is not enough either: it can only rank who gets
+    // squeezed, never make a crumb show a NAME rather than two glyphs, and never
+    // spend width the toolbar has spare. Both directions were tried and both read
+    // badly ("last wins" gives bare-chevron parents; "parents win" loses the folder
+    // on screen when a .pnpm store puts its long hash in the MIDDLE). Widths are
+    // now allocated from the name lengths, so cheap crumbs are paid in full before
+    // a long one gets a point.
+    check("a generated package-manager name is shortened for display",
+          source("app/CrumbLayout.swift").contains("static func shorten")
+              && content.contains("CrumbLayout.shorten(name)"),
+          "a 120-character pnpm store name would push every other crumb out")
+    check("shortening never touches an ordinary folder name",
+          source("app/CrumbLayout.swift").contains("guard name.count > shorteningThreshold"),
+          "a readable folder name must come back byte-identical")
+    // The measure of the layout: no width cap, and no measurement wrapper. Both
+    // were tried and both failed the same way — a `GeometryReader` reports no
+    // intrinsic width, so the toolbar granted the item 10pt and the title
+    // vanished, which is the exact bug the old 320pt cap was meant to prevent.
+    check("the chain has no fixed width cap",
+          !content.contains("private static let crumbChainWidth"),
+          "a cap discards toolbar width the title is already granted")
+    check("the chain does not wrap itself in a GeometryReader",
+          !content.contains("return GeometryReader { proxy in"),
+          "a GeometryReader gives the toolbar item no intrinsic width, so it can vanish")
+    check("a crumb that does not fit is ellipsized, not clipped",
+          content.contains(".truncationMode(.tail)") && content.contains(".lineLimit(1)"),
+          "an unbounded label paints over its neighbours and the container clips it")
+    // A floor alone is not enough: `.lineLimit(1)` on each crumb is what turns
     // "too wide" into an ellipsis rather than a wrapped, taller toolbar.
     check("each crumb truncates instead of wrapping",
           content.contains(".lineLimit(1)"),

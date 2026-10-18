@@ -1920,7 +1920,10 @@ struct OutlinePanel: NSViewRepresentable {
 ///
 /// Its own view on purpose: a selection change invalidates this alone, not
 /// the whole window body (which owns the AppKit list and map).
-private struct TitleCrumbs: View {
+/// `internal`, not `private`: `.build/perf-probes/crumb-toolbar-fit.swift` renders
+/// this exact view at the widths a real toolbar grants, so the breadcrumb layout
+/// is judged from pixels of shipping code rather than from a copy of it.
+struct TitleCrumbs: View {
     let model: ScanModel
 
     var body: some View {
@@ -1934,29 +1937,23 @@ private struct TitleCrumbs: View {
         }
     }
 
-    /// The most width the path may take in the toolbar, and why it is a cap and
-    /// not "as wide as the text".
+    /// The text a crumb shows: the folder's name, shortened when a package
+    /// manager made it enormous.
     ///
-    /// The chain sized itself to its content, so ONE long folder name made the
-    /// navigation item ask for more than the toolbar had: AppKit then gave the
-    /// item zero width and the title vanished entirely — no ellipsis, no crumb,
-    /// nothing to click to go back up. Measured on a real 175-character
-    /// `.pnpm/react-native-reanimated@…` path: 1052pt wide at a 1258pt window,
-    /// and 0pt at 1000pt and below. The `crumbParents`/`crumbDepth` caps bound
-    /// the NUMBER of crumbs, which cannot help when one name is the whole width.
-    ///
-    /// A fixed cap keeps the item always satisfiable, so the toolbar buttons
-    /// beside it keep their room and the path truncates with an ellipsis. The
-    /// window's minimum is 760pt and the toolbar controls take roughly 400pt of
-    /// it, so 320 leaves the title visible at every allowed size. Bounded rather
-    /// than "the biggest that fits": the alternative needs a geometry read in the
-    /// toolbar, and a title that sometimes disappears is the bug being fixed.
-    private static let crumbChainWidth: CGFloat = 320
+    /// This is a display string only — clicking still navigates by node id, and
+    /// the tooltip still shows the real path. See `CrumbLayout.shorten` for what
+    /// it strips and why a 120-character pnpm store name is unreadable in a
+    /// toolbar even when it fits.
+    private func crumbLabel(tree: Tree, node: Int) -> String {
+        let name = node == 0 ? model.displayRootName : tree.name(node)
+        return CrumbLayout.shorten(name)
+    }
 
     private func crumbs(tree: Tree) -> some View {
         // The chain is built by the model, which guarantees the folder on
         // screen and its ancestors are never the part that gets dropped.
         let path = model.crumbPath
+        let last = path.nodes.count - 1
         return HStack(spacing: 4) {
             if path.elidedAbove {
                 Text("…").foregroundStyle(.tertiary)
@@ -1964,12 +1961,26 @@ private struct TitleCrumbs: View {
             }
             ForEach(path.nodes.indices, id: \.self) { i in
                 if i > 0 { chevron }
-                crumb(tree: tree, node: path.nodes[i], isLast: i == path.nodes.count - 1)
-                    // Squeeze the ancestors before the folder on screen: when the
-                    // cap bites, the LAST crumb is the one the user needs to read
-                    // (where they are), and the ones above it are still reachable
-                    // by clicking what is left of them.
-                    .layoutPriority(i == path.nodes.count - 1 ? 1 : 0)
+                let isLast = i == last
+                crumb(tree: tree, node: path.nodes[i], isLast: isLast)
+                    // Priority by LENGTH, with the folder on screen winning ties.
+                    //
+                    // This ranks who gives way when the toolbar is too narrow; it
+                    // does not decide the layout, and it must not, because a
+                    // `GeometryReader` here makes the toolbar item report no
+                    // intrinsic width — measured, the item was granted 10pt and the
+                    // title vanished completely on a long path. Natural sizing is
+                    // what keeps the item satisfiable: with it the same 120-char
+                    // path is granted 400–798pt and never zero.
+                    //
+                    // Length is the ranking that reads best. A short name needs a
+                    // few points to be meaningful; a long one is cropped wherever
+                    // it sits. Ranking by position fails both ways: "last wins"
+                    // squeezed four parents into bare chevrons, and "parents win"
+                    // lost the folder on screen when a `.pnpm` store put its long
+                    // hash in the middle.
+                    .layoutPriority(Self.crumbPriority(for: crumbLabel(tree: tree, node: path.nodes[i]),
+                                                       isLast: isLast))
             }
             // The pick sits below the folder on screen and the depth cap
             // dropped the folders in between. Without this mark the trail read
@@ -1980,10 +1991,34 @@ private struct TitleCrumbs: View {
                 Text("…").foregroundStyle(.tertiary)
             }
         }
-        .frame(maxWidth: Self.crumbChainWidth, alignment: .leading)
+        // No fixed cap and no measurement: the chain takes what the toolbar gives
+        // it and truncates each crumb. A 320pt cap was added on the theory that an
+        // unbounded chain makes AppKit grant the item zero width; measured on the
+        // real toolbar (macOS 27, 760–1500pt windows, 120- and 200-character
+        // names), the item is granted 400–798pt and never zero. The cap was
+        // therefore discarding hundreds of points that were always available,
+        // which is exactly the reported "cropped even where there is space".
+        .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
         // Truncation is the visible answer, but the whole path is still one
         // hover away — the alternative was no path at all.
         .help(tree.displayPath(path.nodes.last ?? model.viewRoot))
+    }
+
+    /// Layout priority for a crumb: shorter names first, the folder on screen
+    /// winning ties.
+    ///
+    /// Bucketed rather than the raw character count so names of similar length
+    /// share priority instead of one starving the other over a letter, and so the
+    /// last-crumb tie-break actually applies within a bucket.
+    private static func crumbPriority(for label: String, isLast: Bool) -> Double {
+        let bucket: Double
+        switch label.count {
+        case ...12: bucket = 3       // "Projects", ".pnpm", "Users"
+        case ...24: bucket = 2       // "node_modules", "appletree"
+        case ...40: bucket = 1       // "deepseek-harness"
+        default:    bucket = 0       // an unshortened package path
+        }
+        return bucket * 2 + (isLast ? 1 : 0)
     }
 
     private var chevron: some View {
@@ -1992,6 +2027,14 @@ private struct TitleCrumbs: View {
             .foregroundStyle(.tertiary)
     }
 
+    /// One crumb, cropped to `width`.
+    ///
+    /// The width goes on the *label*, not on the `Button`: a `.frame` outside the
+    /// button constrains the button but not the text it draws, so a 450pt name in
+    /// a 46pt crumb painted straight over its neighbours and the container
+    /// clipped it mid-glyph with no ellipsis — the "cropped even where there is
+    /// space" symptom. Constrained inside, `.lineLimit(1)` turns the overflow
+    /// into the trailing ellipsis it should always have been.
     private func crumb(tree: Tree, node: Int, isLast: Bool) -> some View {
         Button {
             // Every crumb is the same gesture: show that folder. A file has
@@ -2004,9 +2047,13 @@ private struct TitleCrumbs: View {
                 if parent != Int(UInt32.max) { model.navigate(to: parent) }
             }
         } label: {
-            Text(node == 0 ? model.displayRootName : tree.name(node))
+            Text(crumbLabel(tree: tree, node: node))
                 .font(.system(.body, design: .rounded).weight(isLast ? .semibold : .regular))
                 .lineLimit(1)
+                .truncationMode(.tail)
+                // Never zero: a crumb squeezed to nothing reads as a bare chevron,
+                // which is what made the title useless before.
+                .fixedSize(horizontal: false, vertical: true)
         }
         .buttonStyle(.plain)
         .foregroundStyle(isLast ? .primary : .secondary)
