@@ -342,6 +342,47 @@ nonisolated struct SelectionSet: Equatable {
         members.contains { $0 != folder && tree.ancestry($0).dropLast().contains(folder) }
     }
 
+    /// Every folder that `holdsPick(inside:in:)` would say yes to, answered as
+    /// a set so a redraw can ask it once instead of once per visible row.
+    ///
+    /// The equivalence is by construction, not by coincidence: for each member
+    /// `m` this inserts every node in `tree.ancestry(m).dropLast()` — the strict
+    /// ancestors of `m` — and nothing else. So `folder` is in the result exactly
+    /// when some member `m` has `folder` among its strict ancestors, i.e. when
+    /// `m != folder` and `folder` is a strict ancestor of `m`. That is
+    /// `holdsPick`'s body with the quantifier moved: `∃m` outside, `exists`
+    /// inside. A picked folder is therefore NOT in the result on account of
+    /// itself (its own ancestry is dropped, and it appears only if another
+    /// member sits inside it, which the antichain invariant forbids), which is
+    /// the "a picked row is not partial" case the caller guards anyway.
+    ///
+    /// Cost is `O(members × depth)` — one ancestry each — instead of the
+    /// `O(rows × members × depth)` that asking `holdsPick` per row costs. On a
+    /// 1.82M-node scan with a 39,410-member selection, 50 visible rows in a
+    /// different folder measured ~50.9 ms PER ROW (~2.5 s per screenful) on
+    /// every redraw; this is one walk of the same 39,410 members, paid when the
+    /// selection or the tree changes rather than on every row.
+    ///
+    /// Deliberately NOT cached here: `SelectionSet` is a value type with many
+    /// mutating writers, so a stored set would need invalidating in every one
+    /// of them — a second owner of a question this method answers. The one
+    /// reader that pays repeatedly (the outline list) holds the memo itself,
+    /// next to the other derived state it already keeps.
+    func foldersHoldingPick(in tree: Tree) -> Set<Int> {
+        // No `reserveCapacity` on purpose: the union is usually TINY — picks
+        // swept from one folder share almost all their ancestors, so 39,410
+        // members could add a handful of folders — and reserving for the
+        // `members × depth` worst case would allocate megabytes to hold them.
+        var held: Set<Int> = []
+        for member in members {
+            // `dropLast()` is the "strictly above" rule, and it is the same
+            // expression `holdsPick` uses — shared syntax keeps the two answers
+            // from drifting.
+            for ancestor in tree.ancestry(member).dropLast() { held.insert(ancestor) }
+        }
+        return held
+    }
+
     /// The members that live inside `folder` (strictly), shallowest first.
     ///
     /// What the list expands to when a pick has to become visible again.

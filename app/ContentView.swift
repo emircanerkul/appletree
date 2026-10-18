@@ -1165,6 +1165,50 @@ struct OutlinePanel: NSViewRepresentable {
         /// view, which made the disclosure triangle look broken.
         private var lastSyncedPicks: Set<Int> = []
 
+        /// The folders that hold a hidden pick, derived once per selection or
+        /// tree change and then answered by membership.
+        ///
+        /// `refreshPartialRows` runs on every redraw and asks one question per
+        /// visible row — "does this collapsed folder hide a pick?" — and the
+        /// direct answer (`SelectionSet.holdsPick`) walks every member's
+        /// ancestry for each row. On a 1.82M-node home scan with a 39,410-pick
+        /// selection that measured ~50.9 ms PER ROW, so a 50-row screenful cost
+        /// ~2.5 s on every redraw: a latent hang that made a large selection
+        /// feel stuck. The set is the same answer with the loops in the other
+        /// order — each member's ancestry is walked once, total cost
+        /// `O(picks × depth)` — so the per-row question becomes a hash lookup.
+        ///
+        /// Held here rather than in `SelectionSet` because a stored set there
+        /// would need invalidating at every writer of a value type mutated in
+        /// many places. Here there is exactly one derivation point and exactly
+        /// the two inputs it depends on, checked in `refreshHeldFolders`:
+        ///
+        /// - `heldPickMembers` — the picks this was derived from, in order.
+        ///   Covers every selection change, including one that swaps members
+        ///   without touching the tree or the revision. Compared as the ordered
+        ///   `Array`, not as a `Set`: materialising a set per redraw would cost
+        ///   `O(members)` hashing for a value that is already the array
+        ///   `picks.members` returns, and `contains` answers `false` on the
+        ///   first differing id — so the common "nothing changed" case pays one
+        ///   `count` check, and the pick-order equality is at least as strict as
+        ///   a set comparison (it also notices a reorder, which only re-derives
+        ///   the same set).
+        /// - `heldPickTree` / `heldPickRevision` — tree identity (a rescan
+        ///   replaces the `Tree`, renumbering every id) and `treeRevision` (an
+        ///   in-place removal keeps the object and moves ids' ancestries by
+        ///   detaching whole subtrees, so identity alone cannot see it).
+        ///
+        /// These mirror `rebuildIfNeeded`'s own `tree`/`viewRoot`/`revision`
+        /// rather than sharing them, which is not duplication for its own sake:
+        /// this memo is refreshed from `refreshPartialRows`, which also runs on
+        /// disclosure clicks — AFTER the rebuild may already have updated
+        /// `revision` — so a flag written only inside the rebuild would have to
+        /// be consumed in the same call. Comparing its own inputs makes the
+        /// refresh idempotent and correct in either order.
+        private var heldFolders: Set<Int> = []
+        private var heldPickMembers: [Int] = []
+        private var heldPickTree: Tree?
+        private var heldPickRevision = -1
 
 
         var roots: [Item] = []
@@ -1434,11 +1478,41 @@ struct OutlinePanel: NSViewRepresentable {
         /// collapsed row is hiding.
         func refreshPartialRows() {
             guard let outline, let tree, let model else { return }
+            refreshHeldFolders(tree: tree, model: model)
             outline.enumerateAvailableRowViews { rowView, row in
                 guard let partial = rowView as? PartialRowView,
                       let item = outline.item(atRow: row) as? Item else { return }
-                partial.holdsPick = needsPartialMark(item, tree: tree, model: model)
+                partial.holdsPick = needsPartialMark(item, model: model)
             }
+        }
+
+        /// Re-derive `heldFolders` when — and only when — its inputs moved.
+        ///
+        /// Called from BOTH marking paths — `refreshPartialRows` (a full redraw)
+        /// and `didAdd` (one row revealed between redraws, before `syncSelection`
+        /// gets a chance to refresh everything). Every path that can change the
+        /// answer passes through one of the inputs checked here: a selection
+        /// change moves `heldPickMembers`, a rescan replaces the `Tree`, and an
+        /// in-place removal bumps
+        /// `treeRevision` — so a collapsed folder whose pick was just deleted
+        /// loses its hatch on the rebuild that follows, and one whose subtree
+        /// was reattached gains it.
+        ///
+        /// A miss re-derives the WHOLE set rather than patching it. The delta
+        /// would be cheaper on paper, but "which ancestors to add or remove"
+        /// needs the same per-member ancestry walk to know, and it would have to
+        /// get the antichain drop/keep rules right all over again — the second
+        /// implementation this memo exists to avoid.
+        private func refreshHeldFolders(tree: Tree, model: ScanModel) {
+            let members = model.picks.members
+            if tree === heldPickTree, model.treeRevision == heldPickRevision,
+               members == heldPickMembers {
+                return
+            }
+            heldFolders = model.picks.foldersHoldingPick(in: tree)
+            heldPickMembers = members
+            heldPickTree = tree
+            heldPickRevision = model.treeRevision
         }
 
         /// Whether a row shows the "something inside me is selected" hatch.
@@ -1452,10 +1526,15 @@ struct OutlinePanel: NSViewRepresentable {
         /// A picked row never needs it either: `SelectionSet`'s antichain rule
         /// means a folder and something inside it can never both be picked, so
         /// `contains` is enough to exclude it.
-        private func needsPartialMark(_ item: Item, tree: Tree, model: ScanModel) -> Bool {
+        ///
+        /// The last step is set membership in `heldFolders` rather than
+        /// `SelectionSet.holdsPick`, which is the same predicate with the loops
+        /// in the other order — see that property. The guards above are
+        /// unchanged, so the rows that hatch are the ones that always did.
+        private func needsPartialMark(_ item: Item, model: ScanModel) -> Bool {
             guard !model.picks.contains(item.id) else { return false }
             guard outline?.isItemExpanded(item) != true else { return false }
-            return model.picks.holdsPick(inside: item.id, in: tree)
+            return heldFolders.contains(item.id)
         }
 
         // MARK: cells
@@ -1504,10 +1583,18 @@ struct OutlinePanel: NSViewRepresentable {
         /// Rows come and go as folders open and close, so a freshly revealed row
         /// needs its partial mark. Cheap: it only touches rows AppKit currently
         /// has on screen.
+        ///
+        /// The memo is re-checked first, because this runs DURING
+        /// `picksDidChange`'s expansion of a new pick's ancestors — before the
+        /// `syncSelection` whose `refreshPartialRows` ends `updateNSView` — so a
+        /// row revealed by a fresh pick would otherwise be marked from a set
+        /// that still describes the previous selection. Warm, the check is one
+        /// `count` compare and no derivation.
         func outlineView(_ v: NSOutlineView, didAdd rowView: NSTableRowView, forRow row: Int) {
             guard let partial = rowView as? PartialRowView, let tree, let model,
                   let item = v.item(atRow: row) as? Item else { return }
-            partial.holdsPick = needsPartialMark(item, tree: tree, model: model)
+            refreshHeldFolders(tree: tree, model: model)
+            partial.holdsPick = needsPartialMark(item, model: model)
         }
 
         /// Opening or closing a folder changes whether its hatch belongs, and no

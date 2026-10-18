@@ -281,14 +281,20 @@ func run() async {
     try? fm.createDirectory(at: commandTarget, withIntermediateDirectories: true)
     // A command that is allowlisted AND stays a COMMAND card.
     //
-    // Two traps this fixture had to clear, both found by this check failing:
-    // `go clean -cache` is not in the allowlist, so `PlanItem` blocked it and
-    // the assertion ran on "not allowed" rather than on the rescan question.
-    // `npm cache clean`, which IS allowlisted, gets converted into a folder
-    // card when its folder exists (`viaTrash`), so it is no longer a command
-    // card at all — and rightly needs no rescan, because the folder path forgets
-    // in place. `brew cleanup` is a plain command with no folder conversion, so
-    // it is the shape an actual cache-purge run has.
+    // What the fixture had to clear, verified against `CleanupGuard`:
+    // `go clean -cache` and `brew cleanup` are both allowlisted and both stay
+    // command cards (`viaTrash == false`), so either would do. `npm cache clean`
+    // is allowlisted too, but gets converted into a FOLDER card when its cache
+    // folder exists (`viaTrash` is true, so `isCommand` is false) — rightly
+    // needing no rescan, because the folder path is forgotten in place.
+    // Measured: `npm cache clean` → viaTrash=true, isCommand=false;
+    // `brew cleanup` → viaTrash=false, isCommand=true.
+    //
+    // The first attempt at this failed on "Already clean", which is a
+    // DIFFERENT trap worth keeping in mind: `PlanItem` blocks a command card
+    // whose paths all fail to exist, so the command never runs — and "no
+    // rescan" would then be the right answer for the wrong reason. Hence the
+    // real directory above.
     let commandSpec = PlanItemSpec(title: "Homebrew cleanup", detail: "fixture",
                                    group: .safe, bytes: 1, paths: [commandTarget.path],
                                    action: .command, command: "brew cleanup")

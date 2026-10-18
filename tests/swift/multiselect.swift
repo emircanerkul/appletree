@@ -636,9 +636,27 @@ func run() {
           csrc.contains("func outlineViewItemDidExpand")
               && csrc.contains("func outlineViewItemDidCollapse"),
           "opening a folder would leave a stale hatch on its row")
+    // The rule is one function reached through `refreshPartialRows` (the redraw
+    // path) and through `didAdd` (a row revealed between two redraws): the two
+    // must agree about the hatch, so both calls are asserted. `needsPartialMark`
+    // takes the item and the model; the TREE input lives in the memo it reads,
+    // which is why it no longer appears in the call.
     check("the hatch rule is used by both marking paths",
-          csrc.components(separatedBy: "needsPartialMark(item, tree: tree, model: model)").count >= 3,
+          csrc.components(separatedBy: "needsPartialMark(item, model: model)").count >= 3,
           "one path would disagree with the other about the hatch")
+    // And the per-row answer must be set membership in the memo, NOT a fresh
+    // ancestry walk per row. Asking `holdsPick` here was the latent hang: on a
+    // large selection it is O(picks x depth) PER VISIBLE ROW, on every redraw.
+    check("the per-row hatch is a set lookup, not an ancestry walk",
+          csrc.contains("return heldFolders.contains(item.id)")
+              && csrc.contains("func refreshHeldFolders(tree: Tree, model: ScanModel)")
+              && csrc.contains("private var heldFolders: Set<Int> = []"),
+          "the redraw would walk every pick's ancestry once per visible row")
+    check("the memo is re-derived when the picks, the tree or its revision change",
+          csrc.contains("tree === heldPickTree, model.treeRevision == heldPickRevision")
+              && csrc.contains("members == heldPickMembers")
+              && csrc.contains("foldersHoldingPick(in: tree)"),
+          "a stale memo would hatch the wrong rows after a selection change or a removal")
 
     // --- collapse then expand must not lose the blue -------------------------------
     //
