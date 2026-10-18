@@ -489,13 +489,17 @@ final class ScanModel {
                            known: cleanup,
                            onMoved: { [weak self] paths in
                                // Step one moved these out of the scan root. Forget
-                               // each in place, the way the list's own delete does:
+                               // them in place, the way the list's own delete does:
                                // the engine cuts one link at a time and no other id
                                // is renumbered, so the open plan keeps naming the
                                // same folders. A rescan here would renumber every
                                // node the plan and the highlight overlay still hold.
+                               // One call for the whole batch, because a run can
+                               // move several folders at once and each in-place
+                               // bump makes every view re-read what it cached: the
+                               // batch invalidates once, not once per folder.
                                guard let self else { return }
-                               for path in paths { self.forgetPath(path) }
+                               self.forgetPaths(paths)
                            }) { [weak self] in
             guard let self, !self.scanning else { return }
             self.startScan()
@@ -604,24 +608,86 @@ final class ScanModel {
     ///
     /// The cleanup candidate list is rebuilt too, since a removed node can also
     /// un-prune candidates beneath it.
+    ///
+    /// A one-element wrapper around `forgetPaths`: the batch entry point is the
+    /// one implementation, and this keeps the single-item shape (and its `Bool`
+    /// answer) for callers that hold one path.
     @discardableResult
     func forgetPath(_ path: String) -> Bool {
-        guard let tree, let node = tree.node(at: path), tree.removeNode(node) else {
-            // The path was not in this scan's tree (or it was the root): there
-            // is nothing to subtract, so leave the view exactly as it was.
-            return false
+        // `== 1`, not `> 0`: one path can only ever cut one link, so the count
+        // is exactly the answer this used to compute inline.
+        forgetPaths([path]) == 1
+    }
+
+    /// Forget several paths' subtrees, invalidating the views ONCE.
+    ///
+    /// The same in-place removal as `forgetPath`, for a batch that has already
+    /// left the disk — a multi-selection trashed or erased, a planner's step
+    /// one. The engine edit is cheap per node, but the work that follows it is
+    /// not: `Cleanup.find` rebuilds the candidate list and each bump of
+    /// `treeRevision` makes the map, the rings and the outline re-read the
+    /// arrays they cached. Done per item that cost is paid N times, and because
+    /// every item's delete is `await`ed the runloop drains and the views
+    /// rebuild before the NEXT item — the reported "it refreshes each one as it
+    /// goes". So every link is cut first, then the shared work runs once.
+    ///
+    /// Returns how many subtrees this call actually forgot. That is the honest
+    /// answer to "did anything change": a path that is not in this scan's tree
+    /// (or the root, which the engine refuses) is skipped rather than failing
+    /// the batch, and nothing is invalidated when nothing was removed.
+    ///
+    /// Order-independent. `remove_node` cuts one parent link and subtracts the
+    /// subtree from its ancestors, so for a set with no ancestor/descendant
+    /// pair — which `SelectionSet.outermost` guarantees for the removal routes,
+    /// and which path resolution enforces anyway, since a detached subtree is
+    /// no longer reachable from the root — removing N nodes in any order leaves
+    /// the same arrays. The cleanup list is a pure function of the final tree
+    /// (`Cleanup.find` reads the engine's recomputed candidates), and
+    /// `validateSelection`/the view-root repair are likewise pure functions of
+    /// it: a node detached at step 1 is still detached at step N.
+    @discardableResult
+    func forgetPaths(_ paths: [String]) -> Int {
+        guard let tree else { return 0 }
+        var removed = 0
+        // Kept for the single-path log line only, so `forgetPath`'s diagnostic
+        // output stays byte-for-byte what it was.
+        var only: (name: String, node: Int)?
+        for path in paths {
+            // Cheap (microseconds): a path lookup walks name components, a cut
+            // is one `Vec::remove`. Doing every cut before any of the shared
+            // work is what makes that work happen once.
+            guard let node = tree.node(at: path), tree.removeNode(node) else { continue }
+            if removed == 0 { only = (tree.name(node), node) }
+            removed += 1
         }
-        let name = tree.name(node)
+        // Nothing resolved: leave the view exactly as it was. `treeRevision` is
+        // compared by three views, so bumping it for a no-op would buy three
+        // full rebuilds for no change at all.
+        guard removed > 0 else { return 0 }
         cleanup = Cleanup.find(in: tree)
         // A selection, hover or zoom root inside what just went would now point
         // at a detached node; drop just those, so removing one member of a
         // multi-selection leaves the others picked rather than clearing them.
+        //
+        // Run once, after every link is cut, because it asks only about the
+        // FINAL tree: whether an id is still attached and what its closest
+        // attached ancestor is. Both answers are the same whether the nodes
+        // went one at a time or together, so an intermediate pass could only
+        // reach an intermediate answer nothing observes.
         validateSelection()
         if let hovered, !tree.isAttached(hovered) { self.hovered = nil }
         if !tree.isAttached(viewRoot) { viewRoot = tree.attachedAncestor(of: viewRoot) }
         treeRevision &+= 1
-        NSLog("[bz] forgot %@ (node %d) in place; tree now %llu nodes", name, node, UInt64(tree.count))
-        return true
+        if removed == 1, let only {
+            NSLog("[bz] forgot %@ (node %d) in place; tree now %llu nodes",
+                  only.name, only.node, UInt64(tree.count))
+        } else {
+            // One line for the batch, never one per path: a 500-item delete
+            // would otherwise bury the log it is meant to explain.
+            NSLog("[bz] forgot %d paths in place; tree now %llu nodes",
+                  removed, UInt64(tree.count))
+        }
+        return removed
     }
 
     var viewRoot: Int = 0 {

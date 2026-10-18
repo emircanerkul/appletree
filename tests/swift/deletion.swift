@@ -515,9 +515,17 @@ func run() async {
     check("the verdict is the fact, not the English sentence",
           !TrashOutcome(source: "/x", trashed: nil, reason: "Already gone" + " ").leftTheDisk)
     // And the surface that forgets must consult that verdict, not re-spell it.
+    //
+    // The loop now COLLECTS the paths that left the disk and forgets them in one
+    // `forgetPaths` after it, so the batch invalidates the map, the rings and the
+    // outline once instead of once per item. The decision this pins is unchanged
+    // — only `leftTheDisk` submissions are collected, and the reason is still
+    // never compared against translated prose — so it is asserted on the shape of
+    // the collection rather than on the exact call line, which moved.
     check("the map forgets on the shared verdict",
           tm.contains("if outcome.leftTheDisk {")
-              && tm.contains("model.forgetPath(outcome.source)\n                } else if let reason = outcome.reason {")
+              && tm.contains("forgotten.append(outcome.source)")
+              && tm.contains("model.forgetPaths(forgotten)")
               && !tm.contains("outcome.reason == String(localized:"),
           "an already-gone item would stay in the map with phantom bytes")
 

@@ -1341,6 +1341,7 @@ enum NodeActions {
             // node's link where it sits, so every other id keeps its meaning and
             // the zoom, the selection and the size totals stay consistent.
             var failures: [String] = []
+            var forgotten: [String] = []
             for outcome in outcomes {
                 // One verdict for "no longer at that path": moved, or already
                 // absent before the Trash was asked. Both mean the tree still
@@ -1348,11 +1349,16 @@ enum NodeActions {
                 // makes the picture match. The already-gone case is not a
                 // failure — nothing is left to remove — so it is not reported.
                 if outcome.leftTheDisk {
-                    model.forgetPath(outcome.source)
+                    forgotten.append(outcome.source)
                 } else if let reason = outcome.reason {
                     failures.append("\((outcome.source as NSString).lastPathComponent): \(reason)")
                 }
             }
+            // ONE forget for the batch, after every path has left the disk.
+            // Per item it bumped `treeRevision` inside this loop, so the map, the
+            // rings and the outline each rebuilt between one delete and the
+            // next — the bulk delete that refreshed N times.
+            model.forgetPaths(forgotten)
             reportFailures(failures, title: String(localized: "Some folders couldn't be moved"))
         }
     }
@@ -1387,6 +1393,10 @@ enum NodeActions {
             // per-item messages: the alert lists what failed, and a remedy
             // repeated on every line would bury the paths it is about.
             var someWerePermission = false
+            // Paths that really went, collected so the view invalidation happens
+            // once. The erase itself stays sequential: it is I/O, and its order
+            // is what the per-item failure messages are built in.
+            var forgotten: [String] = []
             for path in paths {
                 if let failure = await Erase.erase(path) {
                     failures.append(failure.message)
@@ -1394,9 +1404,12 @@ enum NodeActions {
                 } else {
                     // Gone permanently, and forgotten the same in-place way as a
                     // trash, so the map, the list and the totals agree at once.
-                    model.forgetPath(path)
+                    forgotten.append(path)
                 }
             }
+            // ONE forget for the batch, before the failures are reported, so the
+            // alert and the picture it describes cannot disagree.
+            model.forgetPaths(forgotten)
             // Its own title: nothing was "moved" on this route, and a failure
             // notice that names the wrong gesture sends the user looking in the
             // Trash for something that never went there.
