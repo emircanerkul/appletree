@@ -1171,21 +1171,14 @@ struct OutlinePanel: NSViewRepresentable {
         /// Every row currently materialised, by node id.
         ///
         /// Built and maintained alongside `roots`/`children` so a pick resolves
-        /// in O(depth) instead of scanning each level's siblings — the scan that
-        /// made `syncSelection` quadratic (audit UI-3). Rebuilt wholesale in
-        /// `rebuildIfNeeded` and extended as folders are expanded, because a row
-        /// only exists once its ancestors are open.
+        /// without scanning each level's siblings — the scan that made
+        /// `syncSelection` quadratic (audit UI-3). Reset to the visible rows in
+        /// `rebuildIfNeeded` and grown lazily by `find` as folders are expanded,
+        /// because a row only exists once its ancestors are open. A miss is
+        /// therefore bounded by the rows currently open, not by the tree.
         private var itemIndex: [Int: Item] = [:]
         weak var outline: NSOutlineView?
         private var iconCache: [String: NSImage] = [:]
-
-        /// Record a subtree's rows in `itemIndex`.
-        private func index(_ items: [Item]) {
-            for item in items {
-                itemIndex[item.id] = item
-                if !item.children.isEmpty { index(item.children) }
-            }
-        }
 
         func rebuildIfNeeded() {
             guard let model, let t = model.tree else { return }
@@ -1230,9 +1223,16 @@ struct OutlinePanel: NSViewRepresentable {
                     roots = childIDs.map { Item(id: Int($0), tree: t) }
                     // A fresh row set: the index must not keep ids whose rows no
                     // longer exist, or `revealRow` would answer with a stale item
-                    // and the outline would refuse the row.
+                    // and the outline would refuse the row. Only the rows this
+                    // rebuild actually created are recorded; `find` walks further
+                    // and fills the rest in as folders are expanded. Indexing the
+                    // whole tree here instead sized the work by the tree rather
+                    // than by the rows: on a 1.82M-node home scan it materialised
+                    // every `Item` below the visible folder (1.24 s, ~152 MB) to
+                    // serve a 74-row list, and it ran on every view-root change
+                    // and every `treeRevision` bump.
                     itemIndex = [:]
-                    index(roots)
+                    for item in roots { itemIndex[item.id] = item }
                     outline?.reloadData()
                     // Put the user's own tree back exactly as they left it.
                     // Rows stay COLLAPSED by default: entering a folder shows
@@ -1314,15 +1314,44 @@ struct OutlinePanel: NSViewRepresentable {
         ///
         /// The index is filled lazily here, because `Item.children` materialises
         /// on first access and the outline may have expanded rows since the last
-        /// rebuild; a miss therefore walks once to populate it and retries. That
-        /// keeps the map correct without every expansion site having to remember
-        /// to update it.
+        /// rebuild. That keeps the map correct without every expansion site
+        /// having to remember to update it.
+        ///
+        /// The walk does not descend into COLLAPSED rows. `Item.children`
+        /// materialises a child array on first touch, so recursing regardless of
+        /// expansion made a single miss re-materialise every subtree below every
+        /// top-level folder — a walk sized by the tree instead of by the rows on
+        /// screen, measured in seconds on a ~1.8M-node scan. Only an expanded
+        /// item's children have rows, so bounding the recursion sizes the walk by
+        /// what is open.
+        ///
+        /// This is safe because a miss under a collapsed row could never produce
+        /// a highlight: both callers (`revealRow`, and `restore`'s selected loop)
+        /// immediately hand the result to `outline.row(forItem:)`, which is -1 for
+        /// any item whose ancestors are closed — so the pre-guard "hit" was a
+        /// non-nil item with no row, never a selection. Note the guard sits AFTER
+        /// the id match: a collapsed folder is still found, only its hidden
+        /// descendants are not. The orderings this relies on are `updateNSView`
+        /// (rebuild → `picksDidChange` → `syncSelection`), `expandAncestors` for
+        /// new picks, and `restore`, which re-expands the remembered open ids
+        /// before it looks up the selected ones. Reordering the last two would
+        /// silently drop the restored selection.
         private func find(_ id: Int) -> Item? {
             if let hit = itemIndex[id] { return hit }
+            // Both callers already hold the outline they passed in, and it is
+            // assigned once in `makeNSView` and never cleared, so a nil here is
+            // a programming error rather than a state to limp through: with
+            // `outline?` the walk would silently skip every row and answer nil,
+            // which reads as "the pick has no row" instead of failing loudly.
+            guard let outline else { return nil }
             func walk(_ items: [Item]) -> Item? {
                 for item in items {
                     itemIndex[item.id] = item
                     if item.id == id { return item }
+                    // A collapsed row's children have no rows, so none of them can
+                    // be the item being searched for. Descending anyway is what
+                    // materialised the whole subtree on every miss.
+                    guard outline.isItemExpanded(item) else { continue }
                     if let hit = walk(item.children) { return hit }
                 }
                 return nil
@@ -1658,13 +1687,14 @@ struct OutlinePanel: NSViewRepresentable {
         /// — see `syncSelection`; opening happens once per new pick in
         /// `picksDidChange`, so a collapsed folder stays collapsed.
         ///
-        /// Resolved through `itemIndex`, built once per rebuild, rather than a
-        /// `level.first(where:)` scan per chain step. That scan made
-        /// `syncSelection` quadratic in the number of picked rows — n picks ×
-        /// n siblings — and it runs from `updateNSView` on every model change,
-        /// so the cost was paid on every redraw. Measured on the real engine: 500
-        /// rows 27 ms, 2,000 rows 350 ms, 8,000 rows 6,235 ms, growing 4.4× per
-        /// doubling (audit UI-3). A dictionary lookup is O(depth) per pick.
+        /// Resolved through `itemIndex` — seeded per rebuild, grown lazily by
+        /// `find` as folders open — rather than a `level.first(where:)` scan per
+        /// chain step. That scan made `syncSelection` quadratic in the number of
+        /// picked rows — n picks × n siblings — and it runs from `updateNSView`
+        /// on every model change, so the cost was paid on every redraw. Measured
+        /// on the real engine: 500 rows 27 ms, 2,000 rows 350 ms, 8,000 rows
+        /// 6,235 ms, growing 4.4× per doubling (audit UI-3). A dictionary lookup
+        /// is O(depth) per pick.
         private func revealRow(for id: Int, in outline: NSOutlineView, tree: Tree) -> Item? {
             var chain: [Int] = []
             var cur = id
