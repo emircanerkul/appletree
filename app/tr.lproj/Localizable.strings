@@ -99,7 +99,7 @@
 "back on your disk" = "diskinize geri döndü";
 "One item couldn't be cleaned." = "Bir öge temizlenemedi.";
 "%@ items couldn't be cleaned." = "%@ öge temizlenemedi.";
-"Rescanned. The map is up to date." = "Yeniden tarandı. Harita güncel.";
+"The map is up to date." = "Harita güncel.";
 "Nothing needed doing." = "Yapılacak bir şey gerekmedi.";
 "Safe to remove" = "Güvenle kaldırılabilir";
 "Your call" = "Karar sizin";

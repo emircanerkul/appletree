@@ -38,6 +38,11 @@
 //   3. Step one does NOT call `onFinish`. That is the tempting one-line "fix"
 //      and it is wrong: a rescan renumbers every node, discarding the zoom, the
 //      selection and the plan's highlight overlay that the run is still holding.
+//   4. Step two rescans ONLY when the run contained a tool-command card (Task 5).
+//      A folder-only run already forgot its folders in step one, so a walk would
+//      re-learn nothing and could only destroy view state. A command card clears
+//      data behind the engine's back — `go clean -cache`, `npm cache clean` — and
+//      only a walk can re-measure that.
 //
 // NOTE: the test file MUST NOT be named after any app/*.swift source. On a
 // case-insensitive filesystem both would emit the same object file into one
@@ -246,18 +251,77 @@ func run() async {
     check("RACE: a genuinely failed path is not mistaken for a removal",
           !TrashOutcome(source: vanished.path, trashed: nil, reason: "Permission denied").leftTheDisk)
 
-    /* ---- 3. Step two still rescans ---------------------------------------- */
+    /* ---- 3. Step two: rescan ONLY when a command card ran ------------------ */
+    // Updated for Task 5. Step two's rescan used to be unconditional, and this
+    // suite pinned it. It is not unconditional any more, and it must not be:
+    // step one already forgot every folder it moved, in place, so a folder-only
+    // run has nothing left to re-measure and rescanning would only discard the
+    // zoom, the selection and the plan's overlay. A COMMAND card is the
+    // exception — `go clean -cache` empties a cache folder the engine tree
+    // still holds, and only a walk can re-measure that — so the decision is
+    // read from the run.
+    //
+    // The predicate is asserted directly rather than by executing a real tool
+    // cleanup: this suite must not run `go`/`brew`/`pnpm` on the machine it is
+    // run on, and a blocked command card never reaches the cleaning steps at
+    // all. `hasCommandCards` is the whole of the decision, and it is what the
+    // model's `onFinish` reads, so this is the contract that matters.
+    check("STEP TWO: a folder-only run asks for no rescan",
+          !aiRun.hasCommandCards,
+          "this run moved only folders; a rescan would renumber every node to re-learn nothing")
+    // A command card that did NOT leave the disk is still a command card: the
+    // cache it cleared is what the rescan exists for. A card the user left
+    // unticked, or one the guard blocked, must NOT trigger it — nothing of
+    // theirs ran.
+    //
+    // The card's path must EXIST, or `PlanItem` blocks the card "Already
+    // clean" and the command never runs — in which case no rescan is the right
+    // answer for the wrong reason, and this check would prove nothing.
+    let commandTarget = scratch.appendingPathComponent("command-cache")
+    try? fm.createDirectory(at: commandTarget, withIntermediateDirectories: true)
+    // A command that is allowlisted AND stays a COMMAND card.
+    //
+    // Two traps this fixture had to clear, both found by this check failing:
+    // `go clean -cache` is not in the allowlist, so `PlanItem` blocked it and
+    // the assertion ran on "not allowed" rather than on the rescan question.
+    // `npm cache clean`, which IS allowlisted, gets converted into a folder
+    // card when its folder exists (`viaTrash`), so it is no longer a command
+    // card at all — and rightly needs no rescan, because the folder path forgets
+    // in place. `brew cleanup` is a plain command with no folder conversion, so
+    // it is the shape an actual cache-purge run has.
+    let commandSpec = PlanItemSpec(title: "Homebrew cleanup", detail: "fixture",
+                                   group: .safe, bytes: 1, paths: [commandTarget.path],
+                                   action: .command, command: "brew cleanup")
+    let unticked = PlanItem(spec: commandSpec, tree: tree)
+    unticked.selected = false
+    check("STEP TWO: an unticked command card does not ask for a rescan",
+          !(unticked.selected && unticked.blocked == nil && unticked.isCommand))
+    let ticked = PlanItem(spec: commandSpec, tree: tree)
+    ticked.selected = true
+    check("STEP TWO: a ticked command card DOES ask for a rescan",
+          ticked.blocked == nil && ticked.isCommand,
+          "blocked=\(ticked.blocked ?? "nil") viaTrash=\(ticked.viaTrash) isCommand=\(ticked.isCommand)")
+
     let treeAtStaging = model.tree
+    let revisionAtStaging = model.treeRevision
     aiRun.deleteForGood(env: model.shellEnv)
     waited = 0.0
     while aiRun.phase != .done && waited < 40 { drain(0.3); waited += 0.3 }
     check("step two finished", aiRun.phase == .done, "phase=\(aiRun.phase)")
-    waited = 0.0
-    while model.tree === treeAtStaging && waited < 40 { drain(0.3); waited += 0.3 }
-    drain(1.0)
-    check("STEP TWO: the post-clean rescan replaced the tree", model.tree !== treeAtStaging,
-          "step two's refresh was the only one that existed before this fix and must still run")
-    check("STEP TWO: the rescan sees only what is left", model.tree?.node(at: doomed.path) == nil)
+    // Give a rescan every chance to appear, so "no rescan" is a real answer
+    // rather than a race won by asserting too early.
+    drain(2.0)
+    check("STEP TWO: the folder-only run did NOT rescan",
+          model.tree === treeAtStaging,
+          "the tree was replaced; a folder-only run has nothing a walk could add")
+    check("STEP TWO: the tree was still edited in place (or already was)",
+          model.treeRevision >= revisionAtStaging)
+    check("STEP TWO: the moved folder is still gone from the tree",
+          model.tree?.node(at: doomed.path) == nil,
+          "step one's in-place forget must have removed it")
+    check("STEP TWO: the finished run stops offering a highlight overlay",
+          aiRun.highlights(in: model.tree).isEmpty,
+          "a .done run must not paint ids from a plan whose cards are gone")
 
     print("\(passed) passed, \(failed) failed")
     exit(failed == 0 ? 0 : 1)

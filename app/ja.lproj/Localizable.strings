@@ -99,7 +99,7 @@
 "back on your disk" = "ディスクに戻りました";
 "One item couldn't be cleaned." = "1件の項目をクリーンアップできませんでした。";
 "%@ items couldn't be cleaned." = "%@件の項目をクリーンアップできませんでした。";
-"Rescanned. The map is up to date." = "再スキャンしました。マップは最新です。";
+"The map is up to date." = "マップは最新です。";
 "Nothing needed doing." = "作業は不要でした。";
 "Safe to remove" = "安全に削除できる";
 "Your call" = "あなたが決める";

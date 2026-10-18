@@ -363,8 +363,21 @@ final class CleanupTrashBatch {
 
     func clearFailures() { failures = [] }
 
+    /// Run the batch, then report both halves of what happened.
+    ///
+    /// `trashed` is the source path of every item that really left the disk
+    /// (`TrashOutcome.leftTheDisk` — the same verdict the single-path and
+    /// planner routes use, never a second predicate derived here), and `failed`
+    /// is the already-worded list the alert shows. Both are needed: the panel
+    /// must stop counting what went, and it must name what did not.
+    ///
+    /// The successes used to be discarded, which is why the panel's only way to
+    /// show them was to walk the whole disk again. The caller already holds the
+    /// paths and the engine can forget them in place, so the report is the
+    /// cheaper answer and the only one that keeps the view state.
     @discardableResult
-    func start(_ items: [CleanupItem], completion: @escaping ([String]) -> Void) -> Task<Void, Never>? {
+    func start(_ items: [CleanupItem],
+               completion: @escaping (_ trashed: [String], _ failed: [String]) -> Void) -> Task<Void, Never>? {
         guard !running else { return nil }
         running = true
         return Task {
@@ -385,8 +398,14 @@ final class CleanupTrashBatch {
                 return "\(item.display): \(reason)"
             }
             failures.append(contentsOf: failed)
+            // The other half of the report: one entry per path that is no
+            // longer at its source, read with the one verdict the codebase
+            // uses for that question (`leftTheDisk`), so an "Already gone"
+            // path is reported exactly as the planner's step one reports it
+            // and a blocked or failed one never is.
+            let trashed = outcomes.filter(\.leftTheDisk).map(\.source)
             running = false
-            completion(failed)
+            completion(trashed, failed)
         }
     }
 }

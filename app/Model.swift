@@ -500,9 +500,27 @@ final class ScanModel {
                                // batch invalidates once, not once per folder.
                                guard let self else { return }
                                self.forgetPaths(paths)
-                           }) { [weak self] in
+                           }) { [weak self] finished in
             guard let self, !self.scanning else { return }
-            self.startScan()
+            // A rescan here is for COMMAND cards only, and it must not be
+            // deleted on sight: `npm cache clean` empties a cache folder the
+            // engine tree still holds, and no in-place removal can re-measure a
+            // folder whose contents changed behind our back, so a walk is the
+            // only honest answer.
+            //
+            // For a folder-only run there is nothing left to re-measure. Step
+            // one already moved every folder and reported the paths that
+            // really left, and the `onMoved` closure above forgot each one in
+            // place. Rescanning anyway would replace the tree and renumber
+            // every node — discarding the zoom, the selection and the plan's
+            // overlay that this run is still showing — to re-learn a fact the
+            // run already holds.
+            //
+            // Read from the run, not from the model's own copy of the plan:
+            // `hasCommandCards` is `targets` + `PlanItem.isCommand`, the same
+            // pair the cleaning steps act on, so this cannot disagree with
+            // what actually ran.
+            if finished.hasCommandCards { self.startScan() }
         }
         withAnimation(.snappy) { agentRun = run }
     }

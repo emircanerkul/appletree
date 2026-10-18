@@ -149,12 +149,17 @@ final class AgentRun {
     /// it the list, the map, the rings and the byte totals keep counting folders
     /// that are already in the Trash until step two or a manual rescan.
     private let onMoved: ([String]) -> Void
-    private let onFinish: () -> Void
+    /// Called with this run once step two has finished, so the caller can
+    /// decide what still needs re-measuring. It carries the run rather than
+    /// being a bare `() -> Void` because the answer depends on what THIS run
+    /// cleaned: reading the model's current `agentRun` instead would describe
+    /// whichever run happens to be on screen by then.
+    private let onFinish: (AgentRun) -> Void
     private var preparationTask: Task<Void, Never>?
 
     init(provider: LLMProvider, tree: Tree, scanRoot: String,
          known: [CleanupItem], onMoved: @escaping ([String]) -> Void,
-         onFinish: @escaping () -> Void) {
+         onFinish: @escaping (AgentRun) -> Void) {
         self.provider = provider
         self.scanRoot = scanRoot
         self.tree = tree
@@ -210,6 +215,27 @@ final class AgentRun {
     }
     /// The items the user chose and AppleTree may touch.
     var targets: [PlanItem] { items.filter { $0.selected && $0.blocked == nil } }
+
+    /// Whether what this run CLEANS includes a tool-command card.
+    ///
+    /// The one question the caller's `onFinish` has to ask before deciding to
+    /// rescan. A folder card's bytes are already out of the tree: step one
+    /// moved it, reported the paths, and the model forgot them in place. A
+    /// command card is different in kind — `npm cache clean` empties a cache
+    /// folder the engine tree still holds, and the only way to re-measure that
+    /// is another walk — so those runs still rescan.
+    ///
+    /// Derived from `targets` with `PlanItem.isCommand`, the same pair the
+    /// cleaning steps themselves use, so it cannot describe a different set of
+    /// cards than the ones that actually run. Deliberately the *targets*, not
+    /// every item: a command card the user unticked (or that is blocked) never
+    /// runs, and rescanning the whole disk because of it would be a walk for a
+    /// change that did not happen.
+    ///
+    /// A single Bool rather than exposing `items`: this is the only fact the
+    /// caller needs about the run, and handing it the cards would invite a
+    /// second owner of what a plan means.
+    var hasCommandCards: Bool { targets.contains { $0.isCommand } }
 
     /// Space the disk actually got back (statfs), set when deleting ends.
     private(set) var reclaimed: UInt64?
@@ -451,7 +477,7 @@ final class AgentRun {
             }
             current = nil
             withAnimation(.snappy) { phase = .done }
-            if !dryRun { onFinish() }
+            if !dryRun { onFinish(self) }
         }
     }
 

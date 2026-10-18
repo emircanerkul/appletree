@@ -99,7 +99,7 @@
 "back on your disk" = "已释放回磁盘";
 "One item couldn't be cleaned." = "1 个项目无法清理。";
 "%@ items couldn't be cleaned." = "%@ 个项目无法清理。";
-"Rescanned. The map is up to date." = "已重新扫描。图示已是最新。";
+"The map is up to date." = "图示已是最新。";
 "Nothing needed doing." = "无需任何操作。";
 "Safe to remove" = "可安全移除";
 "Your call" = "由你决定";

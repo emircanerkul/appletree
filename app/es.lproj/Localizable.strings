@@ -99,7 +99,7 @@
 "back on your disk" = "de vuelta en tu disco";
 "One item couldn't be cleaned." = "No se pudo limpiar un elemento.";
 "%@ items couldn't be cleaned." = "No se pudieron limpiar %@ elementos.";
-"Rescanned. The map is up to date." = "Reescaneado. El mapa está actualizado.";
+"The map is up to date." = "El mapa está actualizado.";
 "Nothing needed doing." = "No hizo falta nada.";
 "Safe to remove" = "Seguro de eliminar";
 "Your call" = "Es tu decisión";

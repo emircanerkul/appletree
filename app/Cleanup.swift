@@ -324,12 +324,18 @@ struct CleanupPanel: View {
         // Capture what the user is actually acting on before the batch runs;
         // `pickedItems` is re-derived from the current scan on every read.
         let acting = pickedItems
-        model.cleanupTrash.start(acting) { _ in
+        model.cleanupTrash.start(acting) { trashed, _ in
             // Drop only the ticks that were just handled. Clearing everything
             // would also discard a tick the user added while the batch ran.
             picked.subtract(acting.map(\.path))
-            // The batch clears its busy state before this final rescan.
-            model.startScan()
+            // Forget what really left the disk, in place — the same call the
+            // context menu, the Delete key and the planner's step one already
+            // use. Deliberately not a rescan: `startScan` clears the tree and
+            // renumbers every node, so it would throw away the zoom, the
+            // selection and the hover for a batch the user has already seen
+            // finish, and pay a 12.5 s walk (measured, the 1.82M-node home
+            // scan) to learn what the Trash just told us in `trashed`.
+            model.forgetPaths(trashed)
         }
     }
 
@@ -502,7 +508,13 @@ private struct AgentRunView: View {
         // A dry run synthesizes `freed` but skips the rescan, so claiming the
         // map is up to date would be false — the folders are all still there.
         if run.isDryRun { return String(localized: "Nothing needed doing.") }
-        return run.freed > 0 ? String(localized: "Rescanned. The map is up to date.") : String(localized: "Nothing needed doing.")
+        // Deliberately says nothing about HOW the map got up to date. It used
+        // to read "Rescanned.", which stopped being true once a folder-only run
+        // began forgetting its trashed folders in place instead of walking the
+        // disk again; a command-card run still rescans. The one claim that
+        // holds either way is the one worth making, and it is also the claim
+        // the user cares about.
+        return run.freed > 0 ? String(localized: "The map is up to date.") : String(localized: "Nothing needed doing.")
     }
 
     // MARK: Steps
