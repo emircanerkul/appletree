@@ -1122,18 +1122,48 @@ final class ScanModel {
     nonisolated struct CrumbPath {
         /// Folders to draw, outermost first.
         var nodes: [Int]
-        /// Something above the first crumb was dropped.
+        /// Levels between the first crumb and the rest were dropped.
+        ///
+        /// The view draws a `…` after the FIRST crumb when this is set — the root
+        /// stays visible and the gap is shown in the middle, not at the start.
         var elidedAbove = false
         /// Something between the folder on screen and the pick was dropped.
         var elidedBelow = false
     }
 
-    /// At most this many parents above the folder on screen, and this many
-    /// steps below it to the pick: enough to walk out, bounded so a deep
-    /// chain cannot push the ancestors off the end of the title bar.
-    private static let crumbParents = 5
+    /// How many steps below the folder on screen the trail may follow a pick.
+    ///
+    /// This one stays a count because it bounds a DIFFERENT thing: the trail
+    /// continues past the folder on screen only to say which folder holds the
+    /// selected file, and a pick ten levels down is not a path the title needs to
+    /// spell out. Three is enough to show the relationship.
     private static let crumbDepth = 3
 
+    /// At most this many crumbs are drawn.
+    ///
+    /// Measured, not guessed: at the app's 400pt minimum toolbar grant, six crumbs
+    /// need `6 × 44 + 5 × 17 = 349pt` before any of them has to shrink, while eight
+    /// need 471pt and do not fit. Six is therefore the largest count that keeps
+    /// every crumb able to show a name at the smallest window the app allows.
+    ///
+    /// What gets dropped when the path is longer is the MIDDLE, never the ends: the
+    /// scan root stays (it is the "main directory" the user asked for and the one
+    /// crumb that says where the whole tree starts) and the deepest crumbs stay (the
+    /// folder on screen and the ones just above it). Only the levels in between
+    /// collapse into a single `…`.
+    private static let crumbMax = 6
+
+    /// The path to show in the title, and what it had to leave out.
+    ///
+    /// Two things are deliberately NOT done here. The ancestors are not capped to a
+    /// fixed window that slides off the root: that dropped the scan root on any path
+    /// deeper than five, so browsing `…/Projects/man/apps` rendered
+    /// `… > Users > erkul > Projects > man > apps` — the main directory replaced by
+    /// a leading `…` — even though the chain needed only ~240pt of the 400–798pt the
+    /// toolbar grants. They are also not passed through unbounded: a 33-level path
+    /// then arrives as 33 crumbs, each squeezed to a bare `…`, which reads as a row
+    /// of dots. So the count is bounded (`crumbMax`) and the elision is placed in
+    /// the middle, keeping the root and the leaf.
     var crumbPath: CrumbPath {
         guard let tree else { return CrumbPath(nodes: [viewRoot]) }
         // The folder on screen, from the scan root down to it.
@@ -1150,9 +1180,14 @@ final class ScanModel {
             below = Array(below.suffix(Self.crumbDepth))
             path.elidedBelow = true
         }
-        let parents = Array(toRoot.suffix(Self.crumbParents))
-        path.elidedAbove = parents.count < toRoot.count
-        path.nodes = parents + below
+        // Keep the root and the deepest crumbs; elide the middle.
+        var shown = toRoot + below
+        if shown.count > Self.crumbMax {
+            let tailCount = Self.crumbMax - 1        // the root takes one slot
+            path.elidedAbove = true                  // draws the `…` between them
+            shown = [shown[0]] + shown.suffix(tailCount)
+        }
+        path.nodes = shown
         return path
     }
 

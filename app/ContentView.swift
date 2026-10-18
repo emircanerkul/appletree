@@ -1987,13 +1987,18 @@ struct TitleCrumbs: View {
         let path = model.crumbPath
         let last = path.nodes.count - 1
         return HStack(spacing: 4) {
-            if path.elidedAbove {
-                Text("…").foregroundStyle(.tertiary)
-                chevron
-            }
             ForEach(path.nodes.indices, id: \.self) { i in
                 if i > 0 { chevron }
                 let isLast = i == last
+                // The gap sits AFTER the root, not before it. The model keeps the
+                // scan root — it is the "main directory" and the one crumb that
+                // says where the tree starts — and elides the levels between it
+                // and the deepest crumbs. A leading `…` (the old shape) read as if
+                // the root itself had been dropped.
+                if path.elidedAbove && i == 1 {
+                    Text("…").foregroundStyle(.tertiary)
+                    chevron
+                }
                 crumb(tree: tree, node: path.nodes[i], isLast: isLast)
                     // Priority by LENGTH, with the folder on screen winning ties.
                     //

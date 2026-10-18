@@ -434,6 +434,25 @@ func run() async {
     // on screen when a .pnpm store puts its long hash in the MIDDLE). Widths are
     // now allocated from the name lengths, so cheap crumbs are paid in full before
     // a long one gets a point.
+    // The scan root must never be dropped to save room.
+    //
+    // The model used to cap the ancestors at five, so any path deeper than that
+    // silently replaced the root with a leading `…`: browsing `…/Projects/man/apps`
+    // rendered `… > Users > erkul > Projects > man > apps` although the chain
+    // needed only ~240pt of the 400–798pt the toolbar grants. The "main directory"
+    // the user asked about was gone while space sat unused.
+    let modelSrc = source("app/Model.swift")
+    check("the breadcrumb keeps the scan root",
+          modelSrc.contains("shown = [shown[0]] + shown.suffix(tailCount)"),
+          "a sliding ancestor window drops the root on a deep path")
+    check("the breadcrumb bounds its crumb count",
+          modelSrc.contains("private static let crumbMax") && modelSrc.contains("if shown.count > Self.crumbMax"),
+          "a 33-level path would arrive as 33 crumbs and every one would collapse to '…'")
+    // The gap belongs in the middle: a leading `…` reads as "the root was dropped".
+    check("the elision sits after the root, not before it",
+          content.contains("if path.elidedAbove && i == 1"),
+          "a leading ellipsis claims the main directory is missing")
+
     check("a generated package-manager name is shortened for display",
           source("app/CrumbLayout.swift").contains("static func shorten")
               && content.contains("CrumbLayout.shorten(name)"),
