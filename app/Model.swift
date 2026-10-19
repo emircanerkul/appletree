@@ -152,6 +152,19 @@ nonisolated final class Tree: @unchecked Sendable {
         return ancestry(node).first == 0
     }
 
+    /// The shallowest of `nodes` — the one nearest the scan root.
+    ///
+    /// Ties (two nodes at the same depth) keep the first, so the answer is stable
+    /// rather than whichever the hash order happened to yield.
+    nonisolated static func topmost(of nodes: [Int], in tree: Tree) -> Int? {
+        var best: (node: Int, depth: Int)? = nil
+        for node in nodes {
+            let depth = tree.ancestry(node).count
+            if best == nil || depth < best!.depth { best = (node, depth) }
+        }
+        return best?.node
+    }
+
     /// The closest still-attached node at or above `node`, or 0.
     ///
     /// Only meaningful for a node that is still IN the tree: `remove_node` sets a
@@ -690,6 +703,21 @@ final class ScanModel {
         // folder still lands above all of them.
         var repairRootTo: Int? = nil
         var rootChain = Set(tree.ancestry(viewRoot).dropLast())   // strict ancestors
+        // Where the selection should land once the removed rows are gone.
+        //
+        // Clearing the selection is correct in the narrow sense — the picked node
+        // no longer exists — but it leaves the user with nothing to act on, and in
+        // the list it drops the highlight entirely. The natural place to put the
+        // focus is the parent of what was removed: that is the folder the user was
+        // working in, and it still exists. For a batch the answer is the TOPMOST of
+        // those parents, so deleting two files in one folder focuses that folder,
+        // and deleting items from two different folders focuses their common
+        // parent rather than an arbitrary one of the two.
+        //
+        // Captured before the cut for the same reason as `repairRootTo`: after
+        // `remove_node` the parent link is gone. `.isAttached` filters a parent
+        // that this very batch also removed.
+        var focusParents: [Int] = []
         for path in paths {
             // Cheap (microseconds): a path lookup walks name components, a cut
             // is one `Vec::remove`. Doing every cut before any of the shared
@@ -699,7 +727,9 @@ final class ScanModel {
             for ancestor in tree.ancestry(node).dropLast().reversed() {
                 if rootChain.contains(ancestor) { repairRootTo = ancestor; break }
             }
+            let nodeParent = Int(tree.parents[node])
             guard tree.removeNode(node) else { continue }
+            if nodeParent != Int(UInt32.max) { focusParents.append(nodeParent) }
             if removed == 0 { only = (tree.name(node), node) }
             removed += 1
         }
@@ -718,6 +748,27 @@ final class ScanModel {
         // went one at a time or together, so an intermediate pass could only
         // reach an intermediate answer nothing observes.
         validateSelection()
+        // Focus lands on the surviving ancestor of everything that just went.
+        //
+        // Only when the selection was CLEARED by the removal. A batch that removes
+        // one member of a multi-selection leaves the others picked — that is what
+        // `validateSelection` above is for, and overwriting them here would throw
+        // away a selection the user still has. So this runs only when nothing is
+        // picked any more, which is exactly the case where the highlight otherwise
+        // vanishes and the user loses their place.
+        //
+        // The answer is the TOPMOST of the removed items' parents: deleting two
+        // files in one folder focuses that folder, and deleting items from two
+        // different parents focuses their common ancestor rather than an arbitrary
+        // one of the two. `.isAttached` skips a parent this batch also removed
+        // (which `SelectionSet.outermost` normally forbids, but a planner's batch
+        // does not go through it).
+        if !focusParents.isEmpty, picks.members.isEmpty {
+            let surviving = focusParents.filter { tree.isAttached($0) }
+            if let topmost = Tree.topmost(of: surviving, in: tree) {
+                picks.replace(with: topmost)
+            }
+        }
         if let hovered, !tree.isAttached(hovered) { self.hovered = nil }
         if !tree.isAttached(viewRoot) {
             // Prefer the ancestor captured before the cut; fall back to the tree
@@ -837,13 +888,30 @@ final class ScanModel {
         picks.validate(in: tree)
     }
 
-    /// Select a node from a list, zooming out first if it is outside the
-    /// folder on screen (it would have nothing to outline).
+    /// Select a node from a list, re-rooting to its own folder when it is outside
+    /// the one on screen.
     ///
-    /// The zoom-out serves the selection rather than a change of folder the
-    /// user asked for, so it re-roots without adding a trail visit.
+    /// The node needs a folder on screen that CONTAINS it, or it has no row and no
+    /// tile — the click would select something the user cannot see. That folder is
+    /// the node's own parent, not the scan root: re-rooting to 0 sent the whole
+    /// window back to `Macintosh HD` whenever a Clean Up row happened to be outside
+    /// the folder being browsed, which lost the user's place for a click they made
+    /// to look at something, not to navigate. The parent always contains the node,
+    /// is always a folder, and keeps the view as close to where it was as the
+    /// selection allows.
+    ///
+    /// This serves the selection rather than a folder change the user asked for,
+    /// so it re-roots without adding a trail visit.
     func reveal(_ node: Int) {
-        if let tree, !tree.ancestry(node).contains(viewRoot) { rootForFocus(on: 0) }
+        guard let tree else { selection = node; return }
+        if !tree.ancestry(node).contains(viewRoot) {
+            let parent = Int(tree.parents[node])
+            // A node whose parent link is gone is the scan root itself (or a
+            // detached id); there is nothing to re-root to, so leave the view be.
+            if parent != Int(UInt32.max), tree.isDir(parent), tree.isAttached(parent) {
+                rootForFocus(on: parent)
+            }
+        }
         selection = node
     }
 

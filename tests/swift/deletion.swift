@@ -434,6 +434,31 @@ func run() async {
     // on screen when a .pnpm store puts its long hash in the MIDDLE). Widths are
     // now allocated from the name lengths, so cheap crumbs are paid in full before
     // a long one gets a point.
+    // Clicking a Clean Up row must not send the window to the scan root.
+    //
+    // `reveal` re-roots so the clicked node has a folder on screen containing it.
+    // It used to re-root to 0, so clicking any row outside the folder being browsed
+    // jumped the whole window to `Macintosh HD` — losing the user's place for a
+    // click they made to LOOK at something, not to navigate.
+    let modelSrc3 = source("app/Model.swift")
+    check("revealing an item re-roots to its parent, not the scan root",
+          modelSrc3.contains("if parent != Int(UInt32.max), tree.isDir(parent), tree.isAttached(parent)")
+              && !modelSrc3.contains("!tree.ancestry(node).contains(viewRoot) { rootForFocus(on: 0) }"),
+          "clicking a row outside the folder would jump to the scan root")
+
+    // After a delete the focus lands on the parent, so the user keeps their place.
+    check("a deleted selection moves focus to its parent",
+          modelSrc3.contains("var focusParents: [Int] = []")
+              && modelSrc3.contains("picks.replace(with: topmost)"),
+          "the highlight would just vanish after a delete")
+    // But never at the cost of a selection the user still has.
+    check("a partly-deleted selection keeps its survivors",
+          modelSrc3.contains("if !focusParents.isEmpty, picks.members.isEmpty"),
+          "a multi-selection would be replaced by a parent when only one member went")
+    check("a batch focuses the shallowest parent",
+          modelSrc3.contains("static func topmost(of nodes: [Int], in tree: Tree)"),
+          "an arbitrary parent would be chosen")
+
     // Deleting the folder you are INSIDE must step one level out, not all the way
     // to the scan root.
     //
