@@ -931,8 +931,18 @@ final class ScanModel {
     /// The title path and `selectEnclosingFolder` already fall back to
     /// `viewRoot`, so nothing is lost by leaving the pick empty.
     func navigate(to folder: Int) {
-        viewRoot = folder
-        picks.clear()
+        // Save what was focused in the folder being LEFT, and restore what was
+        // focused in the one being entered, so a round trip comes back to the same
+        // selection instead of an empty list.
+        if let tree {
+            rememberFocus(tree)
+            viewRoot = folder
+            picks.clear()
+            restoreFocus(tree)
+        } else {
+            viewRoot = folder
+            picks.clear()
+        }
         hovered = nil
         record(folder)
     }
@@ -952,8 +962,15 @@ final class ScanModel {
     /// to the root) and open C, and back would land on the bare root — a folder
     /// the user never chose — with B gone from the history entirely.
     func rootForFocus(on folder: Int) {
-        viewRoot = folder
-        picks.clear()
+        if let tree {
+            rememberFocus(tree)
+            viewRoot = folder
+            picks.clear()
+            restoreFocus(tree)
+        } else {
+            viewRoot = folder
+            picks.clear()
+        }
         hovered = nil
     }
 
@@ -975,6 +992,54 @@ final class ScanModel {
         /// Distinct from `autoScan` itself: "never asked" and "asked and said
         /// no" are different states, and only the first one offers the choice.
         static let autoScanAnswered = "bz.autoScanSet"
+    }
+
+    /// What was focused in each folder, remembered by folder path.
+    ///
+    /// The selection is scoped to one folder in the UI's terms: leaving a folder
+    /// clears it, because the pick named a node with no row and no tile in the new
+    /// one. But coming BACK should restore it — that is what "leave it as I left it"
+    /// means, and the expansion state already works that way (`openByRoot` in the
+    /// outline). Without this, entering a folder, selecting something, stepping out
+    /// and returning dropped the highlight, so the user lost their place on every
+    /// round trip.
+    ///
+    /// Keyed by PATH, not node id, for the same reason the trail is: an id means
+    /// nothing after a rescan, and the folder has to be found again in the new
+    /// tree anyway. Bounded like the trail so a long session cannot grow it without
+    /// limit; the least recently used folder is dropped first.
+    private var focusByFolder: [String: Int] = [:]     // path -> node id
+    private var focusOrder: [String] = []
+    private static let focusLimit = 200
+
+    /// Remember the current selection against the folder on screen.
+    private func rememberFocus(_ tree: Tree) {
+        let path = tree.path(viewRoot)
+        if let primary = picks.primary, tree.isAttached(primary) {
+            focusByFolder[path] = primary
+            focusOrder.removeAll { $0 == path }
+            focusOrder.append(path)
+            while focusOrder.count > Self.focusLimit {
+                focusByFolder[focusOrder.removeFirst()] = nil
+            }
+        } else {
+            // An empty selection is a real answer: a folder the user left with
+            // nothing focused must come back with nothing focused, rather than
+            // resurrecting whatever was selected there an hour ago.
+            focusByFolder[path] = nil
+            focusOrder.removeAll { $0 == path }
+        }
+    }
+
+    /// Restore the focus remembered for the folder now on screen, if any.
+    private func restoreFocus(_ tree: Tree) {
+        let path = tree.path(viewRoot)
+        guard let node = focusByFolder[path], tree.isAttached(node) else { return }
+        // A remembered node that is no longer inside the folder it was saved under
+        // is meaningless here (an in-place removal can move the boundary); only
+        // restore what this folder actually contains.
+        guard tree.ancestry(node).contains(viewRoot), node != viewRoot else { return }
+        picks.replace(with: node)
     }
 
     /// Folders visited, oldest first, as absolute paths.
@@ -1088,8 +1153,10 @@ final class ScanModel {
         guard let tree else { return false }
         while trail.indices.contains(trailIndex) {
             if let node = resolve(trail[trailIndex], in: tree) {
+                rememberFocus(tree)
                 viewRoot = node
                 picks.clear()
+                restoreFocus(tree)
                 hovered = nil
                 persistTrail()
                 return true
@@ -1166,6 +1233,10 @@ final class ScanModel {
         if let node = trail.indices.contains(trailIndex) ? resolve(trail[trailIndex], in: tree) : nil {
             viewRoot = node
             picks.clear()
+            // The folder may have a remembered selection from before the relaunch
+            // only within this session; ids do not survive a rescan, so this is
+            // simply the same restore every other folder change gets.
+            restoreFocus(tree)
             hovered = nil
         } else {
             viewRoot = 0
@@ -1391,6 +1462,8 @@ final class ScanModel {
         // The new tree renumbers every node id, so old picks would name
         // different folders; the selection is scoped to one tree by design.
         picks.clear()
+        focusByFolder = [:]
+        focusOrder = []
         hovered = nil
         files = 0; dirs = 0; bytes = 0; elapsed = 0
         lastPollAt = nil; maxPollGap = 0

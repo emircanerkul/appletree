@@ -658,6 +658,42 @@ func run() {
               && csrc.contains("foldersHoldingPick(in: tree)"),
           "a stale memo would hatch the wrong rows after a selection change or a removal")
 
+    // --- focus survives leaving a folder and coming back --------------------------
+    //
+    // `navigate`, `rootForFocus` and `applyTrail` all cleared the selection when the
+    // folder changed. That is right — the pick names a node with no row in the new
+    // folder — but coming BACK should restore it, the way expansion already does.
+    // Without it, entering a folder, selecting something, stepping out and
+    // returning dropped the highlight on every round trip.
+    let msrc = source("app/Model.swift")
+    check("what was focused is remembered per folder",
+          msrc.contains("private var focusByFolder: [String: Int]"),
+          "the selection would be lost every time the user looks away from a folder")
+    check("every folder change restores the remembered focus",
+          msrc.components(separatedBy: "restoreFocus(tree)").count >= 4,
+          "one navigation route would still drop the selection")
+    check("every folder change saves the focus it is leaving",
+          msrc.components(separatedBy: "rememberFocus(tree)").count >= 4,
+          "the folder being left would forget what was selected in it")
+    check("an empty selection is remembered as empty",
+          msrc.contains("focusByFolder[path] = nil"),
+          "a folder left with nothing focused must not resurrect an old pick")
+    check("remembered focus is dropped when the tree is replaced",
+          msrc.contains("focusByFolder = [:]"),
+          "a rescan renumbers ids, so a remembered one would focus the wrong node")
+
+    // --- focus is placed a third down, not at the bottom edge ---------------------
+    //
+    // `scrollRowToVisible` scrolls the minimum distance, so a row just below the
+    // viewport lands flush against the BOTTOM (measured: 93% down a 20-row viewport)
+    // — which is what put a delete's new focus at the very bottom of the list.
+    check("revealing a row places it a third down the viewport",
+          csrc.contains("func placeRow(_ row: Int, fraction: CGFloat = 0.30)"),
+          "the focused row would be parked at the edge of the list")
+    check("no list path still uses the minimum-scroll call",
+          !csrc.contains("scrollRowToVisible(first)") && !csrc.contains("scrollRowToVisible(rows.first!)"),
+          "a leftover call site would still place the focus at the bottom")
+
     // --- expansion survives leaving a folder and coming back ----------------------
     //
     // The list remembers what was open only for the duration of ONE reload: the

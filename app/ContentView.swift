@@ -806,6 +806,34 @@ struct FlowLayout: Layout {
 /// key): returning nil leaves the row with no menu, which is why the list had
 /// none — the map and the rings built their own in `rightMouseDown`, and the
 /// list never did. The coordinator holds the model the menu needs.
+extension NSOutlineView {
+    /// Scroll so `row` sits about a third of the way down the viewport.
+    ///
+    /// `scrollRowToVisible` scrolls the MINIMUM distance, so a row that happens to
+    /// be just below the visible area lands flush against the BOTTOM edge —
+    /// measured, 93% of the way down a 20-row viewport. That is what made a delete
+    /// put the new focus at the very bottom of the list: the parent row was one line
+    /// below where the user was looking, and revealing it pushed it to the edge.
+    ///
+    /// A third from the top is where the eye expects a focused row to appear, and it
+    /// leaves the surrounding context visible on both sides rather than only above.
+    /// Clamped at both ends so the first rows and the last do not ask for a scroll
+    /// the list cannot perform.
+    func placeRow(_ row: Int, fraction: CGFloat = 0.30) {
+        guard row >= 0, row < numberOfRows, let clip = enclosingScrollView?.contentView else { return }
+        let rowRect = rect(ofRow: row)
+        let visible = clip.bounds.height
+        guard visible > 0 else { scrollRowToVisible(row); return }
+        let target = max(0, rowRect.origin.y - visible * fraction)
+        // Never past the end of the document: the scroll view clamps anyway, and an
+        // unclamped value here just produces a rubber-band animation.
+        let limit = max(0, (enclosingScrollView?.documentView?.bounds.height ?? 0) - visible)
+        clip.scroll(to: NSPoint(x: clip.bounds.origin.x, y: min(target, limit)))
+        enclosingScrollView?.reflectScrolledClipView(clip)
+    }
+
+}
+
 final class NodeOutlineView: NSOutlineView {
     weak var menuCoordinator: OutlinePanel.Coordinator?
 
@@ -835,7 +863,7 @@ final class NodeOutlineView: NSOutlineView {
         }
         guard rows != selectedRowIndexes else { return }
         selectRowIndexes(rows, byExtendingSelection: false)
-        if let first = rows.first { scrollRowToVisible(first) }
+        if let first = rows.first { placeRow(first) }
     }
 
     /// Declare what a click means BEFORE AppKit acts on it, so the selection
@@ -1447,7 +1475,7 @@ struct OutlinePanel: NSViewRepresentable {
             }
             if !rows.isEmpty {
                 outline.selectRowIndexes(rows, byExtendingSelection: false)
-                outline.scrollRowToVisible(rows.first!)
+                outline.placeRow(rows.first!)
             }
         }
 
@@ -1863,7 +1891,7 @@ struct OutlinePanel: NSViewRepresentable {
                 // leaving the previous rows blue.
                 outline.deselectAll(nil)
             }
-            if let first = rows.first { outline.scrollRowToVisible(first) }
+            if let first = rows.first { outline.placeRow(first) }
             refreshPartialRows()
         }
 
