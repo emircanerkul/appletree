@@ -36,6 +36,69 @@ final class SunburstNSView: NSView {
     private var radii: [CGFloat] = []
     private var center: CGPoint = .zero
     private var bitmap: CGImage?
+
+    // ---- Render cache ----
+    //
+    // Switching between the scan root and a folder re-derived the whole ring
+    // layout and repainted the bitmap every time. Measured on a 1.68M-node scan at
+    // 1000×900, a round trip between the root and its largest child cost 82–90 ms
+    // FOR EVERY TRIP, where the treemap's equivalent was 0 ms — the treemap had a
+    // cache and this view did not.
+    //
+    // Everything below the key is a pure function of it: the arc geometry, the CG
+    // paths, the grouping by ring, and the painted bitmap. The overlay (hover,
+    // lit segments, the centre label) is NOT cached — it is re-read per frame.
+    private struct RingCacheKey: Hashable {
+        var treeID: ObjectIdentifier
+        var root: Int
+        var revision: Int
+        /// Ring geometry depends on the outer radius, which depends on the view size.
+        var radius: CGFloat
+        var showFree: Bool
+        var freeBytes: UInt64
+        /// Levels below the scan root, so eviction can rank without a tree lookup.
+        /// Derived from `root`, so it cannot disagree with it.
+        var rootDepth: Int
+    }
+
+    private struct RingPayload {
+        var segments: [SBSegment]
+        var segmentPaths: [CGPath]
+        var segmentsByRing: [[Int]]
+        var radii: [CGFloat]
+        var center: CGPoint
+        var bitmap: CGImage?
+        var bytes: Int
+    }
+
+    /// One rendered ring chart per (tree, folder, revision, size).
+    ///
+    /// Bounded in BYTES. Measured, one entry is ~14 MB at 1000×900 (the bitmap is
+    /// the bulk), so 64 MB holds four or five folders — the root plus the handful a
+    /// session actually moves between. 32 MB held only TWO, so a third folder began
+    /// evicting the ones being switched between, which is the thrash this cache
+    /// exists to prevent. `protectedDepth` mirrors the treemap's rule: the folders
+    /// near the scan root are the ones a session keeps returning to, so they are
+    /// evicted last.
+    private var cache: [RingCacheKey: RingPayload] = [:]
+    private var cacheOrder: [RingCacheKey] = []
+    private var cacheBytes = 0
+    private static let cacheBudgetBytes = 64 << 20
+    private static let protectedDepth = 1
+
+    private var cacheHits = 0
+    private var cacheMisses = 0
+    /// Diagnostics for the probes, like the treemap's.
+    var cacheEntryCount: Int { cache.count }
+    var cacheFootprintBytes: Int { cacheBytes }
+    var cacheHitCount: Int { cacheHits }
+    /// The painted chart, for the probes that prove a cache hit is byte-identical
+    /// to a fresh render.
+    var bitmapSnapshot: CGImage? { bitmap }
+    /// The arc geometry, likewise.
+    var segmentSnapshot: [SBSegment] { segments }
+    var cacheMissCount: Int { cacheMisses }
+
     private var lastSize: CGSize = .zero
     private var lastRoot: Int = -1
     private var lastTreeID: ObjectIdentifier?
@@ -97,8 +160,37 @@ final class SunburstNSView: NSView {
         lastRevision = model.treeRevision
         lastShowFree = model.showFreeSpace
 
+        let outer = min(bounds.width, bounds.height) / 2 - 18
+        let key = RingCacheKey(
+            treeID: ObjectIdentifier(tree), root: model.viewRoot,
+            revision: model.treeRevision, radius: outer,
+            showFree: model.showFreeSpace, freeBytes: model.freeBytes,
+            rootDepth: tree.ancestry(model.viewRoot).count - 1
+        )
+        // A new `Tree` renumbers every node, so nothing keyed by the old one can ever
+        // be hit again; release it now rather than leave it for eviction.
+        if let previous = lastCacheTreeID, previous != key.treeID { dropCache() }
+        lastCacheTreeID = key.treeID
+
+        // The overlay is presentation state, never cached: a hit must not inherit
+        // the previous frame's hover or highlights.
+        litSegments = nil
+        hoveredSegment = nil
+
+        if let payload = cachedPayload(for: key) {
+            cacheHits += 1
+            apply(payload)
+            needsDisplay = true
+            if ProcessInfo.processInfo.environment["BZ_TIMING"] != nil {
+                NSLog("BZ rings cache HIT (%d arcs, %.1f MB cached)",
+                      payload.segments.count, Double(payload.bytes) / 1_048_576)
+            }
+            return
+        }
+        cacheMisses += 1
+
         center = CGPoint(x: bounds.midX, y: bounds.midY)
-        radii = Self.ringRadii(outer: min(bounds.width, bounds.height) / 2 - 18)
+        radii = Self.ringRadii(outer: outer)
         let started = Date()
         segments = Self.layout(
             tree: tree, root: model.viewRoot, radii: radii,
@@ -114,7 +206,69 @@ final class SunburstNSView: NSView {
             NSLog("BZ rings: %d arcs, layout %.1f ms, paint %.1f ms", segments.count,
                   laidOut.timeIntervalSince(started) * 1000, -laidOut.timeIntervalSinceNow * 1000)
         }
+        remember(key, root: model.viewRoot)
         needsDisplay = true
+    }
+
+    // ---- Cache management ----
+
+    /// The tree the cache belongs to, so a rescan can release it whole.
+    private var lastCacheTreeID: ObjectIdentifier?
+
+    private func apply(_ payload: RingPayload) {
+        segments = payload.segments
+        segmentPaths = payload.segmentPaths
+        segmentsByRing = payload.segmentsByRing
+        radii = payload.radii
+        center = CGPoint(x: bounds.midX, y: bounds.midY)
+        bitmap = payload.bitmap
+    }
+
+    private func cachedPayload(for key: RingCacheKey) -> RingPayload? {
+        guard let payload = cache[key] else { return nil }
+        // Refresh recency (protected entries are evicted last regardless).
+        cacheOrder.removeAll { $0 == key }
+        cacheOrder.append(key)
+        return payload
+    }
+
+    private func remember(_ key: RingCacheKey, root: Int) {
+        let paths = segmentPaths.reduce(0) { $0 + ($1.boundingBoxOfPath.width > 0 ? 96 : 0) }
+        let payload = RingPayload(
+            segments: segments, segmentPaths: segmentPaths, segmentsByRing: segmentsByRing,
+            radii: radii, center: center, bitmap: bitmap,
+            bytes: segments.count * MemoryLayout<SBSegment>.stride
+                 + paths
+                 + (bitmap.map { $0.bytesPerRow * $0.height } ?? 0)
+        )
+        // Larger than the whole budget: never retained, so say so instead of
+        // storing and immediately evicting it.
+        guard payload.bytes <= Self.cacheBudgetBytes else { return }
+        if let old = cache.updateValue(payload, forKey: key) {
+            cacheBytes -= old.bytes
+            cacheOrder.removeAll { $0 == key }
+        }
+        cacheOrder.append(key)
+        cacheBytes += payload.bytes
+        evict()
+    }
+
+    /// Evict by the same rule as the treemap: folders near the scan root are the
+    /// ones a session returns to, so they go LAST; deeper ones are plain LRU.
+    private func evict() {
+        func depth(_ key: RingCacheKey) -> Int { key.rootDepth }
+        while cacheBytes > Self.cacheBudgetBytes {
+            let victim = cacheOrder.first { depth($0) > Self.protectedDepth } ?? cacheOrder.first
+            guard let victim else { break }
+            cacheOrder.removeAll { $0 == victim }
+            if let gone = cache.removeValue(forKey: victim) { cacheBytes -= gone.bytes }
+        }
+    }
+
+    private func dropCache() {
+        cache = [:]
+        cacheOrder = []
+        cacheBytes = 0
     }
 
     // ---- Layout ----

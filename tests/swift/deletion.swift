@@ -408,6 +408,30 @@ func run() async {
           source("app/TreemapView.swift").components(separatedBy: "defer { model.deletion = nil }").count >= 3,
           "a stuck bar is worse than no bar: it claims work that is not happening")
 
+    // --- the RINGS view caches too ------------------------------------------------
+    //
+    // The treemap had a render cache; the rings view had none at all, so every trip
+    // between two folders re-derived the whole arc layout and repainted. Measured on
+    // a 1.68M-node scan at 1000×900: the treemap round trip was 0 ms (cached) while
+    // the rings cost 82–90 ms FOR EVERY TRIP. That is the reported slowness when
+    // switching between the root and a big child folder.
+    let ringSrc = source("app/SunburstView.swift")
+    check("the rings view caches its rendered chart",
+          ringSrc.contains("private struct RingCacheKey: Hashable")
+              && ringSrc.contains("private struct RingPayload"),
+          "every folder change would re-lay-out and repaint the rings")
+    check("a ring cache hit does not re-derive the layout",
+          ringSrc.contains("if let payload = cachedPayload(for: key) {"),
+          "the hit path would still pay for the layout it cached")
+    check("the ring cache is bounded and protects root-side folders",
+          ringSrc.contains("static let cacheBudgetBytes = 64 << 20")
+              && ringSrc.contains("static let protectedDepth = 1")
+              && ringSrc.contains("cacheOrder.first { depth($0) > Self.protectedDepth }"),
+          "an unbounded ring cache would hold every folder ever visited")
+    check("a delete cannot be served a stale ring chart",
+          ringSrc.contains("revision: model.treeRevision"),
+          "the key would not notice an in-place removal")
+
     // --- the render cache must survive a browsing session -------------------------
     //
     // Pure LRU evicted the ROOT first, because it is the first folder you leave and
