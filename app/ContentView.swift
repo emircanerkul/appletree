@@ -1197,6 +1197,52 @@ struct OutlinePanel: NSViewRepresentable {
         /// view, which made the disclosure triangle look broken.
         private var lastSyncedPicks: Set<Int> = []
 
+        /// Which folders were open, remembered per FOLDER (by node id).
+        ///
+        /// `rebuildIfNeeded` already carries the open set across ONE reload —
+        /// captured just before the rows are thrown away, restored just after. That
+        /// is enough for a delete or a zoom, but not for leaving a folder and
+        /// coming back: the second navigation is a separate rebuild, and by then
+        /// the rows that carried the state are gone. The result was that browsing
+        /// into `Cache_Data`, expanding a few folders, stepping back up and
+        /// returning showed the whole list collapsed — the tree the user built was
+        /// discarded every time they looked away.
+        ///
+        /// Bounded, because this is a memo of browsing history and a long session
+        /// would otherwise grow it without limit. The cap is on FOLDERS, not
+        /// entries; when it is exceeded the least recently used folder is dropped,
+        /// which is the one the user is least likely to return to. `order` is an
+        /// array rather than a dictionary keyed by recency because Swift dictionaries
+        /// have no order, and taking `first!.key` would be the arbitrary eviction
+        /// policy already recorded against `dirMemo`.
+        private var openByRoot: [Int: Set<Int>] = [:]
+        private var openByRootOrder: [Int] = []
+        private static let openByRootLimit = 64
+
+        /// What was open under `viewRoot` when the last remember ran.
+        private func rememberOpen(_ ids: Set<Int>, for root: Int) {
+            if !ids.isEmpty {
+                openByRoot[root] = ids
+                openByRootOrder.removeAll { $0 == root }
+                openByRootOrder.append(root)          // most recent last
+                while openByRootOrder.count > Self.openByRootLimit {
+                    let evicted = openByRootOrder.removeFirst()
+                    openByRoot[evicted] = nil
+                }
+            } else {
+                // An empty set is a real answer: the user collapsed everything, so
+                // coming back should show it collapsed. Drop the memo rather than
+                // leave a stale set that would re-open what they closed.
+                openByRoot[root] = nil
+                openByRootOrder.removeAll { $0 == root }
+            }
+        }
+
+        /// The folders to re-open when `root` becomes the folder on screen.
+        private func rememberedOpen(for root: Int) -> Set<Int> {
+            openByRoot[root] ?? []
+        }
+
         /// The folders that hold a hidden pick, derived once per selection or
         /// tree change and then answered by membership.
         ///
@@ -1273,7 +1319,30 @@ struct OutlinePanel: NSViewRepresentable {
                 // id stable, so the same id names the same folder afterwards.
                 // Without this, deleting one row collapsed every folder the user
                 // had opened and dropped the row they were on.
-                let openIDs = reuseRows ? [] : expandedIDs()
+                // Expansion state has two sources, and both are needed.
+                //
+                // `expandedIDs()` is what is open RIGHT NOW — correct for a reload
+                // of the same folder (a delete bumps `treeRevision`; the rows are
+                // recreated and must come back open). `rememberedOpen(for:)` is
+                // what was open the last time this folder was on screen — needed
+                // when the folder CHANGED, because the rows that carried the state
+                // belonged to the folder being left. Capturing only the first is
+                // what made stepping out of a folder and back collapse everything.
+                //
+                // On a folder change the leaving folder's state is saved first, so
+                // the memo always reflects the last real state of each folder.
+                // A NEW `Tree` renumbers every node, so the memo cannot mean
+                // anything across one: a remembered id would name a different
+                // folder, and re-opening it would open something the user never
+                // touched. This is the same contract the picks and the trail keep.
+                if t !== tree { openByRoot = [:]; openByRootOrder = [] }
+                let comingFrom = viewRoot
+                if !reuseRows, comingFrom >= 0, comingFrom != model.viewRoot {
+                    rememberOpen(Set(expandedIDs()), for: comingFrom)
+                }
+                let openIDs = reuseRows
+                    ? []
+                    : Array(Set(expandedIDs()).union(rememberedOpen(for: model.viewRoot)))
                 // Every highlighted row, not just `selectedRow`: a reload throws
                 // the row objects away, and restoring only the primary's row made
                 // the whole multi-selection collapse on the next in-place removal.

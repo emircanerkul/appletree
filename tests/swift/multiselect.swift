@@ -658,6 +658,33 @@ func run() {
               && csrc.contains("foldersHoldingPick(in: tree)"),
           "a stale memo would hatch the wrong rows after a selection change or a removal")
 
+    // --- expansion survives leaving a folder and coming back ----------------------
+    //
+    // The list remembers what was open only for the duration of ONE reload: the
+    // open set is captured before the rows are discarded and restored right after.
+    // Navigating to another folder is a second, separate rebuild, and by then the
+    // rows that carried the state are gone — so browsing into a folder, expanding
+    // a few, stepping back up and returning showed everything COLLAPSED, which is
+    // the reported "tree got reset and my focus lost".
+    check("what was open is remembered per folder, not per reload",
+          csrc.contains("private var openByRoot: [Int: Set<Int>]")
+              && csrc.contains("rememberedOpen(for: model.viewRoot)"),
+          "expansion would be lost every time the user looks away from a folder")
+    check("the leaving folder's state is saved before the rows are discarded",
+          csrc.contains("rememberOpen(Set(expandedIDs()), for: comingFrom)"),
+          "the state would be captured after the rows that carry it are gone")
+    // The two other failure modes a naive memo would introduce.
+    check("a folder the user COLLAPSED stays collapsed on return",
+          csrc.contains("openByRoot[root] = nil") && csrc.contains("An empty set is a real answer"),
+          "an empty set must be remembered as collapsed, not treated as 'no memo'")
+    check("remembered node ids are dropped when the tree is replaced",
+          csrc.contains("if t !== tree { openByRoot = [:]; openByRootOrder = [] }"),
+          "a rescan renumbers every id, so a remembered one would open the wrong folder")
+    check("the expansion memo is bounded",
+          csrc.contains("private static let openByRootLimit = 64")
+              && csrc.contains("while openByRootOrder.count > Self.openByRootLimit"),
+          "an unbounded browsing memo would grow for the life of the session")
+
     // --- collapse then expand must not lose the blue -------------------------------
     //
     // AppKit restores the ROWS a collapse removed but not their selection, and it
