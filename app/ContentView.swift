@@ -824,6 +824,15 @@ extension NSOutlineView {
         let rowRect = rect(ofRow: row)
         let visible = clip.bounds.height
         guard visible > 0 else { scrollRowToVisible(row); return }
+        // Already on screen: leave the scroll position ALONE.
+        //
+        // This runs from `syncSelection`, which fires on every model change — a
+        // click in the list, a tile on the map, a row in the Clean Up panel. Placing
+        // the row unconditionally meant simply SELECTING something scrolled the list
+        // to put it a third of the way down, even when it was already fully visible
+        // and the user had deliberately scrolled somewhere else. Selecting is not a
+        // navigation; only revealing a row the user cannot see should move the list.
+        guard !clip.bounds.contains(rowRect) else { return }
         let target = max(0, rowRect.origin.y - visible * fraction)
         // Never past the end of the document: the scroll view clamps anyway, and an
         // unclamped value here just produces a rubber-band animation.

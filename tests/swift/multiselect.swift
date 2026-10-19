@@ -690,6 +690,14 @@ func run() {
     check("revealing a row places it a third down the viewport",
           csrc.contains("func placeRow(_ row: Int, fraction: CGFloat = 0.30)"),
           "the focused row would be parked at the edge of the list")
+    // Selecting must NOT move the list. `placeRow` runs from `syncSelection`, which
+    // fires on every model change — a click in the list, a tile on the map, a panel
+    // row — so placing the row unconditionally scrolled the list to put a
+    // ALREADY-VISIBLE selection a third of the way down, undoing a scroll the user
+    // had deliberately made. Only revealing a row the user cannot see may move it.
+    check("placing a row is a no-op when it is already visible",
+          csrc.contains("guard !clip.bounds.contains(rowRect) else { return }"),
+          "selecting something would yank the list to it even when it is on screen")
     check("no list path still uses the minimum-scroll call",
           !csrc.contains("scrollRowToVisible(first)") && !csrc.contains("scrollRowToVisible(rows.first!)"),
           "a leftover call site would still place the focus at the bottom")
