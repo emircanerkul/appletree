@@ -441,6 +441,27 @@ func run() async {
     // jumped the whole window to `Macintosh HD` — losing the user's place for a
     // click they made to LOOK at something, not to navigate.
     let modelSrc3 = source("app/Model.swift")
+    // A delete should focus the SIBLING that took the removed row's place.
+    //
+    // Focusing the parent loses the user's place in a long list: the parent is
+    // usually the folder already on screen, so the highlight jumps to the folder row
+    // at the top instead of staying on the next file. The replacement row is the
+    // next sibling, falling back to the previous one at the end of a list, and to
+    // the parent when there is no sibling at all.
+    check("the replacement sibling is chosen before the link is cut",
+          modelSrc3.contains("var focusSibling: Int? = nil")
+              && modelSrc3.contains("kids.firstIndex(where: { Int($0) == node })"),
+          "after remove_node the neighbours cannot be located")
+    check("the next sibling wins, then the previous",
+          modelSrc3.contains("if pos + 1 < kids.count") && modelSrc3.contains("} else if pos > 0 {"),
+          "deleting the last row would wrap to the top of the list")
+    check("the focused sibling is only used when the selection is empty",
+          modelSrc3.contains("if picks.members.isEmpty {") && modelSrc3.contains("tree.isAttached(sibling)"),
+          "a sibling would hijack a selection the user still has, or focus a removed node")
+    check("an only child falls back to the parent",
+          modelSrc3.contains("} else if !focusParents.isEmpty {"),
+          "deleting an only child would leave nothing focused")
+
     check("revealing an item re-roots to its parent, not the scan root",
           modelSrc3.contains("if parent != Int(UInt32.max), tree.isDir(parent), tree.isAttached(parent)")
               && !modelSrc3.contains("!tree.ancestry(node).contains(viewRoot) { rootForFocus(on: 0) }"),
@@ -451,9 +472,12 @@ func run() async {
           modelSrc3.contains("var focusParents: [Int] = []")
               && modelSrc3.contains("picks.replace(with: topmost)"),
           "the highlight would just vanish after a delete")
-    // But never at the cost of a selection the user still has.
+    // But never at the cost of a selection the user still has. The condition now
+    // guards a block that tries the sibling first and the parent second, so the
+    // shape to pin is "nothing is focused ⇒ look for a replacement", not one line.
     check("a partly-deleted selection keeps its survivors",
-          modelSrc3.contains("if !focusParents.isEmpty, picks.members.isEmpty"),
+          modelSrc3.contains("if picks.members.isEmpty {")
+              && modelSrc3.contains("} else if !focusParents.isEmpty {"),
           "a multi-selection would be replaced by a parent when only one member went")
     check("a batch focuses the shallowest parent",
           modelSrc3.contains("static func topmost(of nodes: [Int], in tree: Tree)"),

@@ -718,6 +718,16 @@ final class ScanModel {
         // `remove_node` the parent link is gone. `.isAttached` filters a parent
         // that this very batch also removed.
         var focusParents: [Int] = []
+        // The sibling to focus in place of the removed item, chosen before the cut.
+        //
+        // Focusing the PARENT loses the user's place in a long list: the parent is
+        // usually the folder they are already looking at, so the highlight lands on
+        // the folder row at the top instead of on the next file. The row that takes
+        // the removed one's place is its next sibling (or the previous one, when it
+        // was last) — which is what a file manager does, and what keeps the eye
+        // where it already was. Only used when NOTHING else is still selected;
+        // see the guard on `picks.members.isEmpty` below.
+        var focusSibling: Int? = nil
         for path in paths {
             // Cheap (microseconds): a path lookup walks name components, a cut
             // is one `Vec::remove`. Doing every cut before any of the shared
@@ -728,6 +738,22 @@ final class ScanModel {
                 if rootChain.contains(ancestor) { repairRootTo = ancestor; break }
             }
             let nodeParent = Int(tree.parents[node])
+            // Pick the replacement sibling while this node is still in the child
+            // array — after `removeNode` it is gone and its neighbours cannot be
+            // located. Same parent only: a folder's own siblings are not in the
+            // folder being browsed, so they would have no row.
+            if focusSibling == nil, nodeParent != Int(UInt32.max), tree.isAttached(nodeParent) {
+                let kids = tree.children(nodeParent)
+                if let pos = kids.firstIndex(where: { Int($0) == node }) {
+                    // Next, then previous: deleting the last row should not wrap to
+                    // the top of the list.
+                    if pos + 1 < kids.count {
+                        focusSibling = Int(kids[pos + 1])
+                    } else if pos > 0 {
+                        focusSibling = Int(kids[pos - 1])
+                    }
+                }
+            }
             guard tree.removeNode(node) else { continue }
             if nodeParent != Int(UInt32.max) { focusParents.append(nodeParent) }
             if removed == 0 { only = (tree.name(node), node) }
@@ -763,10 +789,18 @@ final class ScanModel {
         // one of the two. `.isAttached` skips a parent this batch also removed
         // (which `SelectionSet.outermost` normally forbids, but a planner's batch
         // does not go through it).
-        if !focusParents.isEmpty, picks.members.isEmpty {
-            let surviving = focusParents.filter { tree.isAttached($0) }
-            if let topmost = Tree.topmost(of: surviving, in: tree) {
-                picks.replace(with: topmost)
+        if picks.members.isEmpty {
+            // Prefer the sibling that took the removed row's place, so the eye stays
+            // where it already was instead of jumping to the folder header. Fall back
+            // to the parent when there is no sibling (the item was an only child) or
+            // it did not survive the batch.
+            if let sibling = focusSibling, tree.isAttached(sibling) {
+                picks.replace(with: sibling)
+            } else if !focusParents.isEmpty {
+                let surviving = focusParents.filter { tree.isAttached($0) }
+                if let topmost = Tree.topmost(of: surviving, in: tree) {
+                    picks.replace(with: topmost)
+                }
             }
         }
         if let hovered, !tree.isAttached(hovered) { self.hovered = nil }
