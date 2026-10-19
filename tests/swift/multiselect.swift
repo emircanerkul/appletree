@@ -727,6 +727,23 @@ func run() {
     // crumbPath 0.001 ms, displayPath at depth 33 0.007 ms, Tree.topmost 0.003 ms,
     // pickedNodes with 80 picks 0.12 ms. Only Cleanup.find (8.8 ms, from a
     // filesystem stat per candidate) is material, and it runs once per delete.
+    // --- revealing a nested pick expands its ancestors in ONE batch --------------
+    //
+    // Every `expandItem` separately runs AppKit's row bookkeeping
+    // (`-[NSTableRowData endUpdates]` → `_updateVisibleViewsBasedOnUpdateItems` →
+    // `_preparedRowViewForRow`), re-walking the row set each time. Revealing a
+    // 7-level path paid that seven times: measured focusing
+    // `…/memdot/mobile/node_modules/prettier-linter-helpers` in a 2.97M-node scan
+    // cost 114 ms for the chain alone. `beginUpdates`/`endUpdates` batches it into
+    // one pass — measured 114 ms → 25 ms.
+    check("revealing a nested pick batches its ancestor expansion",
+          csrc.contains("outline.beginUpdates()")
+              && csrc.contains("defer { outline.endUpdates() }"),
+          "each ancestor expansion would re-walk the whole row set")
+    check("the expansion batch is closed even on an early return",
+          csrc.contains("// unbalanced and stops drawing rows."),
+          "an unbalanced beginUpdates would leave the outline not drawing rows")
+
     check("a reload restores the row that was at the top of the viewport",
           csrc.contains("private func topVisibleAnchor(in outline: NSOutlineView)")
               && csrc.contains("scrollBack(to: anchor ?? nil, in: outline)"),

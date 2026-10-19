@@ -2016,6 +2016,21 @@ struct OutlinePanel: NSViewRepresentable {
                 cur = Int(tree.parents[cur])
             }
             chain.reverse()
+            // Batch the whole chain into ONE update pass.
+            //
+            // Every `expandItem` separately runs AppKit's row-bookkeeping
+            // (`-[NSTableRowData endUpdates]` → `_updateVisibleViewsBasedOnUpdateItems`
+            // → `_preparedRowViewForRow`, sampled), which re-walks the row set. A
+            // 7-level path therefore paid that seven times: measured focusing
+            // `…/memdot/mobile/node_modules/prettier-linter-helpers` in a 2.97M-node
+            // scan cost 114 ms for the chain alone. `beginUpdates`/`endUpdates` makes
+            // the same chain **25 ms** — one pass instead of seven.
+            //
+            // The `defer` matters: an early `return` from the loop (a node that is no
+            // longer attached) must still close the batch, or the outline is left
+            // unbalanced and stops drawing rows.
+            outline.beginUpdates()
+            defer { outline.endUpdates() }
             var level = roots
             for node in chain.dropLast() {
                 guard let it = level.first(where: { $0.id == node }) else { return }
