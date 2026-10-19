@@ -408,6 +408,31 @@ func run() async {
           source("app/TreemapView.swift").components(separatedBy: "defer { model.deletion = nil }").count >= 3,
           "a stuck bar is worse than no bar: it claims work that is not happening")
 
+    // --- the render cache must survive a browsing session -------------------------
+    //
+    // Pure LRU evicted the ROOT first, because it is the first folder you leave and
+    // therefore the least recently used — so after visiting a handful of folders the
+    // next BACK to the root was a full ~1 s re-render: the reported "going in is
+    // fast, going back is slow". Folders near the scan root are the ones a session
+    // returns to, so they are evicted LAST.
+    let mapSrc = source("app/TreemapView.swift")
+    check("cache eviction protects the folders near the scan root",
+          mapSrc.contains("static let protectedDepth = 1")
+              && mapSrc.contains("renderCacheOrder.first { depth(of: $0) > Self.protectedDepth }"),
+          "pure LRU evicts the root, the folder every session returns to")
+    check("the cache still bounds itself when the protected entries do not fit",
+          mapSrc.contains("?? renderCacheOrder.first"),
+          "never evicting protected entries would grow without limit")
+    check("the eviction tier is carried in the cache key",
+          mapSrc.contains("var rootDepth: Int")
+              && mapSrc.contains("rootDepth: tree.ancestry(model.viewRoot).count - 1"),
+          "eviction would rank entries wrongly")
+    // The correctness half: a delete must never be served stale. `treeRevision` is
+    // in the key, so this is structural rather than a special case.
+    check("a delete cannot be served a stale cached render",
+          mapSrc.contains("revision: model.treeRevision"),
+          "the key would not notice an in-place removal")
+
     // The window title: readable, and the LONG name is what gets cropped.
     //
     // This used to be pinned as "the chain has a fixed 320pt width bound", on the
