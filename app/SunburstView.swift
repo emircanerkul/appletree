@@ -126,8 +126,37 @@ final class SunburstNSView: NSView {
         relayoutIfNeeded()
     }
 
+    // ---- Live resize ----
+    //
+    // Same reason as the treemap: the cache is keyed by the outer RADIUS, so every
+    // intermediate width of a drag is a guaranteed miss. The rings are far cheaper
+    // per render (measured 2.7 ms/step vs the treemap's ~1,300 ms), so this is not
+    // a rescue — but it is the same wrong work, and deferring it also stops the
+    // intermediate sizes from filling the cache and evicting the folders in use.
+    private var resizing = false
+    private var awaitingResizeSettle = false
+
+    override func viewWillStartLiveResize() {
+        super.viewWillStartLiveResize()
+        resizing = true
+        awaitingResizeSettle = false
+    }
+
+    override func viewDidEndLiveResize() {
+        super.viewDidEndLiveResize()
+        resizing = false
+        awaitingResizeSettle = false
+        relayout()
+    }
+
     func relayoutIfNeeded() {
         guard let model, let tree = model.tree else { return }
+        // A drag in progress: the size will change again, and each intermediate size
+        // is a cache miss that can evict a folder the user is switching between.
+        if inLiveResize || resizing {
+            awaitingResizeSettle = true
+            return
+        }
         if bounds.size != lastSize || model.viewRoot != lastRoot || ObjectIdentifier(tree) != lastTreeID
             || model.treeRevision != lastRevision
             || model.showFreeSpace != lastShowFree {

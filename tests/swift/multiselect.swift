@@ -701,6 +701,32 @@ func run() {
     // from the middle), reloadData moved the scroll by 200pt before the focus
     // placement pulled it back. That intermediate frame is what reads as "it reset
     // the scroll". The offset is now anchored to the row that was at the top.
+    // --- a window drag must not re-render per step -------------------------------
+    //
+    // Both views key their render cache by PIXEL SIZE, so every intermediate width
+    // of a drag is a guaranteed miss. Measured at 1.68M nodes: the treemap cost
+    // ~1,300 ms PER DRAG STEP, sustained (40 steps = 59 s) — the window was
+    // unusable while being resized. A drag produces dozens of sizes nobody looks at;
+    // only the one it stops on matters.
+    let treemapSrc = source("app/TreemapView.swift")
+    check("the treemap defers rendering until a window drag settles",
+          treemapSrc.contains("override func viewDidEndLiveResize()")
+              && treemapSrc.contains("if inLiveResize || resizing {"),
+          "a drag would re-render the whole map per step")
+    check("the settle render is not swallowed by the pending flag",
+          treemapSrc.contains("awaitingResizeSettle = false\n        relayout()"),
+          "the deferred render would never run, leaving the map at the old size")
+    check("the rings view defers the same way",
+          source("app/SunburstView.swift").contains("override func viewDidEndLiveResize()")
+              && source("app/SunburstView.swift").contains("if inLiveResize || resizing {"),
+          "ring drags would still thrash the cache between intermediate sizes")
+
+    // --- a rescan, hover and crumb are NOT hidden hot spots -----------------------
+    //
+    // Audited after the two caches landed, so the next person does not re-measure:
+    // crumbPath 0.001 ms, displayPath at depth 33 0.007 ms, Tree.topmost 0.003 ms,
+    // pickedNodes with 80 picks 0.12 ms. Only Cleanup.find (8.8 ms, from a
+    // filesystem stat per candidate) is material, and it runs once per delete.
     check("a reload restores the row that was at the top of the viewport",
           csrc.contains("private func topVisibleAnchor(in outline: NSOutlineView)")
               && csrc.contains("scrollBack(to: anchor ?? nil, in: outline)"),

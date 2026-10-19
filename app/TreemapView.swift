@@ -29,6 +29,12 @@ final class TreemapNSView: NSView {
     private var lastTreeID: ObjectIdentifier?
     private var lastRevision = -1
     private var lastShowFree = false
+    /// The pixel size the current geometry and bitmap were produced at. Distinct
+    /// from `pixelSize()`, which reads the CURRENT bounds: after a deferred resize
+    /// these differ until the settle render runs, and that difference is exactly
+    /// what the resize probe checks.
+    private(set) var lastRenderPW = 0
+    private(set) var lastRenderPH = 0
 
     override var isFlipped: Bool { true }
 
@@ -37,8 +43,48 @@ final class TreemapNSView: NSView {
         relayoutIfNeeded()
     }
 
+    // ---- Live resize ----
+    //
+    // `relayout` is a full re-render and its cache is keyed by PIXEL size, so every
+    // intermediate width of a window drag is a guaranteed MISS. Measured at
+    // 1.68M nodes: **~1,300 ms per drag step**, sustained for the whole drag
+    // (40 steps = 59 s). The window was unusable while being resized.
+    //
+    // A drag produces dozens of sizes the user never looks at — only the one the
+    // drag STOPS on matters. So during a live resize this view lays out the tiles
+    // at the last rendered size and waits; `viewDidEndLiveResize` does the one
+    // render that ships. The stale frame is stretched by the layer, which is what
+    // makes the drag feel like moving a window rather than re-computing a map.
+    //
+    // A SEPARATE flag from "a resize is pending": the end-of-resize render must not
+    // be swallowed by the same check that defers the intermediate ones.
+    private var awaitingResizeSettle = false
+    /// True from the start of a live resize until it settles. `inLiveResize` is the
+    /// real signal, but it is only true inside a genuine user drag, which leaves the
+    /// deferral untestable — so the state is owned here and set from both.
+    private var resizing = false
+
+    override func viewWillStartLiveResize() {
+        super.viewWillStartLiveResize()
+        resizing = true
+        awaitingResizeSettle = false
+    }
+
+    override func viewDidEndLiveResize() {
+        super.viewDidEndLiveResize()
+        resizing = false
+        awaitingResizeSettle = false
+        relayout()
+    }
+
     func relayoutIfNeeded() {
         guard let model, let tree = model.tree else { return }
+        // A drag in progress: the size is going to change again in a moment, and
+        // each render costs ~1.3 s. `viewDidEndLiveResize` renders once instead.
+        if inLiveResize || resizing {
+            awaitingResizeSettle = true
+            return
+        }
         let treeID = ObjectIdentifier(tree)
         // `treeRevision` too: an in-place removal keeps the same `Tree` object,
         // so identity alone would never tell this view the sizes changed.
@@ -91,6 +137,8 @@ final class TreemapNSView: NSView {
             // selection. `resetLookups` rebuilds `leafIndex`/`dirRects`/… for
             // the geometry just restored.
             apply(cached)
+            lastRenderPW = key.pw
+            lastRenderPH = key.ph
             resetLookups()
             hoveredNode = model.hovered
             shown = Overlay(hovered: hoveredNode, label: hoveredLabel,
@@ -103,6 +151,8 @@ final class TreemapNSView: NSView {
         leaves.removeAll(keepingCapacity: true)
         labels.removeAll(keepingCapacity: true)
         renderBitmap(tree: tree, pw: pw, ph: ph, scale: scale)
+        lastRenderPW = pw
+        lastRenderPH = ph
         rememberRender(key, tree: tree)
         // Everything redraws, so the overlay simply starts from the model
         // (a zoom clears the selection, a rescan the hover).
@@ -252,6 +302,8 @@ final class TreemapNSView: NSView {
             return nil
         }
         renderCacheHits += 1
+        lastRenderPW = key.pw
+        lastRenderPH = key.ph
         if let i = renderCacheOrder.firstIndex(of: key) {
             renderCacheOrder.remove(at: i)
             renderCacheOrder.append(key)
@@ -370,6 +422,14 @@ final class TreemapNSView: NSView {
     /// `pick(at:)` are: the geometry is exercised directly rather than guessed
     /// at from a screenshot.
     var bitmapSnapshot: CGImage? { bitmap }
+    /// The pixel size the cached geometry was rendered at, for the resize probe:
+    /// after a drag settles the render must match the final window size.
+    var renderedPixelSize: (pw: Int, ph: Int) { (lastRenderPW, lastRenderPH) }
+    /// What `pixelSize()` reports now, so a probe can compare it with the render.
+    var pixelSizeForProbe: (pw: Int, ph: Int) {
+        let s = pixelSize()
+        return (s.pw, s.ph)
+    }
     var geometrySnapshot: (rects: [TMRect], leaves: [TMRect], labels: [TMLabel]) {
         (rects, leaves, labels)
     }
