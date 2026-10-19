@@ -1510,6 +1510,18 @@ struct OutlinePanel: NSViewRepresentable {
             guard let outline else { return }
             let wanted = Set(open)
             if !wanted.isEmpty {
+                // ONE update pass for the whole set, for the same reason
+                // `expandAncestors` batches: every `expandItem` separately runs
+                // AppKit's row bookkeeping (`-[NSTableRowData endUpdates]` →
+                // `_updateVisibleViewsBasedOnUpdateItems`), re-walking the row set.
+                // Restoring N open folders therefore cost N passes — measured a
+                // round trip back to a folder with 40 open folders at **217 ms**,
+                // of which the expansion was nearly all.
+                //
+                // `defer` again: the walk returns from inside the loops, and an
+                // unbalanced `beginUpdates` leaves the outline not drawing rows.
+                outline.beginUpdates()
+                defer { outline.endUpdates() }
                 func walk(_ items: [Item]) {
                     for item in items where wanted.contains(item.id) {
                         // Guard on real children: `expandItem` on a leaf would

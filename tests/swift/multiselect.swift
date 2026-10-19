@@ -736,6 +736,19 @@ func run() {
     // `…/memdot/mobile/node_modules/prettier-linter-helpers` in a 2.97M-node scan
     // cost 114 ms for the chain alone. `beginUpdates`/`endUpdates` batches it into
     // one pass — measured 114 ms → 25 ms.
+    // --- restoring an open folder set is ONE batch too ---------------------------
+    //
+    // Going INTO a folder and BACK reloads the list and re-opens every folder the
+    // user had expanded. That restore expanded them one at a time — the same
+    // per-expand row-bookkeeping pass that made ancestor expansion slow. Measured a
+    // round trip back to a root with 40 open folders (1,777 rows): **217 ms → 45 ms**.
+    // This is the flow the user actually hits: expand the tree, then navigate away
+    // and back.
+    check("restoring the open folder set is batched",
+          csrc.contains("// `defer` again: the walk returns from inside the loops, and an")
+              && csrc.contains("outline.beginUpdates()\n                defer { outline.endUpdates() }"),
+          "each restored folder would re-walk the whole row set")
+
     check("revealing a nested pick batches its ancestor expansion",
           csrc.contains("outline.beginUpdates()")
               && csrc.contains("defer { outline.endUpdates() }"),
