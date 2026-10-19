@@ -1415,6 +1415,22 @@ struct OutlinePanel: NSViewRepresentable {
                     // and every `treeRevision` bump.
                     itemIndex = [:]
                     for item in roots { itemIndex[item.id] = item }
+                    // Keep the list where the user left it across the reload.
+                    //
+                    // `reloadData` throws every row away and `restore` re-opens the
+                    // folders that were open, which inserts rows ABOVE the viewport —
+                    // so the same content lands at a different offset and the list
+                    // visibly jumps. Measured on the reported case (36 expanded
+                    // folders, a file deleted from the middle): reloadData moved the
+                    // scroll by -200pt, then the focus placement moved it +180pt, a
+                    // 364pt net jump for removing one row.
+                    //
+                    // The offset is restored against the ROW that was at the top of
+                    // the viewport rather than the raw pixel offset: after a delete the
+                    // rows are the same except the removed one, so anchoring to that
+                    // row keeps the user looking at the same thing, whereas a raw
+                    // offset would drift by one row height per removal above it.
+                    let anchor = outline.map { topVisibleAnchor(in: $0) }
                     outline?.reloadData()
                     // Put the user's own tree back exactly as they left it.
                     // Rows stay COLLAPSED by default: entering a folder shows
@@ -1424,11 +1440,43 @@ struct OutlinePanel: NSViewRepresentable {
                     // fails to expand, so a removed subtree needs no special
                     // case here.
                     restore(open: openIDs, selected: selectedIDs)
+                    if let outline { scrollBack(to: anchor ?? nil, in: outline) }
                 }
                 if ProcessInfo.processInfo.environment["BZ_TIMING"] != nil {
                     NSLog("BZ list reload: %.1f ms", -started.timeIntervalSinceNow * 1000)
                 }
             }
+        }
+
+        /// The node id of the row at the top of the viewport, and its offset
+        /// within that row — the anchor the scroll is restored to after a reload.
+        ///
+        /// A node id, not a row index: the reload recreates the rows, and a delete
+        /// shifts every index below it while the ids of everything that survived are
+        /// unchanged (an in-place removal never renumbers).
+        private func topVisibleAnchor(in outline: NSOutlineView) -> (node: Int, offset: CGFloat)? {
+            guard let clip = outline.enclosingScrollView?.contentView else { return nil }
+            let top = clip.bounds.origin.y
+            let row = outline.row(at: NSPoint(x: 1, y: top + 1))
+            guard row >= 0,
+                  let item = outline.item(atRow: row) as? Item else { return nil }
+            return (item.id, top - outline.rect(ofRow: row).origin.y)
+        }
+
+        /// Scroll so `anchor`'s row is back at the top of the viewport.
+        ///
+        /// Called after the rows are rebuilt. A nil anchor (nothing was visible)
+        /// leaves the offset alone, which is the same thing for an empty list.
+        private func scrollBack(to anchor: (node: Int, offset: CGFloat)?, in outline: NSOutlineView) {
+            guard let anchor, let clip = outline.enclosingScrollView?.contentView,
+                  let item = find(anchor.node) else { return }
+            let row = outline.row(forItem: item)
+            guard row >= 0 else { return }
+            let target = outline.rect(ofRow: row).origin.y + anchor.offset
+            let limit = max(0, (outline.enclosingScrollView?.documentView?.bounds.height ?? 0)
+                               - clip.bounds.height)
+            clip.scroll(to: NSPoint(x: clip.bounds.origin.x, y: min(max(0, target), limit)))
+            outline.enclosingScrollView?.reflectScrolledClipView(clip)
         }
 
         /// The node ids of every row currently expanded, outermost first.

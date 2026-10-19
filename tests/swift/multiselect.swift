@@ -695,6 +695,19 @@ func run() {
     // row — so placing the row unconditionally scrolled the list to put a
     // ALREADY-VISIBLE selection a third of the way down, undoing a scroll the user
     // had deliberately made. Only revealing a row the user cannot see may move it.
+    // A reload must not move the list. `reloadData` throws every row away and
+    // `restore` re-opens the folders that were open, inserting rows ABOVE the
+    // viewport — measured on the reported case (36 expanded folders, a file deleted
+    // from the middle), reloadData moved the scroll by 200pt before the focus
+    // placement pulled it back. That intermediate frame is what reads as "it reset
+    // the scroll". The offset is now anchored to the row that was at the top.
+    check("a reload restores the row that was at the top of the viewport",
+          csrc.contains("private func topVisibleAnchor(in outline: NSOutlineView)")
+              && csrc.contains("scrollBack(to: anchor ?? nil, in: outline)"),
+          "reloadData+re-expand would shift the list by the height of the rows it re-inserted")
+    check("the scroll anchor is a node id, so a removal cannot shift it",
+          csrc.contains("return (item.id, top - outline.rect(ofRow: row).origin.y)"),
+          "a raw pixel offset would drift by one row height per removal above it")
     check("placing a row is a no-op when it is already visible",
           csrc.contains("guard !clip.bounds.contains(rowRect) else { return }"),
           "selecting something would yank the list to it even when it is on screen")
