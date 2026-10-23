@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.1.3 — 2026-10-23
 
 **Browsing and bulk delete stop re-doing work they just finished.** Four
 independent causes, all in the UI layer; the scan engine is unchanged.
@@ -40,6 +40,72 @@ folder holding a pick) walked every pick's ancestry once per visible row —
 derived set now: 25 rows measured **2,412 ms → 114 ms**, and a warm redraw 0.07
 ms. And the finished-cleanup line no longer claims "Rescanned.", which stopped
 being true.
+
+**Then the list itself: focus, scroll, and the per-expand cost.** Everything below
+is the same theme — work repeated per row or per item that had one answer already —
+plus the interaction bugs that made the list feel like it lost the user's place.
+
+*Coming back to a folder keeps your focus, and your scroll.* Two separate losses.
+The selection was cleared on every folder change and never restored, so entering a
+folder, picking something, stepping out and returning dropped the highlight;
+`ScanModel` now remembers what was focused in each folder by path (a node id means
+nothing after a rescan), with an empty selection remembered as empty so a folder
+left with nothing focused cannot resurrect an old pick. And the reload that every
+folder change performs shifted the rows it re-inserted above the viewport, so the
+list jumped for a frame: measured 200 pt of movement deleting one row in a folder
+with 36 folders open, now anchored to the row that was at the top of the viewport
+instead. Focus also lands a third of the way down the list rather than flush against
+the bottom edge, and selecting a row that is already visible no longer scrolls the
+list at all — measured `scrollY` 598 → 598.
+
+*A delete focuses the row that took the removed one's place.* Focusing the parent
+kept the highlight on the folder already on screen, which in a long list means the
+eye has to find its place again. The next sibling now takes the highlight, falling
+back to the previous one at the end of a list, to the parent when there is no
+sibling, and never to a node the same batch removed. A partly-deleted selection
+keeps its survivors rather than being replaced.
+
+*Revealing a nested pick and restoring an open folder set are each ONE update pass.*
+Every `expandItem` separately runs AppKit's row bookkeeping
+(`-[NSTableRowData endUpdates]` → `_updateVisibleViewsBasedOnUpdateItems` →
+`_preparedRowViewForRow`), re-walking the row set each time. Focusing
+`…/node_modules/prettier-linter-helpers` therefore paid it once per ancestor —
+**449 ms → 59 ms** end to end — and returning to a folder re-opened every folder the
+user had expanded one at a time: a round trip back to `/` with 40 folders open
+(1,777 rows) went **217 ms → 45 ms**.
+
+*Resizing the window no longer re-renders the map per drag step.* Both render
+caches are keyed by pixel size, so every intermediate width of a drag was a
+guaranteed miss and there was no debounce anywhere: a 40-step drag cost **49.5 s**
+in the treemap. Both views now lay out at the last rendered size while a drag is in
+progress and render once when it ends — the same drag is **1 ms with zero renders,
+then exactly one render on settle**, asserted to match the final window size.
+
+*The ring view caches what it draws.* The treemap had a render cache; the rings had
+none, so every folder change re-derived the whole arc layout and repainted. Measured
+on a 2.97M-node scan, three round trips: treemap 0 ms (cached) against rings
+**82–90 ms for every trip**, now **1 ms**. A cached return is verified byte-identical
+to a fresh render on both the arc geometry and the raw pixels, and `treeRevision` is
+part of the key so a delete is never served stale.
+
+*The render cache no longer evicts the folder you are about to return to.* Pure LRU
+dropped the scan root first, because it is the first folder you leave and therefore
+the least recently used — after a ten-folder session the next return to it was a
+**1,042 ms re-render**. Eviction is now tiered: the root and its direct children are
+evicted last, everything deeper is ordinary LRU, and the protected entries are still
+evicted if they alone exceed the budget.
+
+*The breadcrumb shows every folder, and shortens only what a tool made long.* The
+title dropped the scan root to make room; it keeps it now and elides in the middle
+instead. Names a package manager generated (`zod@4.4.3`,
+`…_76bc68c0ac7ac91512ade9464ffbf90a`) are shortened at the version or digest, while
+ordinary names are returned byte-identical.
+
+*A big delete says it is working.* Deleting a large folder did not update anything
+until it finished, which reads as a dead app; the status bar now reports progress
+and the size in flight. Deleting the folder you are inside steps out one level
+rather than to the scan root, and a delete whose row disappears no longer jumps the
+list. Clicking a Clean Up row keeps your place in the list.
 
 ## 1.1.2 — 2026-10-08
 
