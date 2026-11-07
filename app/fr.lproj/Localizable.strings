@@ -137,7 +137,7 @@
 "Custom model providers" = "Fournisseurs de modèles personnalisés";
 "Add provider" = "Ajouter un fournisseur";
 "Connect a relay, a self-hosted server, or any other OpenAI- or Anthropic-compatible endpoint by its base URL, protocol, and models." = "Connectez un relais, un serveur auto-hébergé ou tout autre endpoint compatible OpenAI ou Anthropic par son URL de base, son protocole et ses modèles.";
-"No custom providers. Add one to let SmartTree plan a cleanup for you." = "Aucun fournisseur personnalisé. Ajoutez-en un pour qu'SmartTree planifie un nettoyage pour vous.";
+"No custom providers. Add one to let SmartTree plan a cleanup for you." = "Aucun fournisseur personnalisé. Ajoutez-en un pour que SmartTree planifie un nettoyage pour vous.";
 "Edit" = "Modifier";
 "Delete" = "Supprimer";
 "Custom model API" = "API de modèle personnalisée";
@@ -162,7 +162,7 @@
 
 /* General planner summary */
 "Clean Up planner" = "Planificateur de nettoyage";
-"Scan when SmartTree opens" = "Scanner à l'ouverture d'SmartTree";
+"Scan when SmartTree opens" = "Scanner à l'ouverture de SmartTree";
 "Scan the whole disk at launch. Turn off to pick a folder yourself first." = "Scanne tout le disque au lancement. Désactivez pour choisir d'abord un dossier vous-même.";
 
 /* Setup offer: custom providers */
@@ -181,7 +181,7 @@
 "Outside your home folder" = "Hors de votre dossier de départ";
 "Inside a signed app bundle" = "À l'intérieur d'un paquet d'application signé";
 "Too broad: other apps keep live data here" = "Trop large : d'autres apps stockent ici des données actives";
-"In ~/%@, which SmartTree never cleans" = "Dans ~/%@, qu'SmartTree ne nettoie jamais";
+"In ~/%@, which SmartTree never cleans" = "Dans ~/%@, que SmartTree ne nettoie jamais";
 "A git repository" = "Un dépôt Git";
 "Managed by macOS" = "Géré par macOS";
 "SmartTree only runs tools' own cleanup commands" = "SmartTree n'exécute que les commandes de nettoyage propres aux outils";
@@ -201,7 +201,7 @@
 "Model Providers" = "Fournisseurs de modèles";
 
 /* About panel and Help menu. */
-"About SmartTree" = "À propos d'SmartTree";
+"About SmartTree" = "À propos de SmartTree";
 "Version %@" = "Version %@";
 "SmartTree on GitHub" = "SmartTree sur GitHub";
 "Bug Report" = "Signaler un bug";
@@ -220,7 +220,7 @@
 
 /* README viewer and erklab credit. */
 "Read the README" = "Lire le README";
-"SmartTree README" = "README d'SmartTree";
+"SmartTree README" = "README de SmartTree";
 "Read the documentation bundled with the app" = "Lire la documentation fournie avec l'application";
 "brought to you by" = "présenté par";
 
@@ -231,7 +231,7 @@
 "A fast, native disk-space treemap for macOS." = "Une treemap native et rapide de l'espace disque pour macOS.";
 
 /* Bundled LICENSE viewer. */
-"SmartTree License" = "Licence d'SmartTree";
+"SmartTree License" = "Licence de SmartTree";
 "Read the license bundled with the app" = "Lire la licence fournie avec l'application";
 "This document was not bundled with this build." = "Ce document n'a pas été inclus dans cette version.";
 
@@ -239,7 +239,7 @@
    Guideline 5.1.1(i) wants the policy reachable in-app; 5.1.2(i) wants
    explicit permission, naming the destination, before any scan summary is
    sent to a third party. */
-"SmartTree Privacy Policy" = "Politique de confidentialité d'SmartTree";
+"SmartTree Privacy Policy" = "Politique de confidentialité de SmartTree";
 "Read the privacy policy bundled with the app" = "Lire la politique de confidentialité fournie avec l'app";
 "Privacy Policy" = "Politique de confidentialité";
 "Send a summary of this scan to %@?" = "Envoyer un résumé de cette analyse à %@ ?";
