@@ -16,7 +16,12 @@ the display name, the window title, the About panel, the Help menu, the
 executable, the bundled README, license and privacy policy filenames' prose,
 the localized strings in all seven languages, the Rust crate and its CLI
 binary, the benchmark harness, the README, the wiki pages and the GitHub
-issue templates. Some 970 occurrences across 96 files.
+issue templates. 976 occurrences across 96 files.
+
+One thing the rename broke and this release fixes: French elides its article
+before a vowel, which `AppleTree` required and `SmartTree` does not. Seven
+strings came out of the mechanical replacement as "d'SmartTree" and
+"qu'SmartTree"; they now read "de SmartTree" and "que SmartTree".
 
 **New bundle identifier: `com.erklab.apps.smarttree`.** This is a new App
 Store record — the old one is abandoned with no buyers. Everything keyed to
