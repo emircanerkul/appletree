@@ -185,7 +185,7 @@ enum ReadmeTests {
             check("the erklab mark declares a width", false, "no width=")
         }
         // A backticked tag is documentation, not markup.
-        check("prose mentioning a tag is kept", shown.contains("AppleTree <path>"))
+        check("prose mentioning a tag is kept", shown.contains("SmartTree <path>"))
 
         // --- Headings are still headings ------------------------------------
         // The bug: a leaked markup line swallowed the next heading, which then

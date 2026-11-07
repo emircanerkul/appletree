@@ -561,7 +561,7 @@ mod tests {
         );
         assert_eq!(at_path(h, "/Users"), None); // unrefixed caller path: miss
 
-        // Non-degenerate trailing-slash root: `AppleTree /Users/me/` on the
+        // Non-degenerate trailing-slash root: `SmartTree /Users/me/` on the
         // CLI makes name(0) == "/Users/me/" — the strip branch must fire for
         // more than just "/".
         let mut tree = Tree::with_root("/Users/me/");

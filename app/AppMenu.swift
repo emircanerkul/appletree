@@ -6,19 +6,19 @@ import SwiftUI
 /// Every external destination the interface offers, in one place.
 ///
 /// These were previously nowhere: the Help menu fell through to AppKit's
-/// "Help isn't available for AppleTree", and About carried no link to the
+/// "Help isn't available for SmartTree", and About carried no link to the
 /// project at all. One owner means the menu and the About panel cannot point
 /// at two different repositories.
 nonisolated enum AppLinks {
-    static let repo = URL(string: "https://github.com/emircanerkul/appletree")!
+    static let repo = URL(string: "https://github.com/emircanerkul/smarttree")!
     /// The template chooser, so a reporter picks a form instead of a blank box.
-    static let newIssue = URL(string: "https://github.com/emircanerkul/appletree/issues/new/choose")!
-    static let security = URL(string: "https://github.com/emircanerkul/appletree/security/policy")!
-    static let license = URL(string: "https://github.com/emircanerkul/appletree/blob/main/LICENSE")!
+    static let newIssue = URL(string: "https://github.com/emircanerkul/smarttree/issues/new/choose")!
+    static let security = URL(string: "https://github.com/emircanerkul/smarttree/security/policy")!
+    static let license = URL(string: "https://github.com/emircanerkul/smarttree/blob/main/LICENSE")!
     /// The public App Store listing — the page a buyer can actually open.
     /// App Store Connect's own distribution URL is a signed-in dashboard, so it
     /// is deliberately not used here: it would send every user to a login wall.
-    static let appStore = URL(string: "https://apps.apple.com/app/id6819034229")!
+    static let appStore = URL(string: "https://apps.apple.com/app/id0000000000")!
     /// The maker's site, opened by the erklab mark in About.
     static let erklab = URL(string: "https://erklab.com")!
 
@@ -41,22 +41,22 @@ nonisolated struct AppLinkItem: Identifiable, Sendable {
     /// Discussions: Discussions is not enabled on this repository, so a link
     /// there would 404 for everyone who clicked it.
     static let all: [AppLinkItem] = [
-        AppLinkItem(id: "appstore", title: String(localized: "Get AppleTree on the Mac App Store"),
+        AppLinkItem(id: "appstore", title: String(localized: "Get SmartTree on the Mac App Store"),
                     detail: String(localized: "Buying it is what grants commercial use"),
                     url: AppLinks.appStore),
         AppLinkItem(id: "bug", title: String(localized: "Bug Report"),
-                    detail: String(localized: "Report a bug in AppleTree"),
+                    detail: String(localized: "Report a bug in SmartTree"),
                     url: AppLinks.newIssue),
         AppLinkItem(id: "security", title: String(localized: "Report a security vulnerability"),
                     detail: String(localized: "Please review our security policy for more details"),
                     url: AppLinks.security),
         AppLinkItem(id: "feature", title: String(localized: "Feature request"),
                     detail: String(localized: "Propose a feature in the issue tracker"),
-                    url: URL(string: "https://github.com/emircanerkul/appletree/issues/new?template=feature_request.yml")!),
+                    url: URL(string: "https://github.com/emircanerkul/smarttree/issues/new?template=feature_request.yml")!),
         AppLinkItem(id: "question", title: String(localized: "Question"),
                     detail: String(localized: "Ask a question in the issue tracker"),
-                    url: URL(string: "https://github.com/emircanerkul/appletree/issues/new?template=question.yml")!),
-        AppLinkItem(id: "repo", title: String(localized: "AppleTree on GitHub"),
+                    url: URL(string: "https://github.com/emircanerkul/smarttree/issues/new?template=question.yml")!),
+        AppLinkItem(id: "repo", title: String(localized: "SmartTree on GitHub"),
                     detail: String(localized: "Browse the source, releases and issues"),
                     url: AppLinks.repo),
     ]
@@ -76,7 +76,7 @@ nonisolated var appVersion: String {
 /// Replaces AppKit's stock About panel.
 ///
 /// The stock panel shows a name, a version and a copyright line, which leaves
-/// the one thing worth saying unsaid: AppleTree is open source, and here is
+/// the one thing worth saying unsaid: SmartTree is open source, and here is
 /// where it lives. SwiftUI has no About scene, so this hosts the view in a
 /// small window of its own.
 @MainActor
@@ -95,7 +95,7 @@ final class AboutWindow {
         // A real panel: titled, closable, not resizable, and centred. The
         // window keeps its content alive across close/reopen.
         let window = NSWindow(contentViewController: NSHostingController(rootView: AboutView()))
-        window.title = String(localized: "About AppleTree")
+        window.title = String(localized: "About SmartTree")
         window.styleMask = [.titled, .closable]
         window.isReleasedWhenClosed = false
         window.center()
@@ -108,7 +108,7 @@ final class AboutWindow {
 
 private struct AboutView: View {
     var body: some View {
-        // The main window is dark-only (see AppleTreeApp), so the About panel
+        // The main window is dark-only (see SmartTreeApp), so the About panel
         // follows it rather than opening light beside a dark app.
         content.preferredColorScheme(.dark)
     }
@@ -121,7 +121,7 @@ private struct AboutView: View {
                 .accessibilityHidden(true)
 
             VStack(spacing: 2) {
-                Text("AppleTree")
+                Text("SmartTree")
                     .font(.title2.weight(.semibold))
                 // Omitted rather than dashed when the host has no bundle.
                 if !appVersion.isEmpty {
@@ -132,7 +132,7 @@ private struct AboutView: View {
                 }
             }
 
-            Text("AppleTree shows you what is filling your disk, and cleans up the folders tools rebuild on demand. Nothing is removed without your say-so.")
+            Text("SmartTree shows you what is filling your disk, and cleans up the folders tools rebuild on demand. Nothing is removed without your say-so.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -151,7 +151,7 @@ private struct AboutView: View {
                         .buttonStyle(.link)
                     Button(String(localized: "View license")) { DocumentWindow.show(.license) }
                         .buttonStyle(.link)
-                    Button(String(localized: "AppleTree on GitHub")) { AppLinks.open(AppLinks.repo) }
+                    Button(String(localized: "SmartTree on GitHub")) { AppLinks.open(AppLinks.repo) }
                         .buttonStyle(.link)
                 }
             }

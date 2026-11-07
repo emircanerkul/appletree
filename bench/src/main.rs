@@ -1,6 +1,6 @@
-//! btbench — AppleTree scan-engine benchmark.
+//! btbench — SmartTree scan-engine benchmark.
 //!
-//! Compares the AppleTree scan engine against disktree (pinned headless
+//! Compares the SmartTree scan engine against disktree (pinned headless
 //! `disktree-core`), on synthetic fixtures or any readable folder, and writes
 //! a report naming the machine it ran on.
 //!
@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 use runner::Engines;
 
 const USAGE: &str = "\
-btbench - AppleTree scan-engine benchmark
+btbench - SmartTree scan-engine benchmark
 
 USAGE:
     btbench host
@@ -42,13 +42,13 @@ OPTIONS:
     --size NAME     Fixture size: small, medium, large
     --seed N        Fixture seed (default 1)
     --force         Allow fixture to write into a non-empty directory
-    --no-disktree   Skip the disktree comparison (AppleTree only)
+    --no-disktree   Skip the disktree comparison (SmartTree only)
 
-    --compare-apps  Also drive the installed GUI apps (AppleTree, disktree,
+    --compare-apps  Also drive the installed GUI apps (SmartTree, disktree,
                     GrandPerspective, QDirStat) and report their scan times.
                     Slower: each round launches real apps. Rows record where
                     each duration came from, because they are not the same
-                    interval: AppleTree's GUI hook and the two closed-source
+                    interval: SmartTree's GUI hook and the two closed-source
                     apps report their own finish time, while disktree's GUI
                     reports nothing and is timed externally.
     --app-runs N    Rounds per GUI app (default 3)
@@ -144,7 +144,7 @@ fn cmd_scan(args: &[String]) -> Result<(), String> {
         .and_then(|p| p.parent().map(Path::to_path_buf))
         .ok_or("cannot locate the bench binaries")?;
     let disktree = if has(args, "--no-disktree") { None } else { Some(exe_dir.join("disktree-runner")) };
-    let engines = Engines { appletree: exe_dir.join("appletree-runner"), disktree };
+    let engines = Engines { smarttree: exe_dir.join("smarttree-runner"), disktree };
 
     eprintln!("btbench: target {}", target.display());
     eprintln!("btbench: host   {}", host.human());
@@ -165,9 +165,9 @@ fn cmd_scan(args: &[String]) -> Result<(), String> {
         println!("gui report {}", gui_path.display());
     }
 
-    let a = &comparison.appletree;
+    let a = &comparison.smarttree;
     println!();
-    println!("AppleTree  median {:.3} s  ({:.3}–{:.3})  peak {:.1} MB", a.median_seconds, a.min_seconds, a.max_seconds, a.median_peak_rss_bytes as f64 / 1048576.0);
+    println!("SmartTree  median {:.3} s  ({:.3}–{:.3})  peak {:.1} MB", a.median_seconds, a.min_seconds, a.max_seconds, a.median_peak_rss_bytes as f64 / 1048576.0);
     if let Some(d) = &comparison.disktree {
         println!("disktree   median {:.3} s  ({:.3}–{:.3})  peak {:.1} MB", d.median_seconds, d.min_seconds, d.max_seconds, d.median_peak_rss_bytes as f64 / 1048576.0);
         if let Some(s) = comparison.speedup {
@@ -252,7 +252,7 @@ fn apps_report(target: &Path, runs: usize, timeout_secs: usize) -> Result<String
          **These rows are not all the same interval.** The source column says where each duration \
          comes from; compare `app-reported` rows with each other, and treat the external row as an \
          upper bound rather than an equal measurement.\n\n\
-         **Memory** is the peak resident set size. For AppleTree it is the kernel's own high-water \
+         **Memory** is the peak resident set size. For SmartTree it is the kernel's own high-water \
          mark reported by the app itself. For the other apps it is sampled from outside every \
          {} ms while the scan runs, so it is a floor on the true peak and can miss a spike between \
          samples. It covers each app's whole process, UI included — which is why it is far larger \

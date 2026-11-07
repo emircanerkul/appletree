@@ -1,8 +1,8 @@
-/* AppleTree — Simplified Chinese (zh-Hans) */
+/* SmartTree — Simplified Chinese (zh-Hans) */
 
 /* Main window */
-"AppleTree needs Full Disk Access" = "AppleTree 需要完全磁盘访问权限";
-"System Settings → Privacy & Security → Full Disk Access.\nRemove any old AppleTree rows, then add %@.\nmacOS only applies the permission to a freshly launched app." = "系统设置 → 隐私与安全性 → 完全磁盘访问权限。\n移除旧的 AppleTree 条目，然后添加 %@。\nmacOS 只会将该权限应用于刚启动的应用。";
+"SmartTree needs Full Disk Access" = "SmartTree 需要完全磁盘访问权限";
+"System Settings → Privacy & Security → Full Disk Access.\nRemove any old SmartTree rows, then add %@.\nmacOS only applies the permission to a freshly launched app." = "系统设置 → 隐私与安全性 → 完全磁盘访问权限。\n移除旧的 SmartTree 条目，然后添加 %@。\nmacOS 只会将该权限应用于刚启动的应用。";
 "Open System Settings" = "打开系统设置";
 "I granted it — Relaunch" = "已授权 — 重新启动";
 "Scan without it" = "不授权直接扫描";
@@ -57,7 +57,7 @@
 "Some items couldn't be deleted" = "部分项目无法删除";
 "Move it to the Trash in Finder, then empty the Trash — macOS will ask for the password." = "归 macOS 或管理员所有。请移到废纸篓，然后清空废纸篓。";
 "This needs an administrator." = "不允许。这需要管理员权限。";
-"Items owned by macOS or an administrator can't be deleted by AppleTree. Drag them to the Trash in Finder and empty the Trash — macOS will ask for the password." = "AppleTree 无法删除归 macOS 或管理员所有的项目。请在“访达”中将其拖到废纸篓，然后清空废纸篓，macOS 会要求输入密码。";
+"Items owned by macOS or an administrator can't be deleted by SmartTree. Drag them to the Trash in Finder and empty the Trash — macOS will ask for the password." = "SmartTree 无法删除归 macOS 或管理员所有的项目。请在“访达”中将其拖到废纸篓，然后清空废纸篓，macOS 会要求输入密码。";
 "Reclaimable" = "可回收";
 "Nothing large to clean up" = "没有需要清理的大项目";
 "%@ in %@ folders" = "%@ 个文件夹，共 %@";
@@ -134,7 +134,7 @@
 "Custom model providers" = "自定义模型提供商";
 "Add provider" = "添加提供商";
 "Connect a relay, a self-hosted server, or any other OpenAI- or Anthropic-compatible endpoint by its base URL, protocol, and models." = "通过基础 URL、协议和模型，连接中继、自托管服务器或任何其他兼容 OpenAI 或 Anthropic 的端点。";
-"No custom providers. Add one to let AppleTree plan a cleanup for you." = "尚无自定义提供商。添加一个，让 AppleTree 为您规划清理。";
+"No custom providers. Add one to let SmartTree plan a cleanup for you." = "尚无自定义提供商。添加一个，让 SmartTree 为您规划清理。";
 "Edit" = "编辑";
 "Delete" = "删除";
 "Custom model API" = "自定义模型 API";
@@ -154,12 +154,12 @@
 "Could not fetch models: %@" = "无法获取模型：%@";
 "Language" = "语言";
 "Follow system" = "跟随系统";
-"Relaunch AppleTree to apply the language." = "重新启动 AppleTree 以应用语言设置。";
+"Relaunch SmartTree to apply the language." = "重新启动 SmartTree 以应用语言设置。";
 "Relaunch" = "重新启动";
 
 /* General planner summary */
 "Clean Up planner" = "清理规划器";
-"Scan when AppleTree opens" = "启动时扫描";
+"Scan when SmartTree opens" = "启动时扫描";
 "Scan the whole disk at launch. Turn off to pick a folder yourself first." = "启动时扫描整个磁盘。关闭后可先自行选择文件夹。";
 
 /* Setup offer: custom providers */
@@ -178,10 +178,10 @@
 "Outside your home folder" = "在主文件夹之外";
 "Inside a signed app bundle" = "位于已签名的应用包内";
 "Too broad: other apps keep live data here" = "范围过大：其他应用正在此存放使用中的数据";
-"In ~/%@, which AppleTree never cleans" = "位于 ~/%@，AppleTree 从不清理该处";
+"In ~/%@, which SmartTree never cleans" = "位于 ~/%@，SmartTree 从不清理该处";
 "A git repository" = "一个 Git 仓库";
 "Managed by macOS" = "由 macOS 管理";
-"AppleTree only runs tools' own cleanup commands" = "AppleTree 只运行各工具自带的清理命令";
+"SmartTree only runs tools' own cleanup commands" = "SmartTree 只运行各工具自带的清理命令";
 "Command not allowed" = "不允许的命令";
 "Already clean" = "已经是干净的";
 "Nothing to remove" = "没有可移除的内容";
@@ -198,11 +198,11 @@
 "Model Providers" = "模型提供商";
 
 /* About panel and Help menu. */
-"About AppleTree" = "关于 AppleTree";
+"About SmartTree" = "关于 SmartTree";
 "Version %@" = "版本 %@";
-"AppleTree on GitHub" = "GitHub 上的 AppleTree";
+"SmartTree on GitHub" = "GitHub 上的 SmartTree";
 "Bug Report" = "报告缺陷";
-"Report a bug in AppleTree" = "报告 AppleTree 的缺陷";
+"Report a bug in SmartTree" = "报告 SmartTree 的缺陷";
 "Report a security vulnerability" = "报告安全漏洞";
 "Please review our security policy for more details" = "详情请参阅我们的安全政策";
 "Feature request" = "功能建议";
@@ -211,24 +211,24 @@
 "Ask a question in the issue tracker" = "在议题跟踪器中提问";
 "Browse the source, releases and issues" = "浏览源码、发行版和议题";
 "View license" = "查看许可证";
-"AppleTree shows you what is filling your disk, and cleans up the folders tools rebuild on demand. Nothing is removed without your say-so." = "AppleTree 显示磁盘空间被什么占用，并清理工具按需重建的文件夹。未经你同意不会删除任何内容。";
+"SmartTree shows you what is filling your disk, and cleans up the folders tools rebuild on demand. Nothing is removed without your say-so." = "SmartTree 显示磁盘空间被什么占用，并清理工具按需重建的文件夹。未经你同意不会删除任何内容。";
 "Free for non-commercial use. Buy it on the App Store to use the app commercially." = "非商业用途免费。如需商业使用，请在 App Store 购买。";
 "© 2026 Emircan ERKUL" = "© 2026 Emircan ERKUL";
 
 /* README viewer and erklab credit. */
 "Read the README" = "阅读 README";
-"AppleTree README" = "AppleTree README";
+"SmartTree README" = "SmartTree README";
 "Read the documentation bundled with the app" = "阅读应用自带的文档";
 "brought to you by" = "由以下团队呈现";
 
 /* App Store link and the README viewer header. */
 "Get it on the Mac App Store" = "在 Mac App Store 获取";
-"Get AppleTree on the Mac App Store" = "在 Mac App Store 获取 AppleTree";
+"Get SmartTree on the Mac App Store" = "在 Mac App Store 获取 SmartTree";
 "Buying it is what grants commercial use" = "购买即授予商业使用许可";
 "A fast, native disk-space treemap for macOS." = "适用于 macOS 的快速原生磁盘空间矩形图。";
 
 /* Bundled LICENSE viewer. */
-"AppleTree License" = "AppleTree 许可证";
+"SmartTree License" = "SmartTree 许可证";
 "Read the license bundled with the app" = "阅读应用自带的许可证";
 "This document was not bundled with this build." = "此版本未包含该文档。";
 
@@ -236,12 +236,12 @@
    Guideline 5.1.1(i) wants the policy reachable in-app; 5.1.2(i) wants
    explicit permission, naming the destination, before any scan summary is
    sent to a third party. */
-"AppleTree Privacy Policy" = "AppleTree 隐私政策";
+"SmartTree Privacy Policy" = "SmartTree 隐私政策";
 "Read the privacy policy bundled with the app" = "阅读随应用附带的隐私政策";
 "Privacy Policy" = "隐私政策";
 "Send a summary of this scan to %@?" = "将此扫描的摘要发送给 %@？";
 "Send and clean up" = "发送并清理";
-"AppleTree will send %@ the paths, names, sizes and dates of the largest items in this scan — folder and file names, but never the contents of your files. They leave your Mac and are handled under that provider's own terms. Sending it is what lets a planner suggest what to remove." = "AppleTree 会将本次扫描中最大项目的路径、名称、大小和日期发送给 %@ —— 仅包含文件夹和文件名称，绝不包含文件内容。这些数据将离开您的 Mac，并受该提供商自身条款的约束。只有发送后，规划器才能建议可以删除哪些内容。";
+"SmartTree will send %@ the paths, names, sizes and dates of the largest items in this scan — folder and file names, but never the contents of your files. They leave your Mac and are handled under that provider's own terms. Sending it is what lets a planner suggest what to remove." = "SmartTree 会将本次扫描中最大项目的路径、名称、大小和日期发送给 %@ —— 仅包含文件夹和文件名称，绝不包含文件内容。这些数据将离开您的 Mac，并受该提供商自身条款的约束。只有发送后，规划器才能建议可以删除哪些内容。";
 
 "Add a model provider and it plans what can go from this scan." = "添加模型提供商，它就会规划此扫描中可以清理的内容。";
 
@@ -257,11 +257,11 @@
    usable security-scoped bookmark (Mac App Store sandbox build only). Mirrors
    the Full Disk Access card's layout; the body names the one folder that
    always works so the user is never stuck. */
-"AppleTree could not use that folder" = "AppleTree 无法使用该文件夹";
-"The folder you chose did not give AppleTree access. Choose a different folder — Macintosh HD always works." = "你选择的文件夹未授予 AppleTree 访问权限。请选择其他文件夹——「Macintosh HD」始终可用。";
+"SmartTree could not use that folder" = "SmartTree 无法使用该文件夹";
+"The folder you chose did not give SmartTree access. Choose a different folder — Macintosh HD always works." = "你选择的文件夹未授予 SmartTree 访问权限。请选择其他文件夹——「Macintosh HD」始终可用。";
 
 /* Scan-coverage honesty: a walk that did not reach what the volume holds.
    Distinct from "root-only", which is genuinely unreadable system data. */
 "Scan may be incomplete — some folders were not readable. Rescan" = "扫描可能不完整 — 部分文件夹无法读取。重新扫描";
-"The last scan did not start: AppleTree could not get access to its scan folder. Choose it again to rescan." = "上次扫描未开始：AppleTree 无法访问其扫描文件夹。请重新选择该文件夹后再扫描。";
+"The last scan did not start: SmartTree could not get access to its scan folder. Choose it again to rescan." = "上次扫描未开始：SmartTree 无法访问其扫描文件夹。请重新选择该文件夹后再扫描。";
 "This scan reached less than this volume holds. Rescanning usually fixes it; if it recurs, choose the folder again from the Scan menu." = "本次扫描未达到此宗卷所包含的内容。重新扫描通常可以解决；如果反复出现，请从“扫描”菜单重新选择文件夹。";

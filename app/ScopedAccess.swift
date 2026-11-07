@@ -6,7 +6,7 @@ import Foundation
 /// that comes with it.
 ///
 /// Why this exists. A sandboxed app cannot reach anything the user did not hand
-/// it. The entitlements cover this app's own caches (`AppleTree.entitlements`),
+/// it. The entitlements cover this app's own caches (`SmartTree.entitlements`),
 /// but a *whole-disk* scan needs `/Users`, `/private/var` and `/opt`, and no
 /// entitlement can grant those: measured, Full Disk Access does **not** lift App
 /// Sandbox, so a sandboxed build that asks for it is asking for something it can
@@ -247,7 +247,7 @@ nonisolated enum ScopedAccess {
     ///
     /// This is now the app's **only** route to the user's files. The
     /// home-relative temporary exception was retired (see
-    /// `AppleTree.entitlements`), so without a held extension a sandboxed build
+    /// `SmartTree.entitlements`), so without a held extension a sandboxed build
     /// cannot read the home at all — measured: `~/` is DENIED on a build with
     /// only the sandbox, picker and bookmark entitlements.
     ///

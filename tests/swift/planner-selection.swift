@@ -47,7 +47,7 @@ enum PlannerSelectionTests {
         // A scratch suite, injected into the store, so the run cannot disturb
         // the user's real choice: save/delete/select all write to whichever
         // defaults the store was built with.
-        let suite = "com.erklab.appletree.tests.\(UUID().uuidString)"
+        let suite = "com.erklab.smarttree.tests.\(UUID().uuidString)"
         guard let scratch = UserDefaults(suiteName: suite) else {
             print("FAIL could not create a scratch defaults suite"); exit(1)
         }

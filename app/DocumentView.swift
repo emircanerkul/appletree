@@ -46,9 +46,9 @@ nonisolated enum BundledDoc: String, CaseIterable {
     /// Window title.
     var title: String {
         switch self {
-        case .readme: return String(localized: "AppleTree README")
-        case .license: return String(localized: "AppleTree License")
-        case .privacy: return String(localized: "AppleTree Privacy Policy")
+        case .readme: return String(localized: "SmartTree README")
+        case .license: return String(localized: "SmartTree License")
+        case .privacy: return String(localized: "SmartTree Privacy Policy")
         }
     }
 
@@ -210,7 +210,7 @@ private struct DocumentView: View {
                     .frame(width: 48, height: 48)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("AppleTree")
+                    Text("SmartTree")
                         .font(.largeTitle.weight(.semibold))
                     Text("A fast, native disk-space treemap for macOS.")
                         .font(.callout)

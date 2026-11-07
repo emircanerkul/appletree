@@ -3,7 +3,7 @@
 //   swiftc tests/swift/main.swift app/CleanupGuard.swift app/AppEnvironment.swift \
 //       -import-objc-header app/bz.h -swift-version 6 \
 //       -default-isolation MainActor -target arm64-apple-macos14.0 \
-//       -L target/release -lappletree -o .build/guard-tests
+//       -L target/release -lsmarttree -o .build/guard-tests
 // Prints PASS/FAIL lines and exits nonzero on any failure.
 //
 // Fixture strategy: NSHomeDirectory() on macOS comes from Directory Services
@@ -76,9 +76,9 @@ check("node_modules allowed inside Documents", CleanupGuard.blockReason(path: ws
 // allows the named build directory wholesale, never a path inside it that a
 // caller made up, so a nested lookup stays blocked by the Documents rule.
 check("nested inside node_modules not itself carve-out eligible",
-      CleanupGuard.blockReason(path: ws + "/node_modules/react") == "In ~/Documents, which AppleTree never cleans",
+      CleanupGuard.blockReason(path: ws + "/node_modules/react") == "In ~/Documents, which SmartTree never cleans",
       CleanupGuard.blockReason(path: ws + "/node_modules/react") ?? "nil")
-check("plain sibling of node_modules blocked", CleanupGuard.blockReason(path: ws + "/plain") == "In ~/Documents, which AppleTree never cleans",
+check("plain sibling of node_modules blocked", CleanupGuard.blockReason(path: ws + "/plain") == "In ~/Documents, which SmartTree never cleans",
       CleanupGuard.blockReason(path: ws + "/plain") ?? "nil")
 
 // --- S1: too broad -----------------------------------------------------------
@@ -188,7 +188,7 @@ try? fm.removeItem(atPath: link)
 // (ws), so five levels up reach ~/Documents — a protected root. The judgment
 // must follow the resolved landing spot, not the link's innocent name.
 try? fm.createSymbolicLink(atPath: link, withDestinationPath: "../../../../../Documents")
-check("relative symlink resolves then judged", CleanupGuard.blockReason(path: link) == "In ~/Documents, which AppleTree never cleans",
+check("relative symlink resolves then judged", CleanupGuard.blockReason(path: link) == "In ~/Documents, which SmartTree never cleans",
       CleanupGuard.blockReason(path: link) ?? "nil")
 try? fm.removeItem(atPath: link)
 

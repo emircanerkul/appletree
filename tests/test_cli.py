@@ -6,12 +6,12 @@ import subprocess
 import tempfile
 import unittest
 
-BIN = Path(os.environ.get("APPLETREE_BIN", Path(__file__).resolve().parents[1] / "target/release/appletree"))
+BIN = Path(os.environ.get("SMARTTREE_BIN", Path(__file__).resolve().parents[1] / "target/release/smarttree"))
 
 
 class AgentCLITests(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(prefix="appletree-api-")
+        self.temp = tempfile.TemporaryDirectory(prefix="smarttree-api-")
         self.root = Path(self.temp.name).resolve()
         self.home = self.root / "home"
         self.home.mkdir()
@@ -353,7 +353,7 @@ class AgentCLITests(unittest.TestCase):
         tmp = Path("/private/tmp")
         if not os.access(tmp, os.W_OK):
             self.skipTest("/private/tmp not writable")
-        with tempfile.TemporaryDirectory(prefix="appletree-notahome-", dir=tmp) as root:
+        with tempfile.TemporaryDirectory(prefix="smarttree-notahome-", dir=tmp) as root:
             root = Path(root)
             (root / "Library/Caches/pip/http-v2").mkdir(parents=True)
             (root / "Library/Caches/pip/http-v2/x").write_bytes(b"x" * 8192)

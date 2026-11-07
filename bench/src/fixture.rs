@@ -196,7 +196,7 @@ pub fn create(out: &Path, size: &str, seed: u64, force: bool) -> Result<Manifest
         manifest.logical_bytes += (kib * 1024) as u64;
     }
 
-    // One hardlinked file under two names: the documented reason AppleTree and
+    // One hardlinked file under two names: the documented reason SmartTree and
     // disktree report different file counts for identical byte totals. `files`
     // counts names (so this adds two), `logical_bytes` counts the inode once.
     let original = out.join("hardlink-a.bin");

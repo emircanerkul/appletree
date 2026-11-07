@@ -1406,7 +1406,7 @@ enum NodeActions {
     /// answered is the authorization. The guard's "inside your home folder"
     /// rule belongs to README "## AI cleanup" — it bounds what a *planner* may
     /// nominate, because a planner writes a plan from a scan summary and
-    /// AppleTree then acts on paths it never showed the user. Here the user
+    /// SmartTree then acts on paths it never showed the user. Here the user
     /// selected specific items — or pressed Delete on the selection — and named
     /// them in this dialog, and the app's own scan targets are mostly outside
     /// `$HOME` (`/Applications`, a whole drive). Running the planner's policy
@@ -1547,7 +1547,7 @@ enum NodeActions {
             reportFailures(failures,
                            title: String(localized: "Some items couldn't be deleted"),
                            advice: someWerePermission
-                               ? String(localized: "Items owned by macOS or an administrator can't be deleted by AppleTree. Drag them to the Trash in Finder and empty the Trash — macOS will ask for the password.")
+                               ? String(localized: "Items owned by macOS or an administrator can't be deleted by SmartTree. Drag them to the Trash in Finder and empty the Trash — macOS will ask for the password.")
                                : nil)
         }
     }

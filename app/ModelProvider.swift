@@ -3,7 +3,7 @@ import Foundation
 // Custom model providers: any OpenAI- or Anthropic-compatible endpoint by its
 // base URL, protocol, API key and model — relays, self-hosted servers (Ollama,
 // LM Studio, vLLM) or hosted gateways. The plan these endpoints return is just
-// a proposal: CleanupGuard re-checks everything, and AppleTree itself performs
+// a proposal: CleanupGuard re-checks everything, and SmartTree itself performs
 // every deletion. The endpoint never runs tools; it only writes the plan, so
 // there is nothing for it to escalate.
 
@@ -50,7 +50,7 @@ nonisolated struct LLMProvider: Identifiable, Codable, Sendable, Equatable {
 }
 
 /// Providers and their API keys. Providers live in UserDefaults; keys live in
-/// the Keychain, keyed `com.erklab.apps.appletree.<provider id>` — never in prefs.
+/// the Keychain, keyed `com.erklab.apps.smarttree.<provider id>` — never in prefs.
 @MainActor
 @Observable
 final class ProviderStore {
@@ -71,7 +71,7 @@ final class ProviderStore {
 
     private static let defaultsKey = "bz.providers"
     private static let engineKey = "bz.engine"
-    nonisolated private static let servicePrefix = "com.erklab.apps.appletree."
+    nonisolated private static let servicePrefix = "com.erklab.apps.smarttree."
 
     /// Where the provider list and the planner choice are read and written.
     ///

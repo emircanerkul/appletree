@@ -11,21 +11,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 @main
-struct AppleTreeApp: App {
+struct SmartTreeApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     /// Which Settings pane shows, and whether the add-provider form is pending.
     /// Shared, because the main window's buttons set it.
     @State private var settings = SettingsRouter.shared
 
     init() {
-        // `AppleTree /some/path` is a scan target, not a document to open.
+        // `SmartTree /some/path` is a scan target, not a document to open.
         // Left to AppKit, the path becomes an open-file request and SwiftUI
         // then skips creating the main window entirely.
         UserDefaults.standard.register(defaults: ["NSTreatUnknownArgumentsAsOpen": "NO"])
     }
 
     var body: some Scene {
-        WindowGroup("AppleTree") {
+        WindowGroup("SmartTree") {
             ContentView()
                 .preferredColorScheme(.dark)
         }
@@ -34,24 +34,24 @@ struct AppleTreeApp: App {
             // Replace AppKit's stock About panel: it can show a version, but
             // not that the app is open source or where the project lives.
             CommandGroup(replacing: .appInfo) {
-                Button(String(localized: "About AppleTree")) { AboutWindow.show() }
+                Button(String(localized: "About SmartTree")) { AboutWindow.show() }
             }
             // AppKit's Help menu normally points at a help book; with none,
-            // macOS greys it out with "Help isn't available for AppleTree".
-            // AppleTree has no manual to write — it is one window and a button
+            // macOS greys it out with "Help isn't available for SmartTree".
+            // SmartTree has no manual to write — it is one window and a button
             // — so the menu opens the project's own README (bundled, so it needs
             // no network) and then the places a user actually needs: the bug
             // form, security, feature requests, questions, and source.
             CommandGroup(replacing: .help) {
-                Button(String(localized: "AppleTree README")) { DocumentWindow.show(.readme) }
+                Button(String(localized: "SmartTree README")) { DocumentWindow.show(.readme) }
                     .helpText(String(localized: "Read the documentation bundled with the app"))
-                Button(String(localized: "AppleTree License")) { DocumentWindow.show(.license) }
+                Button(String(localized: "SmartTree License")) { DocumentWindow.show(.license) }
                     .helpText(String(localized: "Read the license bundled with the app"))
                 // Guideline 5.1.1(i): the privacy policy must be reachable *in
                 // the app*, not only in App Store Connect metadata. Bundled, so
                 // it opens with no browser and no network — the same way the
                 // README and license do.
-                Button(String(localized: "AppleTree Privacy Policy")) { DocumentWindow.show(.privacy) }
+                Button(String(localized: "SmartTree Privacy Policy")) { DocumentWindow.show(.privacy) }
                     .helpText(String(localized: "Read the privacy policy bundled with the app"))
                 Divider()
                 ForEach(AppLinkItem.all) { item in

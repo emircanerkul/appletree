@@ -14,9 +14,9 @@
 //
 // 1. The FDA card named a hardcoded path.
 //
-//    The card told the user to add `/Applications/AppleTree.app`, but
+//    The card told the user to add `/Applications/SmartTree.app`, but
 //    `make deploy-sandbox` installs a SEPARATE bundle at
-//    `/Applications/AppleTree (Sandboxed).app`. Measured on this machine, the
+//    `/Applications/SmartTree (Sandboxed).app`. Measured on this machine, the
 //    two are different apps to TCC — different `CDHash`, and the rehearsal one
 //    was ad-hoc signed. A user who follows the card grants a *different* binary
 //    than the one asking, so the prompt can never clear. The card must name the
@@ -188,7 +188,7 @@ enum FDAGrantTests {
         // card whose text changed while the key did not would render English in
         // every language (exactly the drift tests/check-l10n.py exists to stop).
         check("the old hardcoded-path key is gone from the sources",
-              !content.contains("Remove any old AppleTree rows, then add /Applications/AppleTree.app."),
+              !content.contains("Remove any old SmartTree rows, then add /Applications/SmartTree.app."),
               "the literal still ships in the card")
 
         // --- 2. The rehearsal signs with a stable identity ---------------------
@@ -262,9 +262,9 @@ enum FDAGrantTests {
         // the code stops relying on it keeps the review surface without keeping
         // any benefit. The assertion is on the `<key>` form, because the
         // retirement comment names it deliberately.
-        let entPath = root.appendingPathComponent("app/AppleTree.entitlements")
+        let entPath = root.appendingPathComponent("app/SmartTree.entitlements")
         let ents = (try? String(contentsOf: entPath, encoding: .utf8)) ?? ""
-        check("AppleTree.entitlements was read", !ents.isEmpty, entPath.path)
+        check("SmartTree.entitlements was read", !ents.isEmpty, entPath.path)
         check("the home-relative temporary exception is retired",
               !ents.contains("<key>com.apple.security.temporary-exception"),
               "the bookmark route replaces it; the key must not be granted")

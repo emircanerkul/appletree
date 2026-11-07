@@ -1,6 +1,6 @@
 """Generate assets/AppIcon.icon, an Icon Composer document (macOS 26+).
 
-The flat AppleTree tree-treemap logo (assets/logo.svg) on a transparent
+The flat SmartTree tree-treemap logo (assets/logo.svg) on a transparent
 background, no glass or background fill. `actool` compiles it to Assets.car
 and a flat AppIcon.icns fallback for older systems; see the Makefile.
 """

@@ -1,15 +1,15 @@
 /target
 /build
 .DS_Store
-AppleTree.dmg
+SmartTree.dmg
 # The dmg's checksum, written by `make package` and meant to be shipped
 # alongside it. It used to be deleted at the end of the old release target, so
 # it never lingered; a local package keeps it, and it must not be committed.
 SHA256SUMS.txt
 # The App Store package `make pkg` writes, and its checksum. Same reasoning as
-# the dmg: build output, not source. `AppleTree.pkg` was missing from this list,
+# the dmg: build output, not source. `SmartTree.pkg` was missing from this list,
 # so an untracked package sat in `git status` after every run.
-AppleTree.pkg
+SmartTree.pkg
 SHA256SUMS.pkg.txt
 __pycache__/
 /.cache

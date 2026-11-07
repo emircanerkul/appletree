@@ -4,7 +4,7 @@
 //   swiftc tests/swift/drawer.swift app/CleanupModel.swift app/CleanupGuard.swift \
 //       app/PlanParsing.swift -import-objc-header app/bz.h \
 //       -parse-as-library -swift-version 6 -default-isolation MainActor \
-//       -target arm64-apple-macos14.0 -L target/release -lappletree \
+//       -target arm64-apple-macos14.0 -L target/release -lsmarttree \
 //       -o .build/drawer-tests
 //
 // These lock the fixes at their canonical owners:
@@ -130,7 +130,7 @@ func run() async {
     // `CleanupGuard`'s rules ("inside your home folder", "never ~/Documents")
     // belong to README "## AI cleanup": they bound what a *planner* may
     // nominate, because a planner writes a plan from a scan summary and
-    // AppleTree then acts on paths the user never saw one by one. Applying them
+    // SmartTree then acts on paths the user never saw one by one. Applying them
     // to the right-click menu was a real bug: it refused
     // `/Applications/Java 8 Update 491.app` with "Outside your home folder",
     // and refused every candidate of an `/Applications` scan, even though
@@ -168,7 +168,7 @@ func run() async {
     // This is the test that would have caught the whole class: on the app's
     // default whole-disk target, 24 of 57 nominees were refused (mostly under
     // `/opt` and `/private/tmp`), and every one of them was handed to the
-    // planner as "recognised by AppleTree as rebuildable" (audit SW-4).
+    // planner as "recognised by SmartTree as rebuildable" (audit SW-4).
     //
     // It runs on the real engine over a small real directory, and asserts the
     // invariant directly rather than restating the rules: every item the list

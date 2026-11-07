@@ -8,14 +8,14 @@ body:
     attributes:
       value: |
         Thanks for the idea. Please describe the problem before the solution —
-        it is the part that decides whether a feature fits AppleTree's shape.
+        it is the part that decides whether a feature fits SmartTree's shape.
 
   - type: textarea
     id: problem
     attributes:
       label: What problem does this solve?
       description: |
-        What are you trying to do that AppleTree makes hard or impossible
+        What are you trying to do that SmartTree makes hard or impossible
         today? A concrete situation is worth more than an abstract one.
       placeholder: |
         I scan several drives, and every time I have to…
@@ -25,7 +25,7 @@ body:
   - type: textarea
     id: proposal
     attributes:
-      label: What would you like AppleTree to do?
+      label: What would you like SmartTree to do?
       description: Your suggested behaviour. A rough sketch is fine.
     validations:
       required: true
@@ -35,7 +35,7 @@ body:
     attributes:
       label: What have you tried instead?
       description: |
-        Other tools, workarounds, or other ways AppleTree could solve it.
+        Other tools, workarounds, or other ways SmartTree could solve it.
         Optional, but it often rules out an approach before anyone builds it.
     validations:
       required: false

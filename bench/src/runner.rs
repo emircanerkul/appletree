@@ -1,7 +1,7 @@
 //! ABBA-alternated comparison of two engines over one target.
 //!
 //! Why alternate: cache warmth and background load drift over a run, and a
-//! block of AppleTree runs followed by a block of disktree runs would charge
+//! block of SmartTree runs followed by a block of disktree runs would charge
 //! that drift to whichever engine ran second. Warmup runs are unmeasured.
 //! Each engine runs in its own process (see the two runner binaries), so peak
 //! memory per engine is real rather than the two engines' peaks combined.
@@ -41,28 +41,28 @@ impl Sample {
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum Tool {
-    Appletree,
+    SmartTree,
     Disktree,
 }
 
 impl Tool {
     pub fn name(self) -> &'static str {
         match self {
-            Tool::Appletree => "appletree",
+            Tool::SmartTree => "smarttree",
             Tool::Disktree => "disktree",
         }
     }
 }
 
 pub struct Engines {
-    pub appletree: PathBuf,
+    pub smarttree: PathBuf,
     pub disktree: Option<PathBuf>,
 }
 
 impl Engines {
     pub fn binary(&self, tool: Tool) -> Result<&Path, String> {
         match tool {
-            Tool::Appletree => Ok(&self.appletree),
+            Tool::SmartTree => Ok(&self.smarttree),
             Tool::Disktree => self
                 .disktree
                 .as_deref()
@@ -114,7 +114,7 @@ pub struct Comparison {
     pub runs: usize,
     pub measured: Vec<Sample>,
     pub totals_agree: bool,
-    pub appletree: Summary,
+    pub smarttree: Summary,
     pub disktree: Option<Summary>,
     pub speedup: Option<f64>,
     pub rss_ratio: Option<f64>,
@@ -160,8 +160,8 @@ pub fn compare(engines: &Engines, target: &Path, runs: usize, warmup: usize) -> 
         return Err("--runs must be at least 1".into());
     }
     let tools: Vec<Tool> = match &engines.disktree {
-        Some(_) => vec![Tool::Appletree, Tool::Disktree],
-        None => vec![Tool::Appletree],
+        Some(_) => vec![Tool::SmartTree, Tool::Disktree],
+        None => vec![Tool::SmartTree],
     };
 
     for _ in 0..warmup {
@@ -172,7 +172,7 @@ pub fn compare(engines: &Engines, target: &Path, runs: usize, warmup: usize) -> 
 
     let mut measured = Vec::new();
     for round in 0..runs {
-        // ABBA: even rounds AppleTree first, odd rounds disktree first.
+        // ABBA: even rounds SmartTree first, odd rounds disktree first.
         let order: Vec<Tool> = if round % 2 == 0 {
             tools.clone()
         } else {
@@ -185,24 +185,24 @@ pub fn compare(engines: &Engines, target: &Path, runs: usize, warmup: usize) -> 
         }
     }
 
-    let appletree_samples: Vec<Sample> =
-        measured.iter().filter(|s| s.tool == "appletree").cloned().collect();
+    let smarttree_samples: Vec<Sample> =
+        measured.iter().filter(|s| s.tool == "smarttree").cloned().collect();
     let disktree_samples: Vec<Sample> =
         measured.iter().filter(|s| s.tool == "disktree").cloned().collect();
-    let appletree = summarize(&appletree_samples);
+    let smarttree = summarize(&smarttree_samples);
     let disktree = (!disktree_samples.is_empty()).then(|| summarize(&disktree_samples));
 
     // Correctness guardrail: equal allocated bytes is the invariant that makes a
     // speed comparison meaningful. Any disagreement is a hard failure.
     let totals_agree = match &disktree {
-        Some(d) => d.bytes == appletree.bytes && d.errors == appletree.errors,
+        Some(d) => d.bytes == smarttree.bytes && d.errors == smarttree.errors,
         None => true,
     };
-    let speedup = disktree.as_ref().map(|d| d.median_seconds / appletree.median_seconds);
+    let speedup = disktree.as_ref().map(|d| d.median_seconds / smarttree.median_seconds);
     let rss_ratio = disktree
         .as_ref()
-        .filter(|_| appletree.median_peak_rss_bytes > 0)
-        .map(|d| d.median_peak_rss_bytes as f64 / appletree.median_peak_rss_bytes as f64);
+        .filter(|_| smarttree.median_peak_rss_bytes > 0)
+        .map(|d| d.median_peak_rss_bytes as f64 / smarttree.median_peak_rss_bytes as f64);
 
     Ok(Comparison {
         host: Host::detect(),
@@ -211,7 +211,7 @@ pub fn compare(engines: &Engines, target: &Path, runs: usize, warmup: usize) -> 
         runs,
         measured,
         totals_agree,
-        appletree,
+        smarttree,
         disktree,
         speedup,
         rss_ratio,

@@ -1,6 +1,6 @@
 # Benchmarks
 
-AppleTree's scan engine, measured against [disktree](https://github.com/tobi/disktree)
+SmartTree's scan engine, measured against [disktree](https://github.com/tobi/disktree)
 on the same machine, in the same run, by one command.
 
 **Run it:**
@@ -10,7 +10,7 @@ cd bench && ./run.sh
 ```
 
 The first build fetches the pinned `disktree-core` (needs network once). To
-benchmark AppleTree alone, offline: `./run.sh --no-disktree`.
+benchmark SmartTree alone, offline: `./run.sh --no-disktree`.
 
 ## What is measured
 
@@ -24,7 +24,7 @@ flat tree the UI reads. Two numbers per engine:
 
 Both engines are alternated round by round (ABBA) after one unmeasured warmup,
 because cache warmth and background load drift over a run, and a block of
-AppleTree runs followed by a block of disktree runs would charge that drift to
+SmartTree runs followed by a block of disktree runs would charge that drift to
 whichever engine went second.
 
 If the two engines disagree on allocated bytes, the run **fails**: the
@@ -43,7 +43,7 @@ measurements under background load, not a quiet-lab figure.
 Peak RSS barely moved across five separate sessions on the same target
 (`/Applications`, 247,465 files):
 
-| | AppleTree | disktree 0.10.1 | ratio |
+| | SmartTree | disktree 0.10.1 | ratio |
 |---|---:|---:|---:|
 | peak RSS across 5 sessions | **20.5–22.3 MB** | **69.0–69.3 MB** | **3.1× less** |
 
@@ -54,7 +54,7 @@ That spread is small enough to state as a single claim, and both engines report
 
 On the same target, median scan time across those sessions ranged:
 
-| target | AppleTree | disktree 0.10.1 | speed |
+| target | SmartTree | disktree 0.10.1 | speed |
 |---|---:|---:|---:|
 | `/Applications` (5 sessions) | 0.53–0.69 s | 0.94–1.42 s | **1.8–2.1×** |
 | `~/Library/Developer`, 51,235 files | 0.367 s | 0.420 s | **1.14×** |
@@ -73,7 +73,7 @@ The figures are the span of the per-session medians:
 
 | app | scan finished after | peak memory | how measured |
 |---|---:|---:|---|
-| **AppleTree** | **0.79–0.85 s** | **137.1–138.5 MB** | app-reported; peak is the kernel high-water mark |
+| **SmartTree** | **0.79–0.85 s** | **137.1–138.5 MB** | app-reported; peak is the kernel high-water mark |
 | disktree 0.10.1 | 2.43–4.40 s | 152.4–156.6 MB | external wall-clock (upper bound); memory sampled |
 | GrandPerspective 3.7.2 | 5.21–5.82 s | 154.7–160.2 MB | app-reported; memory sampled |
 | QDirStat 2.0.01 | 5.95–6.42 s | 199.4–214.2 MB | app-reported; memory sampled |
@@ -81,7 +81,7 @@ The figures are the span of the per-session medians:
 Per-session artifacts: `gui-session-1/` … `gui-session-3/` under
 [`results/2026-10-04-apple-m1-macos27.0/`](results/2026-10-04-apple-m1-macos27.0/).
 
-**Memory is not measured identically across these rows.** AppleTree reports its
+**Memory is not measured identically across these rows.** SmartTree reports its
 own `resident_size_max`, the kernel's true high-water mark. The other three are
 sampled from outside every 50 ms, so their figures are floors that can miss a
 spike between samples. Process memory also includes the whole UI, which is why
@@ -99,10 +99,10 @@ GrandPerspective and QDirStat are directly comparable to each other.
 Both engines agree on allocated bytes. Two counts differ, and neither is an
 accuracy problem:
 
-- **Files.** AppleTree counts every name of a hardlinked file and counts
-  symlinks as files; disktree counts a hardlinked file once. AppleTree therefore
+- **Files.** SmartTree counts every name of a hardlinked file and counts
+  symlinks as files; disktree counts a hardlinked file once. SmartTree therefore
   reports more files for the same bytes (247,465 vs 235,540 here).
-- **Directories.** disktree counts the scan root itself as a directory; AppleTree
+- **Directories.** disktree counts the scan root itself as a directory; SmartTree
   counts only the directories inside it, so disktree is one higher.
 
 ## What this does not measure
@@ -147,7 +147,7 @@ cargo run --release -- scan --path /Applications --compare-apps
 
 | app | how its time is obtained |
 |---|---|
-| AppleTree | the app writes its own finish time (preference-gated hook, `bz.benchTiming`) |
+| SmartTree | the app writes its own finish time (preference-gated hook, `bz.benchTiming`) |
 | disktree 0.10.1 | **nothing to read** — timed externally until CPU goes idle |
 | GrandPerspective | its own `Done scanning: … in Xs` line on stderr |
 | QDirStat | its own `Reading finished after X sec` line in its log |
@@ -162,11 +162,11 @@ Two constraints worth knowing before relying on this tier:
   deliberately not part of the default `./run.sh` path.
 - Every app is launched through `open` so that **launchd, not your terminal, is
   the TCC-responsible process** — otherwise the app's own Full Disk Access grant
-  would not apply and AppleTree would silently refuse to scan.
+  would not apply and SmartTree would silently refuse to scan.
 
 ### A note on signing and Full Disk Access
 
-AppleTree's GUI row needs `/Applications/AppleTree.app` to hold Full Disk
+SmartTree's GUI row needs `/Applications/SmartTree.app` to hold Full Disk
 Access. If the app is **ad-hoc signed**, its designated requirement is a
 `cdhash`, which changes on every rebuild, so macOS revokes the grant each time
 you rebuild. Build with a real identity (any `Apple Development` or

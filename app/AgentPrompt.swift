@@ -95,7 +95,7 @@ nonisolated enum AgentPrompt {
         if commandsAvailable {
             action = """
             - action: "command" when the owning tool has its own cleanup and the item is that tool's \
-            cache, otherwise "trash" (AppleTree moves the paths to the Trash itself). AppleTree only runs \
+            cache, otherwise "trash" (SmartTree moves the paths to the Trash itself). SmartTree only runs \
             exactly one of these commands — no extra arguments or flags: \(allowlist) — \
             or exactly one of: `ollama rm <model>`, `xcrun simctl runtime delete <id>`, \
             `xcrun simctl erase <udid>`. \
@@ -106,19 +106,19 @@ nonisolated enum AgentPrompt {
         } else {
             action = """
             - action: always "trash". This build runs inside the App Store sandbox, which forbids \
-            launching any external tool, so AppleTree cannot run a cleanup command at all and no \
+            launching any external tool, so SmartTree cannot run a cleanup command at all and no \
             "command" item could be honoured — the card would silently do nothing. Every item is a \
-            folder AppleTree moves to the Trash itself. \
+            folder SmartTree moves to the Trash itself. \
             Do not propose a command, a shell invocation, or a tool's own cleanup flag; nominate the \
             cache folder instead.          - command: always "".
             Only list caches that appear in the tables above with their real size; skip ones that are not there.
             """
         }
         var md = """
-        You are the cleanup agent inside AppleTree, a macOS disk-space app. The user clicked \
+        You are the cleanup agent inside SmartTree, a macOS disk-space app. The user clicked \
         "Clean up" and is watching a live view of your steps, so be fast. Their home folder is \(home).
 
-        Below is AppleTree's scan (\(scanRoot == "/System/Volumes/Data" ? "whole disk" : scanRoot), \
+        Below is SmartTree's scan (\(scanRoot == "/System/Volumes/Data" ? "whole disk" : scanRoot), \
         allocated sizes, measured seconds ago). Use it; do not re-scan the disk. Most plans need no \
         commands at all. Only check what you really cannot judge from the tables, batched (one \
         `du -sk a b c` beats several), at most 3 commands.
@@ -147,7 +147,7 @@ nonisolated enum AgentPrompt {
 
         """
         if !known.isEmpty {
-            md += "\n## Recognised by AppleTree as rebuildable\n\n| Size | Path | What |\n|---:|---|---|\n"
+            md += "\n## Recognised by SmartTree as rebuildable\n\n| Size | Path | What |\n|---:|---|---|\n"
             for item in known.prefix(120) {
                 md += "| \(Fmt.size(item.bytes)) | \(item.path) | \(item.label) |\n"
             }

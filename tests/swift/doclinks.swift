@@ -39,10 +39,10 @@ enum DocLinkTests {
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
 
         // --- Everything with a real scheme passes through untouched ----------
-        let https = URL(string: "https://apps.apple.com/app/id6819034229")!
+        let https = URL(string: "https://apps.apple.com/app/id0000000000")!
         check("an https link is preserved",
               DocLink.resolve(https)?.absoluteString == https.absoluteString)
-        let mail = URL(string: "mailto:licensing@appletree.apps.erklab.com")!
+        let mail = URL(string: "mailto:licensing@smarttree.apps.erklab.com")!
         check("a mailto link is preserved",
               DocLink.resolve(mail)?.absoluteString == mail.absoluteString)
 
@@ -66,12 +66,12 @@ enum DocLinkTests {
         // --- Relative file links become GitHub blob URLs ---------------------
         let security = DocLink.resolve(URL(string: ".github/SECURITY.md")!)
         check("a relative file link resolves to a GitHub blob URL",
-              security?.absoluteString == "https://github.com/emircanerkul/appletree/blob/main/.github/SECURITY.md",
+              security?.absoluteString == "https://github.com/emircanerkul/smarttree/blob/main/.github/SECURITY.md",
               security?.absoluteString ?? "nil")
         // A trailing slash means a directory, so it must go to `tree`, not `blob`.
         let dir = DocLink.resolve(URL(string: "docs/benchmarks/results/")!)
         check("a relative directory link resolves to a tree URL",
-              dir?.absoluteString == "https://github.com/emircanerkul/appletree/tree/main/docs/benchmarks/results",
+              dir?.absoluteString == "https://github.com/emircanerkul/smarttree/tree/main/docs/benchmarks/results",
               dir?.absoluteString ?? "nil")
 
         // --- No scheme-less link in either document can reach the system ------

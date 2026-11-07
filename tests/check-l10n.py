@@ -54,7 +54,7 @@ LETTER = re.compile(r'[^\W\d_]', re.UNICODE)
 # Keys that are deliberately never translated: the app name, a placeholder
 # and a glyph carry no words, and SwiftUI renders the literal itself in every
 # locale. Everything else the app references must be in the tables.
-UNTRANSLATED = {"AppleTree", "gpt-4o-mini", "…"}
+UNTRANSLATED = {"SmartTree", "gpt-4o-mini", "…"}
 
 
 def read_table(path: pathlib.Path) -> list[tuple[str, str]]:

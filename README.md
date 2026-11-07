@@ -1,9 +1,9 @@
-<h1 align="center"><img align="left" src="assets/icon.png" width="48" alt="AppleTree icon"><a href="https://erklab.com"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/erklab-logo-white.svg"><img align="right" src="assets/erklab-logo.svg" width="112" alt="erklab"></picture></a>AppleTree</h1>
+<h1 align="center"><img align="left" src="assets/icon.png" width="48" alt="SmartTree icon"><a href="https://erklab.com"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/erklab-logo-white.svg"><img align="right" src="assets/erklab-logo.svg" width="112" alt="erklab"></picture></a>SmartTree</h1>
 
 <p align="center"><strong>A native macOS disk-space treemap that scans a 250,000-file drive in under a second.</strong><br>
 Shows you what's safe to delete, not just what's big.</p>
 
-<p align="center"><strong><a href="https://apps.apple.com/app/id6819034229">Get AppleTree on the Mac App Store</a></strong> — or build it from source and use it non-commercially, free.<br>
+<p align="center"><strong><a href="https://apps.apple.com/app/id0000000000">Get SmartTree on the Mac App Store</a></strong> — or build it from source and use it non-commercially, free.<br>
 <sub>Requires Apple Silicon and macOS 14 or later.</sub></p>
 
 <!-- /header -->
@@ -77,7 +77,7 @@ moved to the Trash in one pass.
 
 **AI cleanup, using a model you choose.** Configure a provider in Settings →
 Model Providers and click "Clean up with …"; it plans what can go while the
-treemap highlights those folders. AppleTree performs the cleanup itself, in two
+treemap highlights those folders. SmartTree performs the cleanup itself, in two
 steps you approve: move to the Trash, then delete permanently.
 
 **Every planner stays reachable.** The Clean Up button carries a menu listing
@@ -91,9 +91,9 @@ Anthropic-compatible endpoint — a relay, a self-hosted server (Ollama, LM
 Studio) or a gateway — by its base URL, protocol and model. API keys are held in
 the Keychain, never in preferences. The endpoint receives the scan summary and
 nothing else: it runs no tools and never reads your disk, so file contents stay
-local. AppleTree still performs and re-checks every deletion itself.
+local. SmartTree still performs and re-checks every deletion itself.
 
-**Scan when AppleTree opens.** Off by default. The first launch shows the empty
+**Scan when SmartTree opens.** Off by default. The first launch shows the empty
 home screen with a one-time checkbox to turn launch scanning on; whatever you
 choose is saved and the offer is never shown again. Change it later in
 Settings → General.
@@ -123,7 +123,7 @@ free-space block, and no telemetry of any kind.
 ## Performance
 
 Every figure below was measured on **Apple M1, 16 GB, macOS 27.0**, scanning
-`/Applications` (247,465 files, 12.6 GB). AppleTree and every tool compared
+`/Applications` (247,465 files, 12.6 GB). SmartTree and every tool compared
 against it report the **same allocated bytes** (12,618,940,416).
 
 **[Full method, every raw sample, and what these figures deliberately do not
@@ -131,15 +131,15 @@ measure →](docs/benchmarks/BENCHMARKS.md)**
 
 ### Scan engine
 
-Timing the scan engine alone, in its own process, with AppleTree and disktree
+Timing the scan engine alone, in its own process, with SmartTree and disktree
 alternated round by round (7 rounds × 5 sessions):
 
 | scan engine | Scan time | Peak memory |
 |---|---|---|
-| **AppleTree** | **0.53–0.69 s** | **20.5–22.3 MB** |
+| **SmartTree** | **0.53–0.69 s** | **20.5–22.3 MB** |
 | disktree 0.10.1 | 0.94–1.42 s | 69.0–69.3 MB |
 
-AppleTree uses **3.1× less memory** and is **1.8–2.1× faster** here. Memory is
+SmartTree uses **3.1× less memory** and is **1.8–2.1× faster** here. Memory is
 the stable figure; scan time varies with machine load, which is why both are
 given as a range.
 
@@ -150,19 +150,19 @@ with every app given the same target and 5 rounds × 3 sessions:
 
 | app | Scan finished after | Peak memory |
 |---|---:|---:|
-| **AppleTree** | **0.79–0.85 s** | **137.1–138.5 MB** |
+| **SmartTree** | **0.79–0.85 s** | **137.1–138.5 MB** |
 | disktree 0.10.1 | 2.43–4.40 s * | 152.4–156.6 MB |
 | GrandPerspective 3.7.2 | 5.21–5.82 s | 154.7–160.2 MB |
 | QDirStat 2.0.01 | 5.95–6.42 s | 199.4–214.2 MB |
 
-AppleTree is the fastest of the four, and the lightest of the four.
+SmartTree is the fastest of the four, and the lightest of the four.
 
 * disktree's GUI reports no timing anywhere, so it is measured from outside
 until the process stops using CPU. That method has roughly a second of
 resolution and also counts window and render work, so it is an **upper bound**,
 not an equal measurement; the other three rows are each app's own "scan
-finished" statement. Peak memory for the three non-AppleTree apps is sampled
-every 50 ms, so those are floors on the true peak; AppleTree's is the kernel's
+finished" statement. Peak memory for the three non-SmartTree apps is sampled
+every 50 ms, so those are floors on the true peak; SmartTree's is the kernel's
 own high-water mark.
 
 Whole-app memory is much larger than engine memory because it includes the
@@ -176,7 +176,7 @@ cd bench && cargo run --release --bin btbench -- scan --compare-apps   # add the
 ```
 
 The first run fetches the pinned `disktree-core` (needs network once); add
-`--no-disktree` to benchmark AppleTree alone, offline.
+`--no-disktree` to benchmark SmartTree alone, offline.
 
 Three things do the work:
 
@@ -204,10 +204,10 @@ the disk back. Hard links do not have this problem: those genuinely are one inod
 and this scanner counts their bytes once.
 
 File counts differ from some tools, and not because of an accuracy problem.
-AppleTree lists every name of a hard-linked file and counts symlinks as files;
-disktree counts a hard-linked file once. AppleTree therefore reports more files
+SmartTree lists every name of a hard-linked file and counts symlinks as files;
+disktree counts a hard-linked file once. SmartTree therefore reports more files
 for identical byte totals — 247,465 against 235,540 on `/Applications`.
-AppleTree also counts only the directories inside the scan root, where disktree
+SmartTree also counts only the directories inside the scan root, where disktree
 includes the root itself, so the directory counts differ by one. Neither
 affects the bytes, which match exactly.
 
@@ -215,7 +215,7 @@ affects the bytes, which match exactly.
 
 Nothing here can write to your disk. The planner is invited only to read the
 scan summary: a custom model provider gets no tools at all. It writes a plan,
-and AppleTree then acts on that plan behind its own checks, whatever the plan
+and SmartTree then acts on that plan behind its own checks, whatever the plan
 says:
 
 - Only paths inside your home folder, never Documents, Desktop, Photos, iCloud Drive, Mail, keychains or `~/.ssh` (build output such as `node_modules` inside them is allowed), never a git repository, never a whole folder such as `~/Library/Caches`, and never anything inside a signed app bundle — a bundle's own folders are sealed by its code signature, so removing one invalidates the app
@@ -227,11 +227,11 @@ says:
 
 ## Trust, privacy and permissions
 
-**Developer-ID build.** AppleTree asks for Full Disk Access so the scan can read
+**Developer-ID build.** SmartTree asks for Full Disk Access so the scan can read
 every folder on the disk, including the system-protected ones that normally stay
 out of reach. Every allowlisted cleanup command it runs inherits that same grant
 while it runs; what that command does with it is the tool's own behaviour, not a
-policy AppleTree sets.
+policy SmartTree sets.
 
 **Mac App Store build.** No Full Disk Access is requested, because it cannot
 lift App Sandbox. Instead the app asks you to choose a folder in the open panel;
@@ -243,24 +243,24 @@ the preference domain is where the chosen folder is recorded.
 
 Cleanup commands (`npm cache clean`, `brew cleanup` and so on) are resolved
 through the shell's PATH, by design: these tools live in Homebrew, `~/.local/bin`,
-nvm and other tool-manager locations, and AppleTree does not guess where they
+nvm and other tool-manager locations, and SmartTree does not guess where they
 are installed. Only commands matching a small allowlist of tool-specific
 cleanup invocations are ever run, but what runs is whatever the PATH resolves —
 the trust in your own PATH is residual.
 
-There is no telemetry. AppleTree contacts the network only when you explicitly
+There is no telemetry. SmartTree contacts the network only when you explicitly
 ask it to: fetching a model list, or running an AI cleanup. **Moving folders to
 the Trash yourself — from the map, the rings, the list or the Clean Up panel —
 is entirely local and sends nothing.**
 
-When you do run an AI cleanup, AppleTree sends the planner a *summary* of the
+When you do run an AI cleanup, SmartTree sends the planner a *summary* of the
 scan, never file contents: the largest folder and file paths with their sizes
 (up to a few hundred entries), your home path, the scan root, and which apps are
 currently running. A custom model provider receives that summary over HTTP and
 nothing else: it runs no tools and never sees the disk, so file contents are
 never sent.
 
-Either way, AppleTree performs and re-checks every deletion itself.
+Either way, SmartTree performs and re-checks every deletion itself.
 
 ## Build from source
 
@@ -269,16 +269,16 @@ toolchain and stops with a clear message if the Swift version is too old.
 
 ```sh
 make help              # every target
-make build             # build/AppleTree.app
+make build             # build/SmartTree.app
 make deploy            # build and install to /Applications
 make open              # build and launch
-make package           # notarize when possible, and package AppleTree.dmg locally
+make package           # notarize when possible, and package SmartTree.dmg locally
 make test              # the full suite: Rust engine tests, Swift suites, JSON CLI, l10n
 make test-rust         # cargo test --release only (also runs inside `make test`)
 ```
 
 The Rust engine hands the finished tree to the Swift UI as flat arrays over a C
-interface, with no copying. `AppleTree <path>` scans a specific folder.
+interface, with no copying. `SmartTree <path>` scans a specific folder.
 
 Sign the bundle with a real `Apple Development` or `Developer ID` identity if you
 intend to grant it Full Disk Access. An ad-hoc signature pins its identity to a
@@ -291,9 +291,9 @@ An optional, read-only CLI uses the same scan engine without opening the GUI
 or running an AI cleanup:
 
 ```sh
-cargo build --locked --release --features cli --bin appletree
-./target/release/appletree scan --root "$HOME/Downloads"
-./target/release/appletree quick-wins --root "$HOME" --limit 20
+cargo build --locked --release --features cli --bin smarttree
+./target/release/smarttree scan --root "$HOME/Downloads"
+./target/release/smarttree quick-wins --root "$HOME" --limit 20
 ```
 
 `scan` lists the largest directories and files as JSON. `quick-wins` adds the
@@ -325,7 +325,7 @@ Results are regenerated with `cd bench && ./run.sh` and land in
 
 ## Getting help
 
-AppleTree has no manual — it is one window and a button, and this README covers
+SmartTree has no manual — it is one window and a button, and this README covers
 the rest. The **Help** menu carries the places that are actually useful instead:
 
 | Menu item | Where it goes |
@@ -334,24 +334,24 @@ the rest. The **Help** menu carries the places that are actually useful instead:
 | Report a security vulnerability | [SECURITY.md](.github/SECURITY.md), for private reporting |
 | Feature request | the feature-request issue form |
 | Question | the question issue form |
-| AppleTree on GitHub | the source, releases and issues |
+| SmartTree on GitHub | the source, releases and issues |
 
-**AppleTree → About AppleTree** carries the version and links to the project and
+**SmartTree → About SmartTree** carries the version and links to the project and
 its license.
 
 ## License
 
-AppleTree is licensed in two parts by history: the code inherited from BlitzTree
+SmartTree is licensed in two parts by history: the code inherited from BlitzTree
 is MIT, and work on top of that snapshot is CC BY-NC-SA 4.0. Non-commercial use
 is free under those terms.
 
-**Commercial use of the compiled app is granted by purchase.** Buying AppleTree
-on the [Mac App Store](https://apps.apple.com/app/id6819034229) lets that
+**Commercial use of the compiled app is granted by purchase.** Buying SmartTree
+on the [Mac App Store](https://apps.apple.com/app/id0000000000) lets that
 purchaser use their copy commercially, on their own devices. That grant is
 personal to the purchase: it does not cover the source code, redistribution,
-reselling, or bundling AppleTree into another product. The source stays
+reselling, or bundling SmartTree into another product. The source stays
 CC BY-NC-SA 4.0 without exception, for everyone.
 
 For anything wider than one buyer running their own purchased copy, ask about a
-separate licence at licensing@appletree.apps.erklab.com. See [LICENSE](LICENSE)
+separate licence at licensing@smarttree.apps.erklab.com. See [LICENSE](LICENSE)
 for the exact wording and the boundary between the two parts.

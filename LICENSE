@@ -1,8 +1,8 @@
-AppleTree is licensed in two parts, based on the history of the code:
+SmartTree is licensed in two parts, based on the history of the code:
 
 1. The squashed history through the commit "Docs: flat engine results in
    the third performance pass"
-   ([`c1deb62`](https://github.com/emircanerkul/appletree/commit/c1deb624c0465be9c023df2ab84056b3387e4cd3),
+   ([`c1deb62`](https://github.com/emircanerkul/smarttree/commit/c1deb624c0465be9c023df2ab84056b3387e4cd3),
    originally from the BlitzTree repository by Ahmed Khaleel) remains
    MIT-licensed, under the license text below.
 
@@ -23,11 +23,11 @@ permission from the Licensor in the sense of Section 7(b) of the CC BY-NC-SA
 it for anyone else.
 
   Distribution through the Mac App Store. Apple Inc. and its App Store are
-  authorised to distribute the compiled AppleTree application, including in
+  authorised to distribute the compiled SmartTree application, including in
   Apple's commercial App Store programme. That distribution is a commercial
   act and would otherwise be barred by the NonCommercial term.
 
-  Commercial use by the buyer. A copy of AppleTree bought on the Mac App
+  Commercial use by the buyer. A copy of SmartTree bought on the Mac App
   Store may be used for commercial purposes by the person who bought it, on
   the devices they use it on. That covers *running the compiled application*
   in commercial work: at a business, on paid projects, to earn revenue.
@@ -35,7 +35,7 @@ it for anyone else.
 The buyer's grant is personal to that purchase and does not travel with the app
 or with the code. It is **not** a redistribution right and **not** a licence to
 the source. In particular, it does not let you use, copy, modify, or ship the
-**source code** commercially, embed AppleTree in another product, resell it, or
+**source code** commercially, embed SmartTree in another product, resell it, or
 pass the app to anyone who did not buy it. None of that is granted to App Store
 buyers, and none of it is granted by these terms to anyone else: all of it
 remains NonCommercial under part 2.
@@ -48,9 +48,9 @@ application only; it grants no rights over the source.
 No purchase is needed for non-commercial use, which part 2 already grants.
 
 For anything wider than one buyer running their own purchased copy — bundling
-AppleTree into another product, commercial redistribution, or deployment across
-an organisation — write to <licensing@appletree.apps.erklab.com> for a separate
-licence. Nothing here grants rights in the name "AppleTree" or in any
+SmartTree into another product, commercial redistribution, or deployment across
+an organisation — write to <licensing@smarttree.apps.erklab.com> for a separate
+licence. Nothing here grants rights in the name "SmartTree" or in any
 third-party mark.
 
 === MIT license (applies to the squashed history through the third

@@ -111,7 +111,7 @@ struct ContentView: View {
             // app container would fire a permission prompt.
             // bz.autoScan defaults to off, so a first run shows the empty home
             // screen with the one-time launch-scan offer instead of scanning.
-            // An explicit `AppleTree /path` argument still scans: that is a
+            // An explicit `SmartTree /path` argument still scans: that is a
             // deliberate choice for this launch, made before the window opened.
             // `commandLineTarget` ignores the `-psn_0_…` argument that
             // LaunchServices adds on a double-click, which is what a plain
@@ -227,10 +227,10 @@ struct ContentView: View {
     /// a sandboxed build can never clear. One sentence of explanation ends it.
     private var folderChoiceOverlay: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Label(String(localized: "AppleTree could not use that folder"),
+            Label(String(localized: "SmartTree could not use that folder"),
                   systemImage: "folder.badge.questionmark")
                 .font(.title3.weight(.semibold))
-            Text(String(localized: "The folder you chose did not give AppleTree access. Choose a different folder — Macintosh HD always works."))
+            Text(String(localized: "The folder you chose did not give SmartTree access. Choose a different folder — Macintosh HD always works."))
                 .multilineTextAlignment(.leading)
                 .foregroundStyle(.secondary)
                 .font(.callout)
@@ -245,7 +245,7 @@ struct ContentView: View {
             // is the fix, so the text points at it rather than at a permission
             // the sandboxed build can never be given.
             if model.needsFolderBeforeScan {
-                Text(String(localized: "The last scan did not start: AppleTree could not get access to its scan folder. Choose it again to rescan."))
+                Text(String(localized: "The last scan did not start: SmartTree could not get access to its scan folder. Choose it again to rescan."))
                     .multilineTextAlignment(.leading)
                     .foregroundStyle(.secondary)
                     .font(.caption)
@@ -261,9 +261,9 @@ struct ContentView: View {
         // Top-anchored like the window's other states: dead-center made the
         // permission card float in the middle of an empty scan area.
         VStack(alignment: .leading, spacing: 14) {
-            Label("AppleTree needs Full Disk Access", systemImage: "lock.shield")
+            Label("SmartTree needs Full Disk Access", systemImage: "lock.shield")
                 .font(.title3.weight(.semibold))
-            Text("System Settings → Privacy & Security → Full Disk Access.\nRemove any old AppleTree rows, then add \(Bundle.main.bundleURL.path).\nmacOS only applies the permission to a freshly launched app.")
+            Text("System Settings → Privacy & Security → Full Disk Access.\nRemove any old SmartTree rows, then add \(Bundle.main.bundleURL.path).\nmacOS only applies the permission to a freshly launched app.")
                 .multilineTextAlignment(.leading)
                 .foregroundStyle(.secondary)
                 .font(.callout)
@@ -484,7 +484,7 @@ struct ContentView: View {
             // @AppStorage persists to bz.autoScan on its own, so flipping this
             // stores the value without retiring the offer: the question is
             // answered when a scan starts, not when the box is ticked.
-            Toggle("Scan when AppleTree opens", isOn: $autoScan)
+            Toggle("Scan when SmartTree opens", isOn: $autoScan)
                 .toggleStyle(.checkbox)
             Text("Scan the whole disk at launch. Turn off to pick a folder yourself first.")
                 .font(.caption)
@@ -664,7 +664,7 @@ struct ScanStatusBar: View {
                         .monospacedDigit()
                 }
             } else {
-                Text("AppleTree").foregroundStyle(.tertiary)
+                Text("SmartTree").foregroundStyle(.tertiary)
                 Spacer()
             }
         }
@@ -2232,7 +2232,7 @@ struct TitleCrumbs: View {
         let bucket: Double
         switch label.count {
         case ...12: bucket = 3       // "Projects", ".pnpm", "Users"
-        case ...24: bucket = 2       // "node_modules", "appletree"
+        case ...24: bucket = 2       // "node_modules", "smarttree"
         case ...40: bucket = 1       // "deepseek-harness"
         default:    bucket = 0       // an unshortened package path
         }

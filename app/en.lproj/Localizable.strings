@@ -1,9 +1,9 @@
-/* AppleTree — English (en): identity table. Needed so "en" is an
+/* SmartTree — English (en): identity table. Needed so "en" is an
    available localization; without it a request for English falls
    back to an arbitrary available table. */
 
-"AppleTree needs Full Disk Access" = "AppleTree needs Full Disk Access";
-"System Settings → Privacy & Security → Full Disk Access.\nRemove any old AppleTree rows, then add %@.\nmacOS only applies the permission to a freshly launched app." = "System Settings → Privacy & Security → Full Disk Access.\nRemove any old AppleTree rows, then add %@.\nmacOS only applies the permission to a freshly launched app.";
+"SmartTree needs Full Disk Access" = "SmartTree needs Full Disk Access";
+"System Settings → Privacy & Security → Full Disk Access.\nRemove any old SmartTree rows, then add %@.\nmacOS only applies the permission to a freshly launched app." = "System Settings → Privacy & Security → Full Disk Access.\nRemove any old SmartTree rows, then add %@.\nmacOS only applies the permission to a freshly launched app.";
 "Open System Settings" = "Open System Settings";
 "I granted it — Relaunch" = "I granted it — Relaunch";
 "Scan without it" = "Scan without it";
@@ -56,7 +56,7 @@
 "Some items couldn't be deleted" = "Some items couldn't be deleted";
 "Move it to the Trash in Finder, then empty the Trash — macOS will ask for the password." = "Move it to the Trash in Finder, then empty the Trash — macOS will ask for the password.";
 "This needs an administrator." = "This needs an administrator.";
-"Items owned by macOS or an administrator can't be deleted by AppleTree. Drag them to the Trash in Finder and empty the Trash — macOS will ask for the password." = "Items owned by macOS or an administrator can't be deleted by AppleTree. Drag them to the Trash in Finder and empty the Trash — macOS will ask for the password.";
+"Items owned by macOS or an administrator can't be deleted by SmartTree. Drag them to the Trash in Finder and empty the Trash — macOS will ask for the password." = "Items owned by macOS or an administrator can't be deleted by SmartTree. Drag them to the Trash in Finder and empty the Trash — macOS will ask for the password.";
 "Reclaimable" = "Reclaimable";
 "Nothing large to clean up" = "Nothing large to clean up";
 "%@ in %@ folders" = "%@ in %@ folders";
@@ -133,7 +133,7 @@
 "Custom model providers" = "Custom model providers";
 "Add provider" = "Add provider";
 "Connect a relay, a self-hosted server, or any other OpenAI- or Anthropic-compatible endpoint by its base URL, protocol, and models." = "Connect a relay, a self-hosted server, or any other OpenAI- or Anthropic-compatible endpoint by its base URL, protocol, and models.";
-"No custom providers. Add one to let AppleTree plan a cleanup for you." = "No custom providers. Add one to let AppleTree plan a cleanup for you.";
+"No custom providers. Add one to let SmartTree plan a cleanup for you." = "No custom providers. Add one to let SmartTree plan a cleanup for you.";
 "Edit" = "Edit";
 "Delete" = "Delete";
 "Custom model API" = "Custom model API";
@@ -153,11 +153,11 @@
 "Could not fetch models: %@" = "Could not fetch models: %@";
 "Language" = "Language";
 "Follow system" = "Follow system";
-"Relaunch AppleTree to apply the language." = "Relaunch AppleTree to apply the language.";
+"Relaunch SmartTree to apply the language." = "Relaunch SmartTree to apply the language.";
 "Relaunch" = "Relaunch";
 /* General planner summary */
 "Clean Up planner" = "Clean Up planner";
-"Scan when AppleTree opens" = "Scan when AppleTree opens";
+"Scan when SmartTree opens" = "Scan when SmartTree opens";
 "Scan the whole disk at launch. Turn off to pick a folder yourself first." = "Scan the whole disk at launch. Turn off to pick a folder yourself first.";
 /* Setup offer: custom providers */
 "Or use any model — a self-hosted server, a relay, a gateway." = "Or use any model — a self-hosted server, a relay, a gateway.";
@@ -175,10 +175,10 @@
 "Outside your home folder" = "Outside your home folder";
 "Inside a signed app bundle" = "Inside a signed app bundle";
 "Too broad: other apps keep live data here" = "Too broad: other apps keep live data here";
-"In ~/%@, which AppleTree never cleans" = "In ~/%@, which AppleTree never cleans";
+"In ~/%@, which SmartTree never cleans" = "In ~/%@, which SmartTree never cleans";
 "A git repository" = "A git repository";
 "Managed by macOS" = "Managed by macOS";
-"AppleTree only runs tools' own cleanup commands" = "AppleTree only runs tools' own cleanup commands";
+"SmartTree only runs tools' own cleanup commands" = "SmartTree only runs tools' own cleanup commands";
 "Command not allowed" = "Command not allowed";
 "Already clean" = "Already clean";
 "Nothing to remove" = "Nothing to remove";
@@ -195,11 +195,11 @@
 "Model Providers" = "Model Providers";
 
 /* About panel and Help menu. */
-"About AppleTree" = "About AppleTree";
+"About SmartTree" = "About SmartTree";
 "Version %@" = "Version %@";
-"AppleTree on GitHub" = "AppleTree on GitHub";
+"SmartTree on GitHub" = "SmartTree on GitHub";
 "Bug Report" = "Bug Report";
-"Report a bug in AppleTree" = "Report a bug in AppleTree";
+"Report a bug in SmartTree" = "Report a bug in SmartTree";
 "Report a security vulnerability" = "Report a security vulnerability";
 "Please review our security policy for more details" = "Please review our security policy for more details";
 "Feature request" = "Feature request";
@@ -208,24 +208,24 @@
 "Ask a question in the issue tracker" = "Ask a question in the issue tracker";
 "Browse the source, releases and issues" = "Browse the source, releases and issues";
 "View license" = "View license";
-"AppleTree shows you what is filling your disk, and cleans up the folders tools rebuild on demand. Nothing is removed without your say-so." = "AppleTree shows you what is filling your disk, and cleans up the folders tools rebuild on demand. Nothing is removed without your say-so.";
+"SmartTree shows you what is filling your disk, and cleans up the folders tools rebuild on demand. Nothing is removed without your say-so." = "SmartTree shows you what is filling your disk, and cleans up the folders tools rebuild on demand. Nothing is removed without your say-so.";
 "Free for non-commercial use. Buy it on the App Store to use the app commercially." = "Free for non-commercial use. Buy it on the App Store to use the app commercially.";
 "© 2026 Emircan ERKUL" = "© 2026 Emircan ERKUL";
 
 /* README viewer and erklab credit. */
 "Read the README" = "Read the README";
-"AppleTree README" = "AppleTree README";
+"SmartTree README" = "SmartTree README";
 "Read the documentation bundled with the app" = "Read the documentation bundled with the app";
 "brought to you by" = "brought to you by";
 
 /* App Store link and the README viewer header. */
 "Get it on the Mac App Store" = "Get it on the Mac App Store";
-"Get AppleTree on the Mac App Store" = "Get AppleTree on the Mac App Store";
+"Get SmartTree on the Mac App Store" = "Get SmartTree on the Mac App Store";
 "Buying it is what grants commercial use" = "Buying it is what grants commercial use";
 "A fast, native disk-space treemap for macOS." = "A fast, native disk-space treemap for macOS.";
 
 /* Bundled LICENSE viewer. */
-"AppleTree License" = "AppleTree License";
+"SmartTree License" = "SmartTree License";
 "Read the license bundled with the app" = "Read the license bundled with the app";
 "This document was not bundled with this build." = "This document was not bundled with this build.";
 
@@ -233,12 +233,12 @@
    Guideline 5.1.1(i) wants the policy reachable in-app; 5.1.2(i) wants
    explicit permission, naming the destination, before any scan summary is
    sent to a third party. */
-"AppleTree Privacy Policy" = "AppleTree Privacy Policy";
+"SmartTree Privacy Policy" = "SmartTree Privacy Policy";
 "Read the privacy policy bundled with the app" = "Read the privacy policy bundled with the app";
 "Privacy Policy" = "Privacy Policy";
 "Send a summary of this scan to %@?" = "Send a summary of this scan to %@?";
 "Send and clean up" = "Send and clean up";
-"AppleTree will send %@ the paths, names, sizes and dates of the largest items in this scan — folder and file names, but never the contents of your files. They leave your Mac and are handled under that provider's own terms. Sending it is what lets a planner suggest what to remove." = "AppleTree will send %@ the paths, names, sizes and dates of the largest items in this scan — folder and file names, but never the contents of your files. They leave your Mac and are handled under that provider's own terms. Sending it is what lets a planner suggest what to remove.";
+"SmartTree will send %@ the paths, names, sizes and dates of the largest items in this scan — folder and file names, but never the contents of your files. They leave your Mac and are handled under that provider's own terms. Sending it is what lets a planner suggest what to remove." = "SmartTree will send %@ the paths, names, sizes and dates of the largest items in this scan — folder and file names, but never the contents of your files. They leave your Mac and are handled under that provider's own terms. Sending it is what lets a planner suggest what to remove.";
 
 "Add a model provider and it plans what can go from this scan." = "Add a model provider and it plans what can go from this scan.";
 
@@ -254,12 +254,12 @@
    usable security-scoped bookmark (Mac App Store sandbox build only). Mirrors
    the Full Disk Access card's layout; the body names the one folder that
    always works so the user is never stuck. */
-"AppleTree could not use that folder" = "AppleTree could not use that folder";
-"The folder you chose did not give AppleTree access. Choose a different folder — Macintosh HD always works." = "The folder you chose did not give AppleTree access. Choose a different folder — Macintosh HD always works.";
+"SmartTree could not use that folder" = "SmartTree could not use that folder";
+"The folder you chose did not give SmartTree access. Choose a different folder — Macintosh HD always works." = "The folder you chose did not give SmartTree access. Choose a different folder — Macintosh HD always works.";
 
 /* Scan-coverage honesty. Two strings, both about a scan that did not reach what
    the volume holds — the "root-only" label is reserved for the genuinely
    unreadable system data, so a short walk says so and offers a rescan. */
 "Scan may be incomplete — some folders were not readable. Rescan" = "Scan may be incomplete — some folders were not readable. Rescan";
-"The last scan did not start: AppleTree could not get access to its scan folder. Choose it again to rescan." = "The last scan did not start: AppleTree could not get access to its scan folder. Choose it again to rescan.";
+"The last scan did not start: SmartTree could not get access to its scan folder. Choose it again to rescan." = "The last scan did not start: SmartTree could not get access to its scan folder. Choose it again to rescan.";
 "This scan reached less than this volume holds. Rescanning usually fixes it; if it recurs, choose the folder again from the Scan menu." = "This scan reached less than this volume holds. Rescanning usually fixes it; if it recurs, choose the folder again from the Scan menu.";

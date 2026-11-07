@@ -6,7 +6,7 @@
 //       $(filter-out app/Main.swift,$(wildcard app/*.swift)) \
 //       -import-objc-header app/bz.h -parse-as-library \
 //       -swift-version 6 -default-isolation MainActor \
-//       -target arm64-apple-macos14.0 -L target/release -lappletree \
+//       -target arm64-apple-macos14.0 -L target/release -lsmarttree \
 //       -framework DiskArbitration -framework IOKit -framework Security \
 //       -o .build/deletion-tests
 //

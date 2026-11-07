@@ -1,6 +1,6 @@
 [package]
-name = "appletree"
-version = "1.1.3"
+name = "smarttree"
+version = "2.0.0"
 edition = "2021"
 # The SOURCE licence, unchanged: inherited BlitzTree history is MIT, everything
 # on top of it is CC BY-NC-SA 4.0. Buying the app on the Mac App Store grants
@@ -12,8 +12,8 @@ license = "MIT AND CC-BY-NC-SA-4.0"
 crate-type = ["staticlib", "rlib"]
 
 [[bin]]
-name = "appletree"
-path = "src/bin/appletree/main.rs"
+name = "smarttree"
+path = "src/bin/smarttree/main.rs"
 required-features = ["cli"]
 
 [features]

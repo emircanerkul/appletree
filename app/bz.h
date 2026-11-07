@@ -1,4 +1,4 @@
-// C bridge to the appletree Rust scan engine.
+// C bridge to the smarttree Rust scan engine.
 #ifndef BZ_H
 #define BZ_H
 
@@ -33,7 +33,7 @@ const char *bz_cleanup_description(BzScan *h, uint64_t index);
 // CACHE_RULES row. Same indexing contract and lifetime as the description.
 const char *bz_cleanup_tool(BzScan *h, uint64_t index);
 
-// The only cleanup commands AppleTree may run (S6), single source of truth.
+// The only cleanup commands SmartTree may run (S6), single source of truth.
 // Static data: valid for the program's lifetime, never freed. Read
 // allowlist[0..allowlist_count]; entries are NUL-terminated `char *`.
 const char *const *bz_cleanup_allowlist(void);

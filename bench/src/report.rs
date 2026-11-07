@@ -36,7 +36,7 @@ pub fn result_json(comparison: &Comparison) -> String {
             "  \"tools\": [{}],\n",
             "  \"runs\": {},\n",
             "  \"totals_agree\": {},\n",
-            "  \"appletree\": {},\n",
+            "  \"smarttree\": {},\n",
             "  \"disktree\": {},\n",
             "  \"speedup\": {},\n",
             "  \"rss_ratio\": {},\n",
@@ -48,7 +48,7 @@ pub fn result_json(comparison: &Comparison) -> String {
         tools.join(", "),
         comparison.runs,
         comparison.totals_agree,
-        summary_json(&comparison.appletree),
+        summary_json(&comparison.smarttree),
         disktree,
         comparison
             .speedup
@@ -63,7 +63,7 @@ pub fn result_json(comparison: &Comparison) -> String {
 }
 
 pub fn report_markdown(comparison: &Comparison) -> String {
-    let a = &comparison.appletree;
+    let a = &comparison.smarttree;
     let mut out = String::new();
     out.push_str("# Scan benchmark\n\n");
     out.push_str(&format!("**Target** `{}`\n\n", comparison.target));
@@ -79,7 +79,7 @@ pub fn report_markdown(comparison: &Comparison) -> String {
     out.push_str("## Results\n\n");
     match &comparison.disktree {
         Some(d) => {
-            out.push_str("| | AppleTree | disktree | ratio |\n|---|---:|---:|---:|\n");
+            out.push_str("| | SmartTree | disktree | ratio |\n|---|---:|---:|---:|\n");
             out.push_str(&format!(
                 "| median scan | **{:.3} s** | {:.3} s | {} |\n",
                 a.median_seconds,
@@ -118,7 +118,7 @@ pub fn report_markdown(comparison: &Comparison) -> String {
             out.push_str(&format!("| read errors | {} | {} | |\n", a.errors, d.errors));
         }
         None => {
-            out.push_str("| | AppleTree |\n|---|---:|\n");
+            out.push_str("| | SmartTree |\n|---|---:|\n");
             out.push_str(&format!("| median scan | **{:.3} s** |\n", a.median_seconds));
             out.push_str(&format!(
                 "| range | {:.3}–{:.3} s |\n",
@@ -137,11 +137,11 @@ pub fn report_markdown(comparison: &Comparison) -> String {
             "\nTwo count differences are expected and are not accuracy problems; both \
              engines report identical allocated bytes, which is the number that matters \
              for disk space:\n\n\
-             1. **File count.** AppleTree counts every name of a hardlinked file, and \
-             counts symlinks as files; disktree counts a hardlinked file once. AppleTree \
+             1. **File count.** SmartTree counts every name of a hardlinked file, and \
+             counts symlinks as files; disktree counts a hardlinked file once. SmartTree \
              therefore reports more files for the same bytes.\n\
              2. **Directory count.** disktree counts the scan root itself as a directory; \
-             AppleTree counts only the directories inside it, so disktree is one higher.\n",
+             SmartTree counts only the directories inside it, so disktree is one higher.\n",
         );
     }
 

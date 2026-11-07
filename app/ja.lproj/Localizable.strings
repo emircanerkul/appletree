@@ -1,8 +1,8 @@
-/* AppleTree — Japanese (ja) */
+/* SmartTree — Japanese (ja) */
 
 /* Main window */
-"AppleTree needs Full Disk Access" = "AppleTreeにはフルディスクアクセスが必要です";
-"System Settings → Privacy & Security → Full Disk Access.\nRemove any old AppleTree rows, then add %@.\nmacOS only applies the permission to a freshly launched app." = "システム設定 → プライバシーとセキュリティ → フルディスクアクセス。\n古いAppleTreeの項目を削除してから、%@を追加してください。\nmacOSはこの権限を新しく起動したアプリにのみ適用します。";
+"SmartTree needs Full Disk Access" = "SmartTreeにはフルディスクアクセスが必要です";
+"System Settings → Privacy & Security → Full Disk Access.\nRemove any old SmartTree rows, then add %@.\nmacOS only applies the permission to a freshly launched app." = "システム設定 → プライバシーとセキュリティ → フルディスクアクセス。\n古いSmartTreeの項目を削除してから、%@を追加してください。\nmacOSはこの権限を新しく起動したアプリにのみ適用します。";
 "Open System Settings" = "システム設定を開く";
 "I granted it — Relaunch" = "許可しました — 再起動";
 "Scan without it" = "許可せずにスキャン";
@@ -57,7 +57,7 @@
 "Some items couldn't be deleted" = "一部の項目を削除できませんでした";
 "Move it to the Trash in Finder, then empty the Trash — macOS will ask for the password." = "macOS または管理者が所有しています。ゴミ箱に移動してから、ゴミ箱を空にしてください。";
 "This needs an administrator." = "許可されていません。管理者が必要です。";
-"Items owned by macOS or an administrator can't be deleted by AppleTree. Drag them to the Trash in Finder and empty the Trash — macOS will ask for the password." = "macOS または管理者が所有する項目は AppleTree では削除できません。Finder でゴミ箱に移動し、ゴミ箱を空にしてください。macOS がパスワードを求めます。";
+"Items owned by macOS or an administrator can't be deleted by SmartTree. Drag them to the Trash in Finder and empty the Trash — macOS will ask for the password." = "macOS または管理者が所有する項目は SmartTree では削除できません。Finder でゴミ箱に移動し、ゴミ箱を空にしてください。macOS がパスワードを求めます。";
 "Reclaimable" = "回収可能";
 "Nothing large to clean up" = "クリーンアップする大きなものはありません";
 "%@ in %@ folders" = "%@（%@個のフォルダ）";
@@ -135,7 +135,7 @@
 "Custom model providers" = "カスタムモデルプロバイダ";
 "Add provider" = "プロバイダを追加";
 "Connect a relay, a self-hosted server, or any other OpenAI- or Anthropic-compatible endpoint by its base URL, protocol, and models." = "中継サーバー、自己ホストのサーバー、その他のOpenAIまたはAnthropic互換エンドポイントを、ベースURL・プロトコル・モデルで接続します。";
-"No custom providers. Add one to let AppleTree plan a cleanup for you." = "カスタムプロバイダはありません。追加すると、AppleTree がクリーンアップを計画します。";
+"No custom providers. Add one to let SmartTree plan a cleanup for you." = "カスタムプロバイダはありません。追加すると、SmartTree がクリーンアップを計画します。";
 "Edit" = "編集";
 "Delete" = "削除";
 "Custom model API" = "カスタムモデルAPI";
@@ -155,12 +155,12 @@
 "Could not fetch models: %@" = "モデルを取得できませんでした：%@";
 "Language" = "言語";
 "Follow system" = "システムに従う";
-"Relaunch AppleTree to apply the language." = "言語を適用するにはAppleTreeを再起動してください。";
+"Relaunch SmartTree to apply the language." = "言語を適用するにはSmartTreeを再起動してください。";
 "Relaunch" = "再起動";
 
 /* General planner summary */
 "Clean Up planner" = "クリーンアップのプランナー";
-"Scan when AppleTree opens" = "起動時にスキャン";
+"Scan when SmartTree opens" = "起動時にスキャン";
 "Scan the whole disk at launch. Turn off to pick a folder yourself first." = "起動時にディスク全体をスキャンします。オフにすると、まず自分でフォルダを選択できます。";
 
 /* Setup offer: custom providers */
@@ -179,10 +179,10 @@
 "Outside your home folder" = "ホームフォルダの外です";
 "Inside a signed app bundle" = "署名済みアプリバンドル内";
 "Too broad: other apps keep live data here" = "範囲が広すぎます：他のアプリが稼働中のデータをここに置いています";
-"In ~/%@, which AppleTree never cleans" = "AppleTree が決して掃除しない ~/%@ の中です";
+"In ~/%@, which SmartTree never cleans" = "SmartTree が決して掃除しない ~/%@ の中です";
 "A git repository" = "Git リポジトリです";
 "Managed by macOS" = "macOS が管理しています";
-"AppleTree only runs tools' own cleanup commands" = "AppleTree が実行するのは各ツール自身のクリーンアップコマンドだけです";
+"SmartTree only runs tools' own cleanup commands" = "SmartTree が実行するのは各ツール自身のクリーンアップコマンドだけです";
 "Command not allowed" = "許可されていないコマンドです";
 "Already clean" = "すでにきれいです";
 "Nothing to remove" = "削除するものがありません";
@@ -199,11 +199,11 @@
 "Model Providers" = "モデルプロバイダ";
 
 /* About panel and Help menu. */
-"About AppleTree" = "AppleTree について";
+"About SmartTree" = "SmartTree について";
 "Version %@" = "バージョン %@";
-"AppleTree on GitHub" = "GitHub の AppleTree";
+"SmartTree on GitHub" = "GitHub の SmartTree";
 "Bug Report" = "バグ報告";
-"Report a bug in AppleTree" = "AppleTree のバグを報告";
+"Report a bug in SmartTree" = "SmartTree のバグを報告";
 "Report a security vulnerability" = "セキュリティ脆弱性を報告";
 "Please review our security policy for more details" = "詳しくはセキュリティポリシーをご確認ください";
 "Feature request" = "機能リクエスト";
@@ -212,24 +212,24 @@
 "Ask a question in the issue tracker" = "Issue トラッカーで質問する";
 "Browse the source, releases and issues" = "ソース、リリース、Issue を見る";
 "View license" = "ライセンスを表示";
-"AppleTree shows you what is filling your disk, and cleans up the folders tools rebuild on demand. Nothing is removed without your say-so." = "AppleTree はディスクを圧迫しているものを示し、ツールが再生成するフォルダーを整理します。あなたの同意なく削除されることはありません。";
+"SmartTree shows you what is filling your disk, and cleans up the folders tools rebuild on demand. Nothing is removed without your say-so." = "SmartTree はディスクを圧迫しているものを示し、ツールが再生成するフォルダーを整理します。あなたの同意なく削除されることはありません。";
 "Free for non-commercial use. Buy it on the App Store to use the app commercially." = "非商用利用は無料。商用で利用するには App Store で購入してください。";
 "© 2026 Emircan ERKUL" = "© 2026 Emircan ERKUL";
 
 /* README viewer and erklab credit. */
 "Read the README" = "README を読む";
-"AppleTree README" = "AppleTree README";
+"SmartTree README" = "SmartTree README";
 "Read the documentation bundled with the app" = "アプリに同梱されたドキュメントを読む";
 "brought to you by" = "提供";
 
 /* App Store link and the README viewer header. */
 "Get it on the Mac App Store" = "Mac App Store で入手";
-"Get AppleTree on the Mac App Store" = "AppleTree を Mac App Store で入手";
+"Get SmartTree on the Mac App Store" = "SmartTree を Mac App Store で入手";
 "Buying it is what grants commercial use" = "購入することが商用利用の許諾となります";
 "A fast, native disk-space treemap for macOS." = "macOS 向けの高速でネイティブなディスク容量ツリーマップ。";
 
 /* Bundled LICENSE viewer. */
-"AppleTree License" = "AppleTree ライセンス";
+"SmartTree License" = "SmartTree ライセンス";
 "Read the license bundled with the app" = "アプリに同梱されたライセンスを読む";
 "This document was not bundled with this build." = "このドキュメントはこのビルドに含まれていません。";
 
@@ -237,12 +237,12 @@
    Guideline 5.1.1(i) wants the policy reachable in-app; 5.1.2(i) wants
    explicit permission, naming the destination, before any scan summary is
    sent to a third party. */
-"AppleTree Privacy Policy" = "AppleTree プライバシーポリシー";
+"SmartTree Privacy Policy" = "SmartTree プライバシーポリシー";
 "Read the privacy policy bundled with the app" = "アプリに同梱されたプライバシーポリシーを読む";
 "Privacy Policy" = "プライバシーポリシー";
 "Send a summary of this scan to %@?" = "このスキャンの要約を %@ に送信しますか？";
 "Send and clean up" = "送信してクリーンアップ";
-"AppleTree will send %@ the paths, names, sizes and dates of the largest items in this scan — folder and file names, but never the contents of your files. They leave your Mac and are handled under that provider's own terms. Sending it is what lets a planner suggest what to remove." = "AppleTree はこのスキャンで最大の項目のパス、名前、サイズ、日付を %@ に送信します — フォルダ名とファイル名であり、ファイルの内容は決して送信しません。これらのデータは Mac を離れ、そのプロバイダー自身の規約に従って扱われます。送信することで、プランナーが削除できるものを提案できます。";
+"SmartTree will send %@ the paths, names, sizes and dates of the largest items in this scan — folder and file names, but never the contents of your files. They leave your Mac and are handled under that provider's own terms. Sending it is what lets a planner suggest what to remove." = "SmartTree はこのスキャンで最大の項目のパス、名前、サイズ、日付を %@ に送信します — フォルダ名とファイル名であり、ファイルの内容は決して送信しません。これらのデータは Mac を離れ、そのプロバイダー自身の規約に従って扱われます。送信することで、プランナーが削除できるものを提案できます。";
 
 "Add a model provider and it plans what can go from this scan." = "モデルプロバイダを追加すると、このスキャンから何を削除できるかを計画します。";
 
@@ -258,11 +258,11 @@
    usable security-scoped bookmark (Mac App Store sandbox build only). Mirrors
    the Full Disk Access card's layout; the body names the one folder that
    always works so the user is never stuck. */
-"AppleTree could not use that folder" = "AppleTreeはそのフォルダを使用できませんでした";
-"The folder you chose did not give AppleTree access. Choose a different folder — Macintosh HD always works." = "選択したフォルダではAppleTreeにアクセス権が与えられませんでした。別のフォルダを選択してください。「Macintosh HD」は常に使用できます。";
+"SmartTree could not use that folder" = "SmartTreeはそのフォルダを使用できませんでした";
+"The folder you chose did not give SmartTree access. Choose a different folder — Macintosh HD always works." = "選択したフォルダではSmartTreeにアクセス権が与えられませんでした。別のフォルダを選択してください。「Macintosh HD」は常に使用できます。";
 
 /* Scan-coverage honesty: a walk that did not reach what the volume holds.
    Distinct from "root-only", which is genuinely unreadable system data. */
 "Scan may be incomplete — some folders were not readable. Rescan" = "スキャンが不完全な可能性があります — 一部のフォルダを読み取れませんでした。再スキャン";
-"The last scan did not start: AppleTree could not get access to its scan folder. Choose it again to rescan." = "前回のスキャンは開始されませんでした。AppleTree がスキャン対象フォルダにアクセスできませんでした。もう一度選択して再スキャンしてください。";
+"The last scan did not start: SmartTree could not get access to its scan folder. Choose it again to rescan." = "前回のスキャンは開始されませんでした。SmartTree がスキャン対象フォルダにアクセスできませんでした。もう一度選択して再スキャンしてください。";
 "This scan reached less than this volume holds. Rescanning usually fixes it; if it recurs, choose the folder again from the Scan menu." = "このスキャンはこのボリュームの内容量に達しませんでした。再スキャンで通常は解決します。繰り返す場合は、スキャンメニューからフォルダを選び直してください。";

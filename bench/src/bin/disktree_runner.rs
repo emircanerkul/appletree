@@ -1,4 +1,4 @@
-//! disktree runner: the same measurement contract as the AppleTree runner, so
+//! disktree runner: the same measurement contract as the SmartTree runner, so
 //! the comparison is engine-versus-engine with identical accounting.
 //!
 //! disktree-core is pinned to tag `v0.10.1` because it is not published on
@@ -47,7 +47,7 @@ fn main() {
     let peak = peak_rss_bytes();
 
     // disktree reports errors per node as `read_error`; count them the same way
-    // the parent counts AppleTree's, so the field means one thing.
+    // the parent counts SmartTree's, so the field means one thing.
     let errors = count_read_errors(&node);
     println!(
         "{{\"tool\":\"disktree\",\"seconds\":{seconds:.6},\"files\":{},\"dirs\":{},\"bytes\":{},\"errors\":{errors},\"peak_rss_bytes\":{peak}}}",

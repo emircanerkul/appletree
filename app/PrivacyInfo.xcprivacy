@@ -3,10 +3,10 @@
 <plist version="1.0">
 <dict>
 	<!--
-	  AppleTree privacy manifest.
+	  SmartTree privacy manifest.
 
 	  The declared API categories below are the ones the SHIPPED BINARY actually
-	  links, confirmed by `nm -u` over build/AppleTree.app/Contents/MacOS/AppleTree:
+	  links, confirmed by `nm -u` over build/SmartTree.app/Contents/MacOS/SmartTree:
 	  getattrlist, getattrlistbulk, stat, fstat, fstatat, lstat (file timestamps);
 	  statfs (disk space); NSUserDefaults. Two categories are deliberately absent
 	  because no symbol for them exists: SystemBootTime (no mach_absolute_time or
@@ -19,7 +19,7 @@
 	<array/>
 
 	<!--
-	  Nothing is collected by the developer. AppleTree has no accounts,
+	  Nothing is collected by the developer. SmartTree has no accounts,
 	  analytics, crash reporting or servers of its own; everything it stores is
 	  local to the user's Mac. See the privacy policy for the detail.
 	-->
@@ -31,7 +31,7 @@
 		<!--
 		  3B52.1, not DDA9.1. Both describe file-timestamp access, but DDA9.1
 		  ("display timestamps to the person") forbids sending anything derived
-		  off-device, and AppleTree does: an AI cleanup sends Xcode simulator
+		  off-device, and SmartTree does: an AI cleanup sends Xcode simulator
 		  last-used dates in the scan summary, and those are derived from file
 		  timestamps. 3B52.1 covers metadata of files the
 		  user specifically granted access to — the folder they chose to scan, or
@@ -63,8 +63,8 @@
 		</dict>
 
 		<!--
-		  CA92.1: preferences are read and written only in AppleTree's own
-		  domain (com.erklab.apps.appletree). Nothing is read from another app
+		  CA92.1: preferences are read and written only in SmartTree's own
+		  domain (com.erklab.apps.smarttree). Nothing is read from another app
 		  and nothing is written where another app can read it.
 		-->
 		<dict>

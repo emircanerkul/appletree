@@ -3,7 +3,7 @@
 //! bench/ measures an engine by calling it. The GUI apps cannot be called that
 //! way: GrandPerspective and QDirStat are closed-source apps that report their
 //! own scan duration (stderr and a log file respectively), disktree 0.10.1
-//! reports nothing at all, and AppleTree's GUI duration comes from a
+//! reports nothing at all, and SmartTree's GUI duration comes from a
 //! preference-gated hook in app/Model.swift.
 //!
 //! Every number therefore carries its `TimingSource`. A reader must be able to
@@ -93,7 +93,7 @@ impl AppSpec {
 
 pub fn discover() -> Vec<AppSpec> {
     [
-        ("AppleTree", "/Applications/AppleTree.app"),
+        ("SmartTree", "/Applications/SmartTree.app"),
         ("disktree", "/Applications/disktree.app"),
         ("GrandPerspective", "/Applications/GrandPerspective.app"),
         ("QDirStat", "/Applications/QDirStat.app"),
@@ -104,8 +104,8 @@ pub fn discover() -> Vec<AppSpec> {
     .collect()
 }
 
-/// Whether this process can see the paths AppleTree's FDA gate probes. Reported
-/// with the AppleTree row so a reader knows which mode produced it.
+/// Whether this process can see the paths SmartTree's FDA gate probes. Reported
+/// with the SmartTree row so a reader knows which mode produced it.
 fn fda_visible() -> bool {
     let home = std::env::var("HOME").unwrap_or_default();
     ["Library/Messages", "Library/Mail", "Library/Safari"]
@@ -224,7 +224,7 @@ fn wait_until_idle(pid: i32, timeout: Duration) -> Option<(f64, bool)> {
 /// SIGTERM `name`, then wait for it to actually exit.
 ///
 /// `pkill` returns the moment the signal is sent, not when the process is
-/// gone. The preference-domain restore in `measure_appletree` depends on the
+/// gone. The preference-domain restore in `measure_smarttree` depends on the
 /// app being dead: a still-running app can write preferences of its own
 /// (window frames at quit, say) after the restore deleted them, silently
 /// re-polluting the user's domain. The wait is bounded so an app that ignores
@@ -269,8 +269,8 @@ fn defaults_write_string(domain: &str, key: &str, value: &str) -> Result<(), Str
     status.success().then_some(()).ok_or_else(|| format!("defaults write {key} failed"))
 }
 
-/// AppleTree's preference domain.
-const APPLETREE_DOMAIN: &str = "com.erklab.apps.appletree";
+/// SmartTree's preference domain.
+const SMARTTREE_DOMAIN: &str = "com.erklab.apps.smarttree";
 
 fn export_domain(domain: &str, plist: &Path) -> Result<(), String> {
     let status = Command::new("defaults")
@@ -448,7 +448,7 @@ fn extract_seconds(fragment: &str) -> Option<f64> {
 
 pub fn measure(app: &AppSpec, target: &Path, timeout: Duration) -> AppResult {
     let outcome = match app.name {
-        "AppleTree" => measure_appletree(app, target, timeout),
+        "SmartTree" => measure_smarttree(app, target, timeout),
         "disktree" => measure_disktree(app, target, timeout),
         "GrandPerspective" => measure_grandperspective(app, target, timeout),
         "QDirStat" => measure_qdirstat(app, target, timeout),
@@ -457,38 +457,38 @@ pub fn measure(app: &AppSpec, target: &Path, timeout: Duration) -> AppResult {
     outcome.unwrap_or_else(|e| AppResult::missing(app.name, TimingSource::AppReported, e))
 }
 
-/// AppleTree writes its own finish time through the preference hook, so this is
+/// SmartTree writes its own finish time through the preference hook, so this is
 /// the engine's real duration, not a launch-to-quiet guess.
-fn measure_appletree(app: &AppSpec, target: &Path, timeout: Duration) -> Result<AppResult, String> {
-    let result_path = std::env::temp_dir().join("btbench-appletree-gui.json");
+fn measure_smarttree(app: &AppSpec, target: &Path, timeout: Duration) -> Result<AppResult, String> {
+    let result_path = std::env::temp_dir().join("btbench-smarttree-gui.json");
     let _ = std::fs::remove_file(&result_path);
 
-    pkill("AppleTree");
+    pkill("SmartTree");
     // Every preference written below is the user's, not ours: capture the
     // domain now and put it back when this function returns, on the early
     // error paths included. Without this the run leaves `bz.benchExit` set and
-    // AppleTree quits itself after every later scan.
-    let saved = DomainSnapshot::take(APPLETREE_DOMAIN)?;
+    // SmartTree quits itself after every later scan.
+    let saved = DomainSnapshot::take(SMARTTREE_DOMAIN)?;
 
-    defaults_write_bool(APPLETREE_DOMAIN, "bz.benchTiming", true)?;
-    defaults_write_bool(APPLETREE_DOMAIN, "bz.benchExit", true)?;
-    defaults_write_string(APPLETREE_DOMAIN, "bz.benchResult", &result_path.to_string_lossy())?;
+    defaults_write_bool(SMARTTREE_DOMAIN, "bz.benchTiming", true)?;
+    defaults_write_bool(SMARTTREE_DOMAIN, "bz.benchExit", true)?;
+    defaults_write_string(SMARTTREE_DOMAIN, "bz.benchResult", &result_path.to_string_lossy())?;
     // The app only scans at launch when autoScan is on, and scans scanRoot.
-    defaults_write_bool(APPLETREE_DOMAIN, "bz.autoScan", true)?;
-    defaults_write_string(APPLETREE_DOMAIN, "bz.scanRoot", &target.to_string_lossy())?;
+    defaults_write_bool(SMARTTREE_DOMAIN, "bz.autoScan", true)?;
+    defaults_write_string(SMARTTREE_DOMAIN, "bz.scanRoot", &target.to_string_lossy())?;
 
     // A previous run's trail is restored at launch and wins over scanRoot, so
     // point both at the target.
     let trail = format!("(\"{}\")", target.display());
     let _ = Command::new("defaults")
-        .args(["write", APPLETREE_DOMAIN, "bz.trail", &trail])
+        .args(["write", SMARTTREE_DOMAIN, "bz.trail", &trail])
         .status();
     launch_bundle(app)?;
     // `open` returns before the app is ready; give it a moment to start.
     std::thread::sleep(Duration::from_millis(700));
 
     if let Some(seconds) = poll_log_for(&result_path, "BZ_BENCH", false, timeout) {
-        pkill("AppleTree");
+        pkill("SmartTree");
         // Restore before reading the result back: the run is over, and a
         // leftover `bz.benchExit` must not survive even a later panic here.
         drop(saved);
@@ -508,8 +508,8 @@ fn measure_appletree(app: &AppSpec, target: &Path, timeout: Duration) -> Result<
             note: format!("app-written finish time ({fda}); peak RSS from the app"),
         });
     }
-    pkill("AppleTree");
-    Err("no result: grant Full Disk Access to /Applications/AppleTree.app and relaunch".into())
+    pkill("SmartTree");
+    Err("no result: grant Full Disk Access to /Applications/SmartTree.app and relaunch".into())
 }
 
 /// GrandPerspective NSLogs `Done scanning: N folders scanned (0 skipped) in Xs`.
@@ -644,11 +644,11 @@ mod tests {
     }
 
     /// The bug this guards: the harness writes `bz.benchExit`, and a run that
-    /// does not restore it leaves AppleTree quitting itself after every scan.
+    /// does not restore it leaves SmartTree quitting itself after every scan.
     /// Uses a scratch domain so the test cannot touch the real preferences.
     #[test]
     fn domain_snapshot_restores_every_key_including_added_ones() {
-        let domain = "com.erklab.apps.appletree.btbench-test";
+        let domain = "com.erklab.apps.smarttree.btbench-test";
 
         let preexisting = Command::new("defaults")
             .args(["write", domain, "bz.listWidth", "-float", "390"])

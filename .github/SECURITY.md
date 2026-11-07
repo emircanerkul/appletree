@@ -6,8 +6,8 @@ Please do **not** open a public issue for a security problem. Report it
 privately, either way:
 
 - **GitHub private advisory** (preferred):
-  <https://github.com/emircanerkul/appletree/security/advisories/new>
-- **Email**: <security@appletree.apps.erklab.com>
+  <https://github.com/emircanerkul/smarttree/security/advisories/new>
+- **Email**: <security@smarttree.apps.erklab.com>
 
 A GitHub advisory is visible only to the maintainer until a fix is published.
 If you would rather not use GitHub, the email reaches the same person.
@@ -15,7 +15,7 @@ If you would rather not use GitHub, the email reaches the same person.
 Please include what you can of:
 
 - what the problem is and what an attacker could do with it;
-- the AppleTree version (AppleTree → About AppleTree) and your macOS version;
+- the SmartTree version (SmartTree → About SmartTree) and your macOS version;
 - the smallest set of steps that shows it;
 - whether it needs a specific configuration, such as a custom model provider.
 
@@ -34,15 +34,15 @@ Only the latest release is supported. Fixes are not backported.
 
 ## Scope
 
-AppleTree is a local disk-space tool. It has no accounts, no analytics and no
+SmartTree is a local disk-space tool. It has no accounts, no analytics and no
 servers of its own, so the interesting surface is small and specific:
 
 **In scope**
 
-- A path AppleTree removes that its own guards say it must never touch
+- A path SmartTree removes that its own guards say it must never touch
   (`CleanupGuard`: protected folders, git repositories, macOS-managed data,
   symlinks that resolve into a protected folder).
-- A command AppleTree executes that is not one of the 27 allowlisted
+- A command SmartTree executes that is not one of the 27 allowlisted
   tool-cleanup forms, or a way to smuggle shell syntax into one.
 - The two-step delete acting on anything other than what this cleanup moved
   to the Trash.
@@ -54,7 +54,7 @@ servers of its own, so the interesting surface is small and specific:
 **Out of scope**
 
 - Anything requiring an attacker who already has your user account or your
-  Mac, since AppleTree runs entirely as you with your permissions.
+  Mac, since SmartTree runs entirely as you with your permissions.
 - What a model provider you configured yourself does with the scan summary it
   receives. That is your relationship with that provider; see
   [docs/appstore/privacy-policy.md](docs/appstore/privacy-policy.md).
@@ -63,9 +63,9 @@ servers of its own, so the interesting surface is small and specific:
 
 ## Design notes that may save you time
 
-AppleTree deliberately never trusts the planner:
+SmartTree deliberately never trusts the planner:
 
-- The AI writes a **plan**, never an action. AppleTree performs every deletion
+- The AI writes a **plan**, never an action. SmartTree performs every deletion
   itself, behind its own guards.
 - Every path is re-checked at action time, not just when the plan was
   validated, so a folder that changed in between is not acted on.

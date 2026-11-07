@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# btbench — one command to benchmark AppleTree's scan engine against disktree.
+# btbench — one command to benchmark SmartTree's scan engine against disktree.
 #
 #   cd bench && ./run.sh
 #
@@ -12,7 +12,7 @@ cd "$(dirname "$0")"
 
 usage() {
   cat <<'EOF'
-btbench — AppleTree scan-engine benchmark
+btbench — SmartTree scan-engine benchmark
 
 USAGE:
   ./run.sh [options]
@@ -22,7 +22,7 @@ OPTIONS:
   --runs N          Measured rounds per engine (default 5)
   --fixture-size N  Fixture size: small, medium, large (default small)
   --skip-fixture    Benchmark only the real folder
-  --no-disktree     AppleTree only; no comparison, no network needed
+  --no-disktree     SmartTree only; no comparison, no network needed
   -h, --help        Show this help
 
 EXAMPLES:
@@ -70,11 +70,11 @@ fi
 
 FEATURES=()
 SCAN_FLAGS=()
-BUILD_LABEL="AppleTree vs disktree"
+BUILD_LABEL="SmartTree vs disktree"
 if [[ "$NO_DISKTREE" == "1" ]]; then
   FEATURES+=(--no-default-features)
   SCAN_FLAGS+=(--no-disktree)
-  BUILD_LABEL="AppleTree only"
+  BUILD_LABEL="SmartTree only"
 else
   echo "==> Building (first run fetches the pinned disktree-core; needs network once)"
 fi

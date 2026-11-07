@@ -1,6 +1,42 @@
 # Changelog
 
-## 1.1.3 — 2026-10-23
+## 2.0.0 — 2026-11-07
+
+**The app is renamed SmartTree, and it ships as a new App Store record.**
+
+Apple rejected 1.1.3 under Guideline 5.2.5 a second time, naming the app's
+metadata and the trademark it embeds. `AppleTree` is a coined word, but it
+contains "Apple", which Apple's trademark policy refuses in a product name
+outright — *"do not make up names that contain Apple trademarks."* The
+first-round argument was made once and was not accepted, so the name changes
+rather than being argued a third time.
+
+**New identity, top to bottom.** `SmartTree` replaces `AppleTree` everywhere:
+the display name, the window title, the About panel, the Help menu, the
+executable, the bundled README, license and privacy policy filenames' prose,
+the localized strings in all seven languages, the Rust crate and its CLI
+binary, the benchmark harness, the README, the wiki pages and the GitHub
+issue templates. Some 970 occurrences across 96 files.
+
+**New bundle identifier: `com.erklab.apps.smarttree`.** This is a new App
+Store record — the old one is abandoned with no buyers. Everything keyed to
+the old ID moves with it: the preferences domain, the Keychain service prefix
+for stored model-provider API keys, the security-scoped bookmark entitlement
+comment, the sandbox rehearsal bundle name, and the provisioning-profile
+reference in the Makefile.
+
+**Version 2.0.0** is the marketing version and is what App Store Connect will
+show. It is not 1.1.4 because the bundle identifier, the record and the
+product name all change; there is no upgrade path from 1.1.x, and pretending
+otherwise in the version number would misdescribe it.
+
+**The App Store listing ID is a placeholder.** `https://apps.apple.com/app/id0000000000`
+sits in `AppMenu.swift`, `README.md` and the two wiki pages, because the real
+ID does not exist until the new record is created in App Store Connect. Fill it
+in with `sed` once Apple issues it — the one file to change is listed in
+`docs/appstore/smarttree-resubmission.md`.
+
+
 
 **Browsing and bulk delete stop re-doing work they just finished.** Four
 independent causes, all in the UI layer; the scan engine is unchanged.
@@ -180,7 +216,7 @@ so a home, whole-disk and folder scan agree, while a scan outside your home stil
 never offers your caches.
 
 **The App Store build can actually clean.** Two changes that only work together.
-A file-access grant lets a sandboxed AppleTree enumerate, write, Trash and delete
+A file-access grant lets a sandboxed SmartTree enumerate, write, Trash and delete
 a cache folder — measured on a bundle signed with the shipping entitlements. And
 `AppEnvironment` becomes the single owner of "where is home": `NSHomeDirectory()`
 is the container's `Data` directory under the sandbox, so the guard was refusing
@@ -277,7 +313,7 @@ could show you something it could not act on.
 App Store notes had only argued: a sandboxed build cannot exec an unbundled
 program at all, so the feature could never ship there, and its one-click setup
 downloaded a binary that build could not run. Rather than ship two planners with
-different abilities, AppleTree has one — a model provider you configure, which
+different abilities, SmartTree has one — a model provider you configure, which
 is plain outbound HTTPS on both distribution routes. `AgentLocator`,
 `AgentSetup` and the Claude/Codex output parsing are removed; the allowlisted
 tool cleanups survive unchanged, and the planner picker keeps its single

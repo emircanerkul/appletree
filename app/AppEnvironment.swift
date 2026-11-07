@@ -21,7 +21,7 @@ import Security
 ///     so a Home scan found nothing at all.
 ///   - the planner was told "their home folder is …/Containers/…/Data".
 ///
-/// So the file grant in `AppleTree.entitlements` and this accessor are one
+/// So the file grant in `SmartTree.entitlements` and this accessor are one
 /// change, not two: the grant makes the real home reachable, and this is what
 /// makes the app look there. Reading the passwd entry instead is what gives the
 /// same answer in both builds — `getpwuid` needs no entitlement and reports the

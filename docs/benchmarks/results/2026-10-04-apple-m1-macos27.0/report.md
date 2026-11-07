@@ -8,7 +8,7 @@
 
 ## Results
 
-| | AppleTree | disktree | ratio |
+| | SmartTree | disktree | ratio |
 |---|---:|---:|---:|
 | median scan | **0.736 s** | 1.587 s | 2.16× faster |
 | range | 0.668–0.784 s | 1.444–1.695 s | |
@@ -20,8 +20,8 @@
 
 Two count differences are expected and are not accuracy problems; both engines report identical allocated bytes, which is the number that matters for disk space:
 
-1. **File count.** AppleTree counts every name of a hardlinked file, and counts symlinks as files; disktree counts a hardlinked file once. AppleTree therefore reports more files for the same bytes.
-2. **Directory count.** disktree counts the scan root itself as a directory; AppleTree counts only the directories inside it, so disktree is one higher.
+1. **File count.** SmartTree counts every name of a hardlinked file, and counts symlinks as files; disktree counts a hardlinked file once. SmartTree therefore reports more files for the same bytes.
+2. **Directory count.** disktree counts the scan root itself as a directory; SmartTree counts only the directories inside it, so disktree is one higher.
 
 ## What this does not measure
 

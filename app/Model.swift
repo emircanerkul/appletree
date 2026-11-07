@@ -1102,7 +1102,7 @@ final class ScanModel {
 
     /// The path passed on the command line, when there is a real one.
     ///
-    /// `AppleTree /some/path` scans that path on launch (also handy for QA).
+    /// `SmartTree /some/path` scans that path on launch (also handy for QA).
     /// The check is "an existing directory", not "argv has a second element":
     /// when the app is launched by double-clicking it in Finder, LaunchServices
     /// appends its own `-psn_0_…` process-serial-number argument, which is not
@@ -1607,8 +1607,8 @@ final class ScanModel {
         // dictionary read. Environment variables do not reach an app started
         // by LaunchServices (Finder, `open`), and `launchctl setenv` does not
         // reach a process launchd did not spawn, so the switch is a preference:
-        //   defaults write com.erklab.apps.appletree bz.benchTiming -bool true
-        //   defaults write com.erklab.apps.appletree bz.benchResult -string /tmp/at.json
+        //   defaults write com.erklab.apps.smarttree bz.benchTiming -bool true
+        //   defaults write com.erklab.apps.smarttree bz.benchResult -string /tmp/at.json
         // An app has no controlling terminal under LaunchServices, so `print`
         // would go nowhere: the line is written to the path the harness names.
         // bz.benchExit then quits, so a harness can time the app end to end.
@@ -1616,7 +1616,7 @@ final class ScanModel {
             // Positive: `timeIntervalSince` already computes later-minus-earlier,
             // unlike the `-timeIntervalSinceNow` form the live timer uses.
             let seconds = doneAt.timeIntervalSince(startedAt ?? doneAt)
-            let tool = "appletree-gui"
+            let tool = "smarttree-gui"
             let secs = String(format: "%.6f", seconds)
             let files = UInt64(tree.nFiles[0])
             let bytes = tree.alloc[0]

@@ -1,4 +1,4 @@
-# AppleTree — single build entry point.
+# SmartTree — single build entry point.
 #
 # This Makefile replaces the former build.sh, deploy.sh, release.sh and
 # tests/swift/run.sh.
@@ -7,15 +7,15 @@
 #
 # Quick reference (`make help`):
 #
-#   make build                 build/AppleTree.app (Rust engine + Swift UI + signing)
-#   make deploy                rebuild and clean-replace /Applications/AppleTree.app
+#   make build                 build/SmartTree.app (Rust engine + Swift UI + signing)
+#   make deploy                rebuild and clean-replace /Applications/SmartTree.app
 #   make package               build, notarize (if Developer ID + notary profile),
-#                              and produce AppleTree.dmg + SHA256SUMS.txt locally
+#                              and produce SmartTree.dmg + SHA256SUMS.txt locally
 #   make test                  the full suite: Rust engine tests, Swift suites, JSON CLI, l10n
 #   make test-rust             cargo test --release (also runs inside `make test`)
 #   make engine                cargo build --release only
 #   make icon                  regenerate AppIcon source (assets/gen_icon.py)
-#   make clean                 remove build/, .build/, AppleTree.dmg, SHA256SUMS.txt
+#   make clean                 remove build/, .build/, SmartTree.dmg, SHA256SUMS.txt
 #
 # Notes:
 # - `make build` syncs assets/logo.svg into assets/AppIcon.icon/Assets/logo.svg
@@ -46,17 +46,17 @@ VERSION := $(shell awk -F'"' '/^version/{print $$2; exit}' Cargo.toml)
 # digits alone are valid. Override for a specific number: `make pkg APP_BUILD=42`.
 APP_BUILD ?= $(shell date -u +%Y%m%d%H%M%S)
 MIN_MACOS := 14.0
-APP := build/AppleTree.app
+APP := build/SmartTree.app
 # A second, separately-named bundle for the App Store sandbox rehearsal: it is
 # never the artifact `make build` produces, so a sandboxed test build can never
 # be mistaken for the shipping one.
-SANDBOX_APP := build/AppleTree-sandboxed.app
-SANDBOX_ENTITLEMENTS := app/AppleTree.entitlements
+SANDBOX_APP := build/SmartTree-sandboxed.app
+SANDBOX_ENTITLEMENTS := app/SmartTree.entitlements
 CARGO := $(shell command -v cargo 2>/dev/null || echo "$$HOME/.cargo/bin/cargo")
 
 # Signing keychain used so codesign never prompts interactively.
-SIGN_KC := $(HOME)/Library/Keychains/appletree-signing.keychain-db
-SIGN_PASS := $(HOME)/.config/appletree-signing/keychain.pass
+SIGN_KC := $(HOME)/Library/Keychains/smarttree-signing.keychain-db
+SIGN_PASS := $(HOME)/.config/smarttree-signing/keychain.pass
 
 # Shared swiftc contract: optimization, Swift 6 language mode, default
 # MainActor isolation (needs Swift 6.1 / Xcode 16.3+), arm64, macOS 14.
@@ -76,12 +76,12 @@ SWIFT_TEST_FLAGS := -parse-as-library -swift-version 6 -default-isolation MainAc
 .PHONY: help all build engine bundle open deploy deploy-sandbox deploy-sandbox-undo package pkg test test-cli test-fda-grant test-scoped-access test-drawer test-deletion test-selection test-links test-readme test-doclinks test-router test-privacy test-planner-selection test-prompt-scope test-shellenv test-engine-writer test-l10n test-mapweights test-rust icon clean
 
 help:
-	@echo 'AppleTree targets:'
-	@echo '  make build              build/AppleTree.app (engine + UI + signing)'
-	@echo '  make deploy             rebuild and clean-replace /Applications/AppleTree.app'
+	@echo 'SmartTree targets:'
+	@echo '  make build              build/SmartTree.app (engine + UI + signing)'
+	@echo '  make deploy             rebuild and clean-replace /Applications/SmartTree.app'
 	@echo '  make deploy-sandbox     install the Mac App Store sandbox rehearsal alongside it'
 	@echo '  make deploy-sandbox-undo  remove the sandbox rehearsal build'
-	@echo '  make package            notarize (when possible) and package AppleTree.dmg locally'
+	@echo '  make package            notarize (when possible) and package SmartTree.dmg locally'
 	@echo '  make pkg                App Store .pkg for Transporter (Apple Distribution + installer cert)'
 	@echo '  make test               the full suite: Rust engine, Swift unit tests, JSON CLI, l10n'
 	@echo '  make test-cli           JSON CLI black-box contract (shipped interface)'
@@ -130,16 +130,16 @@ all: build
 engine:
 	@echo '==> Rust engine'
 	MACOSX_DEPLOYMENT_TARGET=$(MIN_MACOS) $(CARGO) build --release
-	OTOOL=$$(otool -l target/release/libappletree.a 2>/dev/null || true); \
+	OTOOL=$$(otool -l target/release/libsmarttree.a 2>/dev/null || true); \
 	BAD=$$(printf '%s\n' "$$OTOOL" | awk -v want='$(MIN_MACOS)' '/^ *(minos|version) / { n=split(want,w,"."); split($$2,v,"."); if (v[1]+0 > w[1]+0 || (v[1]+0 == w[1]+0 && v[2]+0 > w[2]+0)) print $$2 }'); \
 	if [[ -n "$$BAD" ]]; then \
 	    N=$$(printf '%s\n' "$$BAD" | wc -l | tr -d ' '); \
 	    WORST=$$(printf '%s\n' "$$BAD" | awk '{split($$1,v,"."); k=v[1]*10000+v[2]; if (k>m) {m=k; w=$$1}} END {print w}'); \
 	    if [[ '$(STRICT_DEPLOYMENT_TARGET)' == 1 ]]; then \
-	        echo "ERROR: $$N object(s) in target/release/libappletree.a declare macOS $$WORST," >&2; \
+	        echo "ERROR: $$N object(s) in target/release/libsmarttree.a declare macOS $$WORST," >&2; \
 	        echo "       newer than the $(MIN_MACOS) this build declares." >&2; \
 	    else \
-	        echo "WARNING: $$N object(s) in target/release/libappletree.a were built for" >&2; \
+	        echo "WARNING: $$N object(s) in target/release/libsmarttree.a were built for" >&2; \
 	        echo "         macOS $$WORST, newer than the $(MIN_MACOS) this build declares." >&2; \
 	    fi; \
 	    echo '         MACOSX_DEPLOYMENT_TARGET does not retarget a prebuilt std, so' >&2; \
@@ -153,7 +153,7 @@ engine:
 # Probe the installed Swift for -default-isolation (Swift 6.1, Xcode 16.3+).
 SWIFT_PROBE := if ! echo 'func bzProbe() {}' | swiftc -swift-version 6 -default-isolation MainActor -typecheck - >/dev/null 2>&1; then echo 'error: the installed Swift predates 6.1 and cannot build the UI; default-MainActor isolation needs Xcode 16.3 or newer.' >&2; exit 1; fi
 
-# build/AppleTree.app: Rust staticlib + Swift UI, bundled, icon compiled,
+# build/SmartTree.app: Rust staticlib + Swift UI, bundled, icon compiled,
 # localizations copied, then signed.
 #
 # Signing prefers a real identity so a stable code requirement keeps TCC/FDA
@@ -172,8 +172,8 @@ bundle: engine
 	swiftc app/*.swift \
 	    -import-objc-header app/bz.h \
 	    $(SWIFT_FLAGS) \
-	    -L target/release -lappletree \
-	    -o '$(APP)/Contents/MacOS/AppleTree'
+	    -L target/release -lsmarttree \
+	    -o '$(APP)/Contents/MacOS/SmartTree'
 	# ATS: user-configured model providers are plain HTTP on the local
 	# machine or LAN (http://localhost:11434/v1, http://192.168.1.20:11434/v1).
 	# NSAllowsLocalNetworking is Apple's narrow key for local resources
@@ -185,12 +185,12 @@ bundle: engine
 	    '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \
 	    '<plist version="1.0">' \
 	    '<dict>' \
-	    '    <key>CFBundleName</key><string>AppleTree</string>' \
-	    '    <key>CFBundleDisplayName</key><string>AppleTree</string>' \
-	    '    <key>CFBundleIdentifier</key><string>com.erklab.apps.appletree</string>' \
+	    '    <key>CFBundleName</key><string>SmartTree</string>' \
+	    '    <key>CFBundleDisplayName</key><string>SmartTree</string>' \
+	    '    <key>CFBundleIdentifier</key><string>com.erklab.apps.smarttree</string>' \
 	    "    <key>CFBundleVersion</key><string>$(APP_BUILD)</string>" \
 	    "    <key>CFBundleShortVersionString</key><string>$(VERSION)</string>" \
-	    '    <key>CFBundleExecutable</key><string>AppleTree</string>' \
+	    '    <key>CFBundleExecutable</key><string>SmartTree</string>' \
 	    '    <key>CFBundlePackageType</key><string>APPL</string>' \
 	    "    <key>LSMinimumSystemVersion</key><string>$(MIN_MACOS)</string>" \
 	    '    <key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>' \
@@ -217,7 +217,7 @@ bundle: engine
 	    --output-partial-info-plist $$(pwd)/build/icon-partial.plist >/dev/null
 	# Classic .lproj Localizable.strings tables (swiftc, no Xcode build system).
 	for lproj in app/*.lproj; do cp -R "$$lproj" '$(APP)/Contents/Resources/'; done
-	# The README ships inside the app: Help → AppleTree README reads it with no
+	# The README ships inside the app: Help → SmartTree README reads it with no
 	# browser and no network, so it cannot be fetched from GitHub at view time.
 	cp README.md '$(APP)/Contents/Resources/README.md'
 	# Same for the license: About's "View license" reads it in-app.
@@ -272,11 +272,11 @@ icon:
 # corrupt the signature, and an invalid signature makes TCC silently ignore
 # the FDA grant.
 deploy: build
-	@echo '==> Deploying to /Applications/AppleTree.app'
-	rm -rf /Applications/AppleTree.app
-	ditto '$(APP)' /Applications/AppleTree.app
-	codesign --verify --strict /Applications/AppleTree.app
-	@echo '==> Deployed to /Applications/AppleTree.app (signature verified)'
+	@echo '==> Deploying to /Applications/SmartTree.app'
+	rm -rf /Applications/SmartTree.app
+	ditto '$(APP)' /Applications/SmartTree.app
+	codesign --verify --strict /Applications/SmartTree.app
+	@echo '==> Deployed to /Applications/SmartTree.app (signature verified)'
 
 # The App Store rehearsal: the REAL app, with the REAL sandbox entitlements,
 # installed where a person can actually use it.
@@ -286,12 +286,12 @@ deploy: build
 # discover from a rejected submission. docs/appstore/app-store-metadata.md §2
 # argues about what survives it. This target is how that claim gets checked
 # instead of believed: build, re-sign with
-# `app/AppleTree.entitlements`, install to a DIFFERENT /Applications name, and let
+# `app/SmartTree.entitlements`, install to a DIFFERENT /Applications name, and let
 # the user click through the app.
 #
 # Measured result on this codebase (2026-10-07): the app launches and the scan,
 # treemap, rings, Clean Up panel and the custom-provider AI path work, and the
-# file grant in `app/AppleTree.entitlements` lets the Clean Up panel Trash a real
+# file grant in `app/SmartTree.entitlements` lets the Clean Up panel Trash a real
 # cache folder with no subprocess. What the sandbox still denies is `exec`: the
 # login shell runs but sees a container filesystem, so the cleanup tools it
 # resolves through PATH are not found and exec of an absolute path fails with
@@ -368,12 +368,12 @@ deploy-sandbox: build
 	@echo '==> Entitlements sealed into the bundle:'
 	@codesign -d --entitlements - '$(SANDBOX_APP)' 2>/dev/null \
 	    | grep -E 'app-sandbox|network|user-selected|library-validation|bookmarks' | sed 's/^/      /' || true
-	@echo '==> Installing to /Applications/AppleTree (Sandboxed).app'
-	rm -rf '/Applications/AppleTree (Sandboxed).app'
-	ditto '$(SANDBOX_APP)' '/Applications/AppleTree (Sandboxed).app'
+	@echo '==> Installing to /Applications/SmartTree (Sandboxed).app'
+	rm -rf '/Applications/SmartTree (Sandboxed).app'
+	ditto '$(SANDBOX_APP)' '/Applications/SmartTree (Sandboxed).app'
 	@echo ''
-	@echo '    A sandboxed AppleTree is now installed. It is a SEPARATE app with a'
-	@echo '    different name, so your normal install at /Applications/AppleTree.app'
+	@echo '    A sandboxed SmartTree is now installed. It is a SEPARATE app with a'
+	@echo '    different name, so your normal install at /Applications/SmartTree.app'
 	@echo '    is untouched. Launch it and try:'
 	@echo '      - the Clean Up panel, the treemap, the rings, Delete  (expected: work)'
 	@echo '      - a Home or whole-disk scan, then Move to Trash        (expected: work, and'
@@ -389,9 +389,9 @@ deploy-sandbox: build
 # only deletes what deploy-sandbox created.
 deploy-sandbox-undo:
 	@echo '==> Removing the sandboxed rehearsal build'
-	rm -rf '$(SANDBOX_APP)' '/Applications/AppleTree (Sandboxed).app'
-	@echo '==> Removed. /Applications/AppleTree.app is untouched.'
-	@test -d /Applications/AppleTree.app \
+	rm -rf '$(SANDBOX_APP)' '/Applications/SmartTree (Sandboxed).app'
+	@echo '==> Removed. /Applications/SmartTree.app is untouched.'
+	@test -d /Applications/SmartTree.app \
 	    && echo '    Your normal install is still there.' \
 	    || echo '    Note: no normal install present; run `make deploy` to create one.'
 
@@ -408,7 +408,7 @@ deploy-sandbox-undo:
 # is present. Uploading the dmg somewhere is a deliberate, separate act.
 #
 # Notarization needs a Developer ID signature and stored notary credentials
-# (one-time: `xcrun notarytool store-credentials appletree-notary --key
+# (one-time: `xcrun notarytool store-credentials smarttree-notary --key
 # <AuthKey.p8> --key-id <id> --issuer <uuid>`). The app is stapled before
 # packaging so it opens offline once copied out of the dmg; the dmg is then
 # signed, notarized and stapled itself. (-dvv: plain -dv never prints the
@@ -428,13 +428,13 @@ package:
 	@DEVID=$$(codesign -dvv '$(APP)' 2>&1 | awk -F= '/^Authority=Developer ID Application/ && !n++ {print $$2}'); \
 	if [[ -n "$$DEVID" ]]; then \
 	    echo '==> Notarizing app'; \
-	    ZIP=$$(mktemp -d)/AppleTree.zip; \
+	    ZIP=$$(mktemp -d)/SmartTree.zip; \
 	    ditto -c -k --keepParent '$(APP)' "$$ZIP"; \
-	    OUT=$$(xcrun notarytool submit "$$ZIP" --keychain-profile appletree-notary --wait 2>&1) || { printf '%s\n' "$$OUT" >&2; echo 'ERROR: notarytool submit failed for the app.' >&2; exit 1; }; \
+	    OUT=$$(xcrun notarytool submit "$$ZIP" --keychain-profile smarttree-notary --wait 2>&1) || { printf '%s\n' "$$OUT" >&2; echo 'ERROR: notarytool submit failed for the app.' >&2; exit 1; }; \
 	    printf '%s\n' "$$OUT"; \
 	    grep -qE '^ *status: Accepted$$' <<<"$$OUT" || { \
 	        echo 'ERROR: notarization of the app was not Accepted; refusing to staple or package it.' >&2; \
-	        echo '       Inspect the rejection with: xcrun notarytool log <submission-id> --keychain-profile appletree-notary' >&2; \
+	        echo '       Inspect the rejection with: xcrun notarytool log <submission-id> --keychain-profile smarttree-notary' >&2; \
 	        exit 1; \
 	    }; \
 	    xcrun stapler staple '$(APP)'; \
@@ -443,24 +443,24 @@ package:
 	STAGE=$$(mktemp -d); \
 	cp -R '$(APP)' "$$STAGE/"; \
 	ln -s /Applications "$$STAGE/Applications"; \
-	rm -f AppleTree.dmg; \
-	hdiutil create -volname AppleTree -srcfolder "$$STAGE" -ov -format UDZO -quiet AppleTree.dmg; \
+	rm -f SmartTree.dmg; \
+	hdiutil create -volname SmartTree -srcfolder "$$STAGE" -ov -format UDZO -quiet SmartTree.dmg; \
 	rm -rf "$$STAGE"; \
 	if [[ -n "$$DEVID" ]]; then \
 	    echo '==> Notarizing dmg'; \
-	    codesign --force --timestamp --sign "$$DEVID" AppleTree.dmg; \
-	    OUT=$$(xcrun notarytool submit AppleTree.dmg --keychain-profile appletree-notary --wait 2>&1) || { printf '%s\n' "$$OUT" >&2; echo 'ERROR: notarytool submit failed for the dmg.' >&2; exit 1; }; \
+	    codesign --force --timestamp --sign "$$DEVID" SmartTree.dmg; \
+	    OUT=$$(xcrun notarytool submit SmartTree.dmg --keychain-profile smarttree-notary --wait 2>&1) || { printf '%s\n' "$$OUT" >&2; echo 'ERROR: notarytool submit failed for the dmg.' >&2; exit 1; }; \
 	    printf '%s\n' "$$OUT"; \
 	    grep -qE '^ *status: Accepted$$' <<<"$$OUT" || { \
 	        echo 'ERROR: notarization of the dmg was not Accepted; refusing to staple it.' >&2; \
-	        echo '       Inspect the rejection with: xcrun notarytool log <submission-id> --keychain-profile appletree-notary' >&2; \
+	        echo '       Inspect the rejection with: xcrun notarytool log <submission-id> --keychain-profile smarttree-notary' >&2; \
 	        exit 1; \
 	    }; \
-	    xcrun stapler staple AppleTree.dmg; \
-	    spctl --assess --type open --context context:primary-signature -v AppleTree.dmg; \
+	    xcrun stapler staple SmartTree.dmg; \
+	    spctl --assess --type open --context context:primary-signature -v SmartTree.dmg; \
 	fi; \
-	shasum -a 256 AppleTree.dmg > SHA256SUMS.txt; \
-	echo "==> packaged AppleTree.dmg"; \
+	shasum -a 256 SmartTree.dmg > SHA256SUMS.txt; \
+	echo "==> packaged SmartTree.dmg"; \
 	cat SHA256SUMS.txt; \
 	echo "    Uploading it anywhere is a separate, deliberate act; this target does not."
 
@@ -481,12 +481,12 @@ package:
 #      machine (see `security find-identity -v`). NOT "Developer ID Application",
 #      which is for direct download and notarization; uploading a Developer
 #      ID-signed app is the most common way this fails.
-#   2. **Embedded provisioning profile** naming com.erklab.apps.appletree. A
+#   2. **Embedded provisioning profile** naming com.erklab.apps.smarttree. A
 #      macOS App Store build has no profile embedded in the binary the way iOS
 #      does, but the submission still has to match one in the account, and
 #      `macOS App Store` profiles are what `-exportArchive`/Xcode would use. If
 #      you have one, point PROVISIONING_PROFILE at it and it is copied in.
-#   3. **Sandbox entitlements** — app/AppleTree.entitlements, the sealed 5-key
+#   3. **Sandbox entitlements** — app/SmartTree.entitlements, the sealed 5-key
 #      set this repo already ships and rehearses.
 #   4. **Installer certificate** ("3rd Party Mac Developer Installer" or the
 #      newer "Mac Installer Distribution") — signs the .pkg itself. This is a
@@ -500,9 +500,9 @@ package:
 #   make pkg PROVISIONING_PROFILE=~/path/to.provisionprofile
 #
 # Verify before uploading:
-#   pkgutil --check-signature AppleTree.pkg
-#   xcrun altool --validate-app -f AppleTree.pkg -t macos -u <apple-id> -p <app-pw>
-# or just drag AppleTree.pkg into Transporter, which validates on delivery.
+#   pkgutil --check-signature SmartTree.pkg
+#   xcrun altool --validate-app -f SmartTree.pkg -t macos -u <apple-id> -p <app-pw>
+# or just drag SmartTree.pkg into Transporter, which validates on delivery.
 pkg: build
 	@test -f '$(SANDBOX_ENTITLEMENTS)' || { \
 	    echo "error: $(SANDBOX_ENTITLEMENTS) is missing; it is the App Store entitlement set." >&2; exit 1; }
@@ -528,33 +528,33 @@ pkg: build
 	echo "==> Signing the app with: $$DIST"; \
 	echo "==> Signing the pkg with: $$INST"; \
 	STAGE=$$(mktemp -d); \
-	ditto '$(APP)' "$$STAGE/AppleTree.app"; \
+	ditto '$(APP)' "$$STAGE/SmartTree.app"; \
 	if [[ -n '$(PROVISIONING_PROFILE)' ]]; then \
-	    cp '$(PROVISIONING_PROFILE)' "$$STAGE/AppleTree.app/Contents/embedded.provisionprofile"; \
+	    cp '$(PROVISIONING_PROFILE)' "$$STAGE/SmartTree.app/Contents/embedded.provisionprofile"; \
 	    echo "    embedded provisioning profile: $(PROVISIONING_PROFILE)"; \
 	fi; \
 	codesign --force --deep --options runtime --timestamp \
 	    --sign "$$DIST" \
 	    --entitlements '$(SANDBOX_ENTITLEMENTS)' \
-	    "$$STAGE/AppleTree.app"; \
-	codesign --verify --strict --verbose=2 "$$STAGE/AppleTree.app"; \
+	    "$$STAGE/SmartTree.app"; \
+	codesign --verify --strict --verbose=2 "$$STAGE/SmartTree.app"; \
 	echo '==> Entitlements sealed into the app:'; \
-	codesign -d --entitlements - "$$STAGE/AppleTree.app" 2>/dev/null \
+	codesign -d --entitlements - "$$STAGE/SmartTree.app" 2>/dev/null \
 	    | grep -E 'app-sandbox|network|user-selected|library-validation|bookmarks' | sed 's/^/      /' || true; \
 	echo '==> Building the pkg'; \
-	rm -f AppleTree.pkg; \
-	productbuild --component "$$STAGE/AppleTree.app" /Applications \
-	    --sign "$$INST" AppleTree.pkg; \
+	rm -f SmartTree.pkg; \
+	productbuild --component "$$STAGE/SmartTree.app" /Applications \
+	    --sign "$$INST" SmartTree.pkg; \
 	rm -rf "$$STAGE"; \
 	echo '==> Verifying the pkg signature'; \
-	pkgutil --check-signature AppleTree.pkg; \
-	shasum -a 256 AppleTree.pkg > SHA256SUMS.pkg.txt; \
+	pkgutil --check-signature SmartTree.pkg; \
+	shasum -a 256 SmartTree.pkg > SHA256SUMS.pkg.txt; \
 	echo ''; \
-	echo '==> AppleTree.pkg is ready to upload with Transporter'; \
+	echo '==> SmartTree.pkg is ready to upload with Transporter'; \
 	cat SHA256SUMS.pkg.txt; \
 	echo ''; \
-	echo '    Transporter: drag AppleTree.pkg in, or'; \
-	echo '      xcrun altool --validate-app -f AppleTree.pkg -t macos -u <apple-id> -p <app-specific-password>'; \
+	echo '    Transporter: drag SmartTree.pkg in, or'; \
+	echo '      xcrun altool --validate-app -f SmartTree.pkg -t macos -u <apple-id> -p <app-specific-password>'; \
 	echo '    Uploading is a separate, deliberate act; this target does not.'
 
 # ---------------------------------------------------------------------------
@@ -580,7 +580,7 @@ test: test-rust engine test-l10n test-drawer test-deletion test-selection test-m
 	    -import-objc-header app/bz.h \
 	    -swift-version 6 -default-isolation MainActor \
 	    -target arm64-apple-macos$(MIN_MACOS) \
-	    -L target/release -lappletree -framework Security \
+	    -L target/release -lsmarttree -framework Security \
 	    -o .build/guard-tests
 	.build/guard-tests
 
@@ -596,7 +596,7 @@ test-drawer: engine
 	    -parse-as-library \
 	    -swift-version 6 -default-isolation MainActor \
 	    -target arm64-apple-macos$(MIN_MACOS) \
-	    -L target/release -lappletree \
+	    -L target/release -lsmarttree \
 	    -framework DiskArbitration -framework IOKit -framework Security \
 	    -o .build/drawer-tests
 	.build/drawer-tests
@@ -619,7 +619,7 @@ test-deletion: engine
 	    -parse-as-library \
 	    -swift-version 6 -default-isolation MainActor \
 	    -target arm64-apple-macos$(MIN_MACOS) \
-	    -L target/release -lappletree \
+	    -L target/release -lsmarttree \
 	    -framework DiskArbitration -framework IOKit -framework Security \
 	    -o .build/deletion-tests
 	.build/deletion-tests
@@ -640,7 +640,7 @@ test-selection: engine
 	    -parse-as-library \
 	    -swift-version 6 -default-isolation MainActor \
 	    -target arm64-apple-macos$(MIN_MACOS) \
-	    -L target/release -lappletree \
+	    -L target/release -lsmarttree \
 	    -framework DiskArbitration -framework IOKit -framework Security \
 	    -o .build/multiselect-tests
 	.build/multiselect-tests
@@ -666,7 +666,7 @@ test-mapweights: engine
 	    -parse-as-library \
 	    -swift-version 6 -default-isolation MainActor \
 	    -target arm64-apple-macos$(MIN_MACOS) \
-	    -L target/release -lappletree \
+	    -L target/release -lsmarttree \
 	    -framework DiskArbitration -framework IOKit -framework Security \
 	    -o .build/mapweight-tests
 	.build/mapweight-tests
@@ -752,7 +752,7 @@ test-planner-refresh: engine
 	    -parse-as-library \
 	    -swift-version 6 -default-isolation MainActor \
 	    -target arm64-apple-macos$(MIN_MACOS) \
-	    -L target/release -lappletree \
+	    -L target/release -lsmarttree \
 	    -framework DiskArbitration -framework IOKit -framework Security \
 	    -o .build/planner-refresh-tests
 	.build/planner-refresh-tests
@@ -770,7 +770,7 @@ test-prompt-scope: engine
 	    -parse-as-library \
 	    -swift-version 6 -default-isolation MainActor \
 	    -target arm64-apple-macos$(MIN_MACOS) \
-	    -L target/release -lappletree \
+	    -L target/release -lsmarttree \
 	    -framework DiskArbitration -framework IOKit -framework Security \
 	    -o .build/prompt-scope-tests
 	.build/prompt-scope-tests
@@ -811,12 +811,12 @@ test-engine-writer:
 # §5.5 describes what it may do), so its black-box contract tests are part of
 # `test`, not an optional extra.
 #
-# `required-features = ["cli"]` on the `appletree` bin means `make engine`'s
+# `required-features = ["cli"]` on the `smarttree` bin means `make engine`'s
 # plain `cargo build --release` does NOT produce it, so this target builds the
 # binary itself before running the suite. Without that, a clean clone cannot run
 # these tests at all.
 test-cli: engine
-	$(CARGO) build --locked --release --features cli --bin appletree
+	$(CARGO) build --locked --release --features cli --bin smarttree
 	python3 -m unittest tests.test_cli -v
 
 # Route B: reaching folders the sandbox denies, via a security-scoped bookmark.
@@ -882,4 +882,4 @@ test-l10n:
 # ---------------------------------------------------------------------------
 
 clean:
-	rm -rf build .build AppleTree.dmg SHA256SUMS.txt
+	rm -rf build .build SmartTree.dmg SHA256SUMS.txt

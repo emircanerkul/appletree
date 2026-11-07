@@ -15,7 +15,7 @@ nonisolated enum CleanupGuard {
     /// the same in both builds — see its doc comment for the measurement.
     static let home = AppEnvironment.realHome
 
-    /// Folders AppleTree never cleans, whatever the plan says.
+    /// Folders SmartTree never cleans, whatever the plan says.
     static let protected = [
         "Documents", "Desktop", "Pictures", "Movies", "Music", ".ssh", ".gnupg", ".Trash",
         "Library/Mobile Documents", "Library/Mail", "Library/Messages", "Library/Keychains",
@@ -70,7 +70,7 @@ nonisolated enum CleanupGuard {
         return commands
     }()
 
-    /// The only commands AppleTree runs: each tool's own cleanup, in exactly
+    /// The only commands SmartTree runs: each tool's own cleanup, in exactly
     /// these forms (S6). No-argument commands must match to the letter; flag
     /// variants are separate entries, not prefix matches. Owned by Rust; this
     /// is a lookup, not a second copy.
@@ -239,7 +239,7 @@ nonisolated enum CleanupGuard {
             // game.
             let allowed = rebuildable.contains((p as NSString).lastPathComponent)
             if !allowed || dir.hasSuffix(".Trash") {
-                return String(localized: "In ~/\(dir.dropFirst(home.count + 1)), which AppleTree never cleans")
+                return String(localized: "In ~/\(dir.dropFirst(home.count + 1)), which SmartTree never cleans")
             }
         }
         if FileManager.default.fileExists(atPath: p + "/.git") { return String(localized: "A git repository") }
@@ -265,7 +265,7 @@ nonisolated enum CleanupGuard {
             }
         }
         guard commands.contains(c) || oneArg != nil else {
-            return String(localized: "AppleTree only runs tools' own cleanup commands")
+            return String(localized: "SmartTree only runs tools' own cleanup commands")
         }
         // Shell metacharacters, including the glob/brace forms zsh expands
         // before the tool ever sees the argument: `{a,b}` and `?`/`[ab]` reach

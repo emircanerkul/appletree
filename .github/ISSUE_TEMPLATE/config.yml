@@ -6,5 +6,5 @@
 blank_issues_enabled: false
 contact_links:
   - name: Report a security vulnerability
-    url: https://github.com/emircanerkul/appletree/security/policy
+    url: https://github.com/emircanerkul/smarttree/security/policy
     about: Please review our security policy for more details.

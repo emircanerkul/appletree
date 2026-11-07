@@ -66,7 +66,7 @@ struct CleanupPanel: View {
             Button(String(localized: "Send and clean up")) { model.grantCleanupConsent() }
             Button("Cancel", role: .cancel) { model.declineCleanupConsent() }
         } message: {
-            Text("AppleTree will send \(model.pendingConsentDestination) the paths, names, sizes and dates of the largest items in this scan — folder and file names, but never the contents of your files. They leave your Mac and are handled under that provider's own terms. Sending it is what lets a planner suggest what to remove.")
+            Text("SmartTree will send \(model.pendingConsentDestination) the paths, names, sizes and dates of the largest items in this scan — folder and file names, but never the contents of your files. They leave your Mac and are handled under that provider's own terms. Sending it is what lets a planner suggest what to remove.")
         }
         // A real binding, not `.constant(...)`: the constant form only ever
         // dismissed because the OK action happened to clear the array first,
@@ -344,7 +344,7 @@ struct CleanupPanel: View {
 // MARK: - The run
 
 /// The planner's work, live: its steps while it looks, the plan as it is
-/// written, then AppleTree's own cleanup and the space it gave back.
+/// written, then SmartTree's own cleanup and the space it gave back.
 private struct AgentRunView: View {
     let run: AgentRun
     let model: ScanModel
@@ -707,7 +707,7 @@ private struct PlanCard: View {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .strokeBorder(Color.accentColor.opacity(current ? 0.8 : 0), lineWidth: 1)
         )
-        // Dim what AppleTree will not touch: a blocked card always, and once
+        // Dim what SmartTree will not touch: a blocked card always, and once
         // the plan is locked in, the cards the user left out. The previous
         // second term required `status == .waiting`, but the only exit from
         // `.planned` that keeps cards on screen rewrites every unselected item

@@ -163,9 +163,9 @@ enum ScopedAccessTests {
         // error 256, "The file couldn't be opened"), so the route is unavailable
         // rather than degraded; the key is easy to drop during an unrelated edit
         // and only a shipped bundle can really test it.
-        let entsPath = root.appendingPathComponent("app/AppleTree.entitlements")
+        let entsPath = root.appendingPathComponent("app/SmartTree.entitlements")
         let ents = strippingComments((try? String(contentsOf: entsPath, encoding: .utf8)) ?? "")
-        check("AppleTree.entitlements was read", !ents.isEmpty, entsPath.path)
+        check("SmartTree.entitlements was read", !ents.isEmpty, entsPath.path)
         check("the app-scope bookmark entitlement is requested",
               ents.contains("<key>com.apple.security.files.bookmarks.app-scope</key>"),
               "without it bookmark creation fails outright (measured: error 256)")

@@ -130,9 +130,9 @@ mod tests {
 
     #[test]
     fn round_trips_runner_style_output() {
-        let line = r#"{"tool":"appletree","seconds":0.607,"files":247465,"bytes":12618919936,"path":"/Applications/R\u00e9sum\u00e9"}"#;
+        let line = r#"{"tool":"smarttree","seconds":0.607,"files":247465,"bytes":12618919936,"path":"/Applications/R\u00e9sum\u00e9"}"#;
         let pairs = parse_flat_object(line).expect("parses");
-        assert_eq!(get_str(&pairs, "tool").unwrap(), "appletree");
+        assert_eq!(get_str(&pairs, "tool").unwrap(), "smarttree");
         assert_eq!(get_u64(&pairs, "files").unwrap(), 247465);
         assert_eq!(get_u64(&pairs, "bytes").unwrap(), 12618919936);
         assert_eq!(get_f64(&pairs, "seconds").unwrap(), 0.607);

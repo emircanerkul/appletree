@@ -86,7 +86,7 @@ nonisolated enum DocLink {
     /// goes to the blob view. Both resolve on the default branch, which GitHub
     /// redirects to the real default even when it is not `main`.
     private static func repoURL(for target: String) -> URL? {
-        let repo = "https://github.com/emircanerkul/appletree"
+        let repo = "https://github.com/emircanerkul/smarttree"
         let isDirectory = target.hasSuffix("/")
         let cleaned = target.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         guard !cleaned.isEmpty else { return URL(string: repo) }
@@ -187,7 +187,7 @@ nonisolated enum Readme {
             // Elsewhere in the document, a line whose tags can be removed
             // leaving nothing but whitespace goes too. Removing the tags first
             // is what makes this safe: real prose containing a tag
-            // (`` `AppleTree <path>` ``) keeps its text and survives.
+            // (`` `SmartTree <path>` ``) keeps its text and survives.
             if line.contains("<"), stripMarkup(line).trimmingCharacters(in: .whitespaces).isEmpty {
                 continue
             }

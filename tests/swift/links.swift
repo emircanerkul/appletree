@@ -49,7 +49,7 @@ enum LinkTests {
         // public App Store listing. Nothing else may appear in the menu.
         for item in items {
             let onGitHub = item.url.host == "github.com"
-                && item.url.path.hasPrefix("/emircanerkul/appletree")
+                && item.url.path.hasPrefix("/emircanerkul/smarttree")
             let onAppStore = item.url.host == "apps.apple.com"
             check("\(item.id) links to the project on https",
                   item.url.scheme == "https" && (onGitHub || onAppStore),
@@ -110,7 +110,7 @@ enum LinkTests {
         // "open source" claim needs somewhere to go.
         let repo = items.first { $0.id == "repo" }
         check("repo row points at the project root",
-              repo?.url.absoluteString == "https://github.com/emircanerkul/appletree",
+              repo?.url.absoluteString == "https://github.com/emircanerkul/smarttree",
               repo?.url.absoluteString ?? "missing")
 
         // The erklab mark in About links to the maker's site. It is not a Help

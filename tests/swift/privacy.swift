@@ -170,7 +170,7 @@ enum PrivacyTests {
         // home. The repo file is the source of truth, so it is the URL.
         //
         // `github.com/.../blob/...` is the right form, not `raw.`: the raw URL
-        // serves `text/plain`, so a reviewer sees literal `# AppleTree Privacy
+        // serves `text/plain`, so a reviewer sees literal `# SmartTree Privacy
         // Policy` and pipe tables instead of a rendered policy. The blob page
         // renders headings and tables as a normal document.
         check("the Published-at URL points at the repo file",
@@ -180,7 +180,7 @@ enum PrivacyTests {
               !policy.contains("raw.githubusercontent.com"),
               "raw serves text/plain: unrendered markdown to a reviewer")
         check("no wiki URL is referenced anywhere",
-              !policy.contains("appletree/wiki"),
+              !policy.contains("smarttree/wiki"),
               "the wiki is a second copy to maintain, and it broke once already")
         check("no U+2010 hyphen hides in a URL",
               !shown.contains("\u{2010}"),
@@ -249,7 +249,7 @@ enum PrivacyTests {
             declared[name] = reasons
         }
 
-        // Recorded from `nm -u build/AppleTree.app/Contents/MacOS/AppleTree`:
+        // Recorded from `nm -u build/SmartTree.app/Contents/MacOS/SmartTree`:
         //   getattrlist, getattrlistbulk, stat, fstat, fstatat, lstat  -> FileTimestamp
         //   statfs                                                    -> DiskSpace
         //   NSUserDefaults                                            -> UserDefaults
@@ -259,11 +259,11 @@ enum PrivacyTests {
         check("UserDefaults is declared", declared["NSPrivacyAccessedAPICategoryUserDefaults"] != nil)
 
         // DDA9.1 ("display timestamps to the person") forbids sending anything
-        // derived off-device, and AppleTree sends Xcode simulator dates in the
+        // derived off-device, and SmartTree sends Xcode simulator dates in the
         // scan summary. Declaring it would be a false statement.
         check("FileTimestamp does NOT claim DDA9.1",
               !(declared["NSPrivacyAccessedAPICategoryFileTimestamp"] ?? []).contains("DDA9.1"),
-              "AppleTree sends timestamp-derived dates off-device, which DDA9.1 forbids")
+              "SmartTree sends timestamp-derived dates off-device, which DDA9.1 forbids")
         check("FileTimestamp claims 3B52.1",
               (declared["NSPrivacyAccessedAPICategoryFileTimestamp"] ?? []).contains("3B52.1"))
         check("DiskSpace claims 85F4.1",
@@ -290,7 +290,7 @@ enum PrivacyTests {
         // A non-empty array would be a claim to Apple that we collect something.
         let collected = (manifest["NSPrivacyCollectedDataTypes"] as? [Any]) ?? []
         check("no collected data types are claimed", collected.isEmpty,
-              "AppleTree has no accounts, analytics or servers")
+              "SmartTree has no accounts, analytics or servers")
         check("tracking is declared false", (manifest["NSPrivacyTracking"] as? Bool) == false)
 
         // --- 5. The policy's factual claims still match the code --------------

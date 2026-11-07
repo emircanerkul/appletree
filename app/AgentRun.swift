@@ -14,7 +14,7 @@ final class PlanItem: Identifiable {
     let id = UUID()
     let spec: PlanItemSpec
     let paths: [String]
-    /// Why AppleTree won't do this one (protected folder, bad command…).
+    /// Why SmartTree won't do this one (protected folder, bad command…).
     let blocked: String?
     var selected: Bool
     var status: Status = .waiting
@@ -54,7 +54,7 @@ final class PlanItem: Identifiable {
         var reason: String?
         var kept: [String] = []
         var recent = 0
-        // A cache that is just a folder goes through the Trash and AppleTree's
+        // A cache that is just a folder goes through the Trash and SmartTree's
         // parallel delete: reversible in step one, and faster than the tool's
         // own single-threaded removal (bun took 20 s for 5 GB).
         // The cache-clearing commands with no flag variants, straight from
@@ -78,7 +78,7 @@ final class PlanItem: Identifiable {
         } else if asked.isEmpty {
             reason = String(localized: "Nothing to remove")
         } else {
-            // Paths AppleTree won't touch are dropped; the card is blocked only
+            // Paths SmartTree won't touch are dropped; the card is blocked only
             // when nothing is left.
             for path in asked {
                 if let why = CleanupGuard.blockReason(path: path) {
@@ -123,7 +123,7 @@ final class AgentRun {
 
     /// The endpoint that produced this plan. It never runs tools — it only
     /// writes the plan; the guards and the two-step delete below are
-    /// AppleTree's own and are unchanged by where the plan came from.
+    /// SmartTree's own and are unchanged by where the plan came from.
     let provider: LLMProvider
     /// What the panel calls the planner.
     var displayName: String { provider.displayName }
@@ -213,7 +213,7 @@ final class AgentRun {
                 || (phase == .deleting && $0.status == .running)
         }.reduce(0) { $0 + $1.bytes }
     }
-    /// The items the user chose and AppleTree may touch.
+    /// The items the user chose and SmartTree may touch.
     var targets: [PlanItem] { items.filter { $0.selected && $0.blocked == nil } }
 
     /// Whether what this run CLEANS includes a tool-command card.
@@ -325,7 +325,7 @@ final class AgentRun {
         withAnimation(.snappy) { phase = .planned }
     }
 
-    // MARK: Cleaning (AppleTree does this, not the planner)
+    // MARK: Cleaning (SmartTree does this, not the planner)
 
     /// Demo recordings only: walk through both steps without touching disk.
     private let dryRun = ProcessInfo.processInfo.environment["BZ_DEMO_DRYRUN"] != nil
@@ -495,7 +495,7 @@ final class AgentRun {
     /// threads remove a 100k-file node_modules 2x faster than `rm -rf`, and
     /// more threads only contend (8 and 16 were slower).
     nonisolated private static let deleteSlots = DispatchSemaphore(value: 4)
-    nonisolated private static let deleteQueue = DispatchQueue(label: "appletree.delete", qos: .userInitiated,
+    nonisolated private static let deleteQueue = DispatchQueue(label: "smarttree.delete", qos: .userInitiated,
                                                                attributes: .concurrent)
 
     /// Deletes folders permanently, fast: each folder's children go through
@@ -570,11 +570,11 @@ final class AgentRun {
             // anywhere, but the command path is generically tool-shaped), so they
             // run in an empty stand-in one.
             let folder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-                .appendingPathComponent("AppleTree/tools", isDirectory: true)
+                .appendingPathComponent("SmartTree/tools", isDirectory: true)
             try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             let manifest = folder.appendingPathComponent("package.json")
             if !FileManager.default.fileExists(atPath: manifest.path) {
-                try? #"{"name":"appletree-cleanup","private":true}"#.write(to: manifest, atomically: true, encoding: .utf8)
+                try? #"{"name":"smarttree-cleanup","private":true}"#.write(to: manifest, atomically: true, encoding: .utf8)
             }
             process.currentDirectoryURL = folder
             process.standardInput = FileHandle.nullDevice

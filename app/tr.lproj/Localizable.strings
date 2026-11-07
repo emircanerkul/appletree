@@ -1,8 +1,8 @@
-/* AppleTree — Turkish (tr) */
+/* SmartTree — Turkish (tr) */
 
 /* Main window */
-"AppleTree needs Full Disk Access" = "AppleTree'nin Tam Disk Erişimi gerekli";
-"System Settings → Privacy & Security → Full Disk Access.\nRemove any old AppleTree rows, then add %@.\nmacOS only applies the permission to a freshly launched app." = "Sistem Ayarları → Gizlilik ve Güvenlik → Tam Disk Erişimi.\nEski AppleTree satırlarını kaldırın, ardından %@ uygulamasını ekleyin.\nmacOS izni yalnızca yeni başlatılan bir uygulamaya uygular.";
+"SmartTree needs Full Disk Access" = "SmartTree'nin Tam Disk Erişimi gerekli";
+"System Settings → Privacy & Security → Full Disk Access.\nRemove any old SmartTree rows, then add %@.\nmacOS only applies the permission to a freshly launched app." = "Sistem Ayarları → Gizlilik ve Güvenlik → Tam Disk Erişimi.\nEski SmartTree satırlarını kaldırın, ardından %@ uygulamasını ekleyin.\nmacOS izni yalnızca yeni başlatılan bir uygulamaya uygular.";
 "Open System Settings" = "Sistem Ayarları'nı Aç";
 "I granted it — Relaunch" = "İzni verdim — Yeniden Başlat";
 "Scan without it" = "Bu olmadan tara";
@@ -57,7 +57,7 @@
 "Some items couldn't be deleted" = "Bazı ögeler silinemedi";
 "Move it to the Trash in Finder, then empty the Trash — macOS will ask for the password." = "macOS'a veya bir yöneticiye ait. Çöp Kutusu'na taşıyıp Çöp Kutusu'nu boşaltın.";
 "This needs an administrator." = "İzin verilmiyor. Bunun için bir yönetici gerekir.";
-"Items owned by macOS or an administrator can't be deleted by AppleTree. Drag them to the Trash in Finder and empty the Trash — macOS will ask for the password." = "macOS'a veya bir yöneticiye ait ögeleri AppleTree silemez. Finder'da Çöp Kutusu'na sürükleyip Çöp Kutusu'nu boşaltın; macOS parola soracak.";
+"Items owned by macOS or an administrator can't be deleted by SmartTree. Drag them to the Trash in Finder and empty the Trash — macOS will ask for the password." = "macOS'a veya bir yöneticiye ait ögeleri SmartTree silemez. Finder'da Çöp Kutusu'na sürükleyip Çöp Kutusu'nu boşaltın; macOS parola soracak.";
 "Reclaimable" = "Geri Kazanılabilir";
 "Nothing large to clean up" = "Temizlenecek büyük bir şey yok";
 "%@ in %@ folders" = "%@ klasörde %@";
@@ -135,7 +135,7 @@
 "Custom model providers" = "Özel model sağlayıcıları";
 "Add provider" = "Sağlayıcı Ekle";
 "Connect a relay, a self-hosted server, or any other OpenAI- or Anthropic-compatible endpoint by its base URL, protocol, and models." = "Bir aktarıcıyı, kendi barındırdığınız sunucunuzu ya da başka herhangi bir OpenAI veya Anthropic uyumlu uç noktayı temel URL'si, protokolü ve modelleriyle bağlayın.";
-"No custom providers. Add one to let AppleTree plan a cleanup for you." = "Özel sağlayıcı yok. AppleTree'nin sizin için bir temizlik planlamasını sağlamak üzere bir tane ekleyin.";
+"No custom providers. Add one to let SmartTree plan a cleanup for you." = "Özel sağlayıcı yok. SmartTree'nin sizin için bir temizlik planlamasını sağlamak üzere bir tane ekleyin.";
 "Edit" = "Düzenle";
 "Delete" = "Sil";
 "Custom model API" = "Özel model API'si";
@@ -155,12 +155,12 @@
 "Could not fetch models: %@" = "Modeller alınamadı: %@";
 "Language" = "Dil";
 "Follow system" = "Sistemi izle";
-"Relaunch AppleTree to apply the language." = "Dili uygulamak için AppleTree'yi yeniden başlatın.";
+"Relaunch SmartTree to apply the language." = "Dili uygulamak için SmartTree'yi yeniden başlatın.";
 "Relaunch" = "Yeniden Başlat";
 
 /* General planner summary */
 "Clean Up planner" = "Temizleme planlayıcısı";
-"Scan when AppleTree opens" = "Açılışta tara";
+"Scan when SmartTree opens" = "Açılışta tara";
 "Scan the whole disk at launch. Turn off to pick a folder yourself first." = "Açılışta tüm diski tarar. Önce kendiniz bir klasör seçmek isterseniz kapatın.";
 
 /* Setup offer: custom providers */
@@ -179,10 +179,10 @@
 "Outside your home folder" = "Ev klasörünün dışında";
 "Inside a signed app bundle" = "İmzalı bir uygulama paketinin içinde";
 "Too broad: other apps keep live data here" = "Çok geniş: diğer uygulamalar burada etkin veri tutuyor";
-"In ~/%@, which AppleTree never cleans" = "AppleTree'nin asla temizlemediği ~/%@ içinde";
+"In ~/%@, which SmartTree never cleans" = "SmartTree'nin asla temizlemediği ~/%@ içinde";
 "A git repository" = "Bir Git deposu";
 "Managed by macOS" = "macOS tarafından yönetiliyor";
-"AppleTree only runs tools' own cleanup commands" = "AppleTree yalnızca araçların kendi temizlik komutlarını çalıştırır";
+"SmartTree only runs tools' own cleanup commands" = "SmartTree yalnızca araçların kendi temizlik komutlarını çalıştırır";
 "Command not allowed" = "Komuta izin verilmiyor";
 "Already clean" = "Zaten temiz";
 "Nothing to remove" = "Kaldırılacak bir şey yok";
@@ -199,11 +199,11 @@
 "Model Providers" = "Model Sağlayıcıları";
 
 /* About panel and Help menu. */
-"About AppleTree" = "AppleTree Hakkında";
+"About SmartTree" = "SmartTree Hakkında";
 "Version %@" = "Sürüm %@";
-"AppleTree on GitHub" = "GitHub'da AppleTree";
+"SmartTree on GitHub" = "GitHub'da SmartTree";
 "Bug Report" = "Hata bildirimi";
-"Report a bug in AppleTree" = "AppleTree'de bir hata bildirin";
+"Report a bug in SmartTree" = "SmartTree'de bir hata bildirin";
 "Report a security vulnerability" = "Güvenlik açığı bildirin";
 "Please review our security policy for more details" = "Ayrıntılar için lütfen güvenlik politikamıza bakın";
 "Feature request" = "Özellik isteği";
@@ -212,24 +212,24 @@
 "Ask a question in the issue tracker" = "Konu takipçisinde soru sorun";
 "Browse the source, releases and issues" = "Kaynak koduna, sürümlere ve konulara göz atın";
 "View license" = "Lisansı görüntüle";
-"AppleTree shows you what is filling your disk, and cleans up the folders tools rebuild on demand. Nothing is removed without your say-so." = "AppleTree diskinizi neyin doldurduğunu gösterir ve araçların gerektiğinde yeniden oluşturduğu klasörleri temizler. Siz izin vermeden hiçbir şey silinmez.";
+"SmartTree shows you what is filling your disk, and cleans up the folders tools rebuild on demand. Nothing is removed without your say-so." = "SmartTree diskinizi neyin doldurduğunu gösterir ve araçların gerektiğinde yeniden oluşturduğu klasörleri temizler. Siz izin vermeden hiçbir şey silinmez.";
 "Free for non-commercial use. Buy it on the App Store to use the app commercially." = "Ticari olmayan kullanım ücretsizdir. Uygulamayı ticari olarak kullanmak için App Store'dan satın alın.";
 "© 2026 Emircan ERKUL" = "© 2026 Emircan ERKUL";
 
 /* README viewer and erklab credit. */
 "Read the README" = "README'yi oku";
-"AppleTree README" = "AppleTree README";
+"SmartTree README" = "SmartTree README";
 "Read the documentation bundled with the app" = "Uygulamayla birlikte gelen belgeleri okuyun";
 "brought to you by" = "sunulmuştur";
 
 /* App Store link and the README viewer header. */
 "Get it on the Mac App Store" = "Mac App Store'dan edinin";
-"Get AppleTree on the Mac App Store" = "AppleTree'yi Mac App Store'dan edinin";
+"Get SmartTree on the Mac App Store" = "SmartTree'yi Mac App Store'dan edinin";
 "Buying it is what grants commercial use" = "Ticari kullanım hakkı satın alma ile verilir";
 "A fast, native disk-space treemap for macOS." = "macOS için hızlı, yerel bir disk alanı haritası.";
 
 /* Bundled LICENSE viewer. */
-"AppleTree License" = "AppleTree Lisansı";
+"SmartTree License" = "SmartTree Lisansı";
 "Read the license bundled with the app" = "Uygulamayla gelen lisansı okuyun";
 "This document was not bundled with this build." = "Bu belge bu derlemeye dahil edilmemiş.";
 
@@ -237,12 +237,12 @@
    Guideline 5.1.1(i) wants the policy reachable in-app; 5.1.2(i) wants
    explicit permission, naming the destination, before any scan summary is
    sent to a third party. */
-"AppleTree Privacy Policy" = "AppleTree Gizlilik Politikası";
+"SmartTree Privacy Policy" = "SmartTree Gizlilik Politikası";
 "Read the privacy policy bundled with the app" = "Uygulamayla birlikte gelen gizlilik politikasını okuyun";
 "Privacy Policy" = "Gizlilik Politikası";
 "Send a summary of this scan to %@?" = "Bu taramanın özeti %@ adresine gönderilsin mi?";
 "Send and clean up" = "Gönder ve temizle";
-"AppleTree will send %@ the paths, names, sizes and dates of the largest items in this scan — folder and file names, but never the contents of your files. They leave your Mac and are handled under that provider's own terms. Sending it is what lets a planner suggest what to remove." = "AppleTree, bu taramadaki en büyük öğelerin yollarını, adlarını, boyutlarını ve tarihlerini %@ adresine gönderir — klasör ve dosya adları, ancak asla dosyalarınızın içeriği. Bu veriler Mac'inizden ayrılır ve ilgili sağlayıcının kendi koşullarına tabidir. Gönderilmesi, bir planlayıcının neyin kaldırılabileceğini önerebilmesini sağlar.";
+"SmartTree will send %@ the paths, names, sizes and dates of the largest items in this scan — folder and file names, but never the contents of your files. They leave your Mac and are handled under that provider's own terms. Sending it is what lets a planner suggest what to remove." = "SmartTree, bu taramadaki en büyük öğelerin yollarını, adlarını, boyutlarını ve tarihlerini %@ adresine gönderir — klasör ve dosya adları, ancak asla dosyalarınızın içeriği. Bu veriler Mac'inizden ayrılır ve ilgili sağlayıcının kendi koşullarına tabidir. Gönderilmesi, bir planlayıcının neyin kaldırılabileceğini önerebilmesini sağlar.";
 
 "Add a model provider and it plans what can go from this scan." = "Bir model sağlayıcı ekleyin, bu taramadan nelerin kaldırılabileceğini planlasın.";
 
@@ -258,11 +258,11 @@
    usable security-scoped bookmark (Mac App Store sandbox build only). Mirrors
    the Full Disk Access card's layout; the body names the one folder that
    always works so the user is never stuck. */
-"AppleTree could not use that folder" = "AppleTree bu klasörü kullanamadı";
-"The folder you chose did not give AppleTree access. Choose a different folder — Macintosh HD always works." = "Seçtiğiniz klasör AppleTree'ye erişim vermedi. Başka bir klasör seçin — \"Macintosh HD\" her zaman çalışır.";
+"SmartTree could not use that folder" = "SmartTree bu klasörü kullanamadı";
+"The folder you chose did not give SmartTree access. Choose a different folder — Macintosh HD always works." = "Seçtiğiniz klasör SmartTree'ye erişim vermedi. Başka bir klasör seçin — \"Macintosh HD\" her zaman çalışır.";
 
 /* Scan-coverage honesty: a walk that did not reach what the volume holds.
    Distinct from "root-only", which is genuinely unreadable system data. */
 "Scan may be incomplete — some folders were not readable. Rescan" = "Tarama eksik olabilir — bazı klasörler okunamadı. Yeniden tara";
-"The last scan did not start: AppleTree could not get access to its scan folder. Choose it again to rescan." = "Son tarama başlamadı: AppleTree tarama klasörüne erişemedi. Yeniden taramak için klasörü tekrar seçin.";
+"The last scan did not start: SmartTree could not get access to its scan folder. Choose it again to rescan." = "Son tarama başlamadı: SmartTree tarama klasörüne erişemedi. Yeniden taramak için klasörü tekrar seçin.";
 "This scan reached less than this volume holds. Rescanning usually fixes it; if it recurs, choose the folder again from the Scan menu." = "Bu tarama, bu birimin içerdiğinden daha azına ulaştı. Yeniden tarama genellikle sorunu çözer; tekrarlarsa Tara menüsünden klasörü yeniden seçin.";

@@ -1,5 +1,5 @@
 //! Read-only reports for agents. Suggestions are review candidates, not delete permissions.
-use appletree::{cleanup, Tree};
+use smarttree::{cleanup, Tree};
 use serde_json::{json, Value};
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;

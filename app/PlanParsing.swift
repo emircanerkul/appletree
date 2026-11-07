@@ -18,7 +18,7 @@ import Foundation
 /// `response_format: json_object` and no enum, so a near-miss is reachable in
 /// practice.
 nonisolated enum PlanGroup: String, Decodable, Sendable, Equatable {
-    /// Rebuilt or re-downloaded automatically; AppleTree may tick it.
+    /// Rebuilt or re-downloaded automatically; SmartTree may tick it.
     case safe
     /// The user decides; never ticked on the planner's word.
     case ask
@@ -37,7 +37,7 @@ nonisolated enum PlanGroup: String, Decodable, Sendable, Equatable {
     }
 }
 
-/// What a plan item asks AppleTree to do. ONE type owns the vocabulary the
+/// What a plan item asks SmartTree to do. ONE type owns the vocabulary the
 /// schema declares, so "is this a command?" is answered in one place instead
 /// of by comparing a `String` against literals at each call site.
 ///

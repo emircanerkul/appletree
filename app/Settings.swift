@@ -3,7 +3,7 @@ import SwiftUI
 // Settings (Cmd+,): language, the planner used by the Clean Up panel, and
 // custom model providers — any OpenAI- or Anthropic-compatible endpoint by
 // its base URL, protocol and key. Provider plans arrive over plain HTTPS;
-// AppleTree's own guards and two-step delete are AppleTree's own.
+// SmartTree's own guards and two-step delete are SmartTree's own.
 
 // MARK: - Providers
 
@@ -33,7 +33,7 @@ struct ProvidersView: View {
                 .font(.callout)
                 .foregroundStyle(.secondary)
             if store.providers.isEmpty {
-                Text("No custom providers. Add one to let AppleTree plan a cleanup for you.")
+                Text("No custom providers. Add one to let SmartTree plan a cleanup for you.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .padding(.vertical, 20)
@@ -249,7 +249,7 @@ struct ProviderFormView: View {
 
 // MARK: - Language
 
-/// Languages AppleTree ships strings for. "system" follows macOS; a picked
+/// Languages SmartTree ships strings for. "system" follows macOS; a picked
 /// language applies at next launch (AppleLanguages). Never use "" as a Picker
 /// identity: an empty tag renders as a blank selection row.
 let availableLanguages: [(code: String, name: String)] = [
@@ -269,12 +269,12 @@ let availableLanguages: [(code: String, name: String)] = [
 /// system-wide AppleLanguages list (typically "en-US" and friends), which is
 /// not a picker tag and made the row render blank.
 func storedAppLanguage() -> String? {
-    let domain = Bundle.main.bundleIdentifier ?? "com.erklab.apps.appletree"
+    let domain = Bundle.main.bundleIdentifier ?? "com.erklab.apps.smarttree"
     return (UserDefaults.standard.persistentDomain(forName: domain)?["AppleLanguages"] as? [String])?.first
 }
 
 /// The shipped code matching a language tag — "en-US" → "en",
-/// "zh-Hans-CN" → "zh-Hans" — or nil when AppleTree ships no table for it.
+/// "zh-Hans-CN" → "zh-Hans" — or nil when SmartTree ships no table for it.
 func shippedLanguageCode(for tag: String) -> String? {
     let lower = tag.lowercased()
     let shipped = availableLanguages.filter { $0.code != "system" }
@@ -316,7 +316,7 @@ struct GeneralSettingsView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             if language != saved {
                 HStack(spacing: 8) {
-                    Text("Relaunch AppleTree to apply the language.")
+                    Text("Relaunch SmartTree to apply the language.")
                         .font(.callout).foregroundStyle(.secondary)
                     Button("Relaunch") {
                         if language == "system" {
@@ -333,7 +333,7 @@ struct GeneralSettingsView: View {
             }
             Divider()
             VStack(alignment: .leading, spacing: 4) {
-                Toggle("Scan when AppleTree opens", isOn: $autoScan)
+                Toggle("Scan when SmartTree opens", isOn: $autoScan)
                     // Settings is the durable home of this preference; changing
                     // it deliberately also answers the first-run offer, so the
                     // home screen never re-asks a question already decided here.
