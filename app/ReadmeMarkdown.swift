@@ -120,12 +120,19 @@ nonisolated enum Readme {
     /// A README written for GitHub, trimmed to what renders in the app.
     ///
     /// The file opens with an HTML header block (icon, title, tagline, buttons,
-    /// the maker's mark) and a hosted demo `<video>`. Foundation's markdown
+    /// the maker's mark) and a hosted demo attachment URL. Foundation's markdown
     /// parser has no HTML support: it either shows those tags as literal text or
     /// swallows the prose wrapped inside them. Both blocks are removed here, and
     /// the viewer draws its own header instead — the same icon, title, tagline
     /// and buttons, plus the App Store and license actions — so nothing is lost
     /// by dropping the markup.
+    ///
+    /// The demo is a bare `user-attachments` URL rather than a `<video>` tag on
+    /// purpose: GitHub only rewrites the bare form to a signed
+    /// `private-user-images` player, and signed-in readers' `media-src` CSP
+    /// blocks the raw `github.com` URL a tag keeps. The app cannot play either
+    /// form — it has no media surface and deliberately no network — so the URL
+    /// line is dropped rather than shown as a naked link.
     ///
     /// Fenced code is passed through untouched: a `<` in a code sample is
     /// content, not markup, and must survive.
@@ -184,6 +191,23 @@ nonisolated enum Readme {
             }
             if line.hasPrefix("<table") { skippingUntil = "</table>"; continue }
             if line.hasPrefix("<video") { skippingUntil = "</video>"; continue }
+            // HTML comments are invisible on GitHub, so they must be invisible
+            // here too. The generic tag-stripping rule below cannot do it: it
+            // removes only what sits between `<` and `>`, and a comment can span
+            // lines or contain a tag name, either of which leaves debris behind.
+            // A one-line comment closes on itself; a multi-line one ends at the
+            // first line carrying its `-->` marker.
+            if line.hasPrefix("<!--") {
+                if !line.contains("-->") { skippingUntil = "-->" }
+                continue
+            }
+            // The hosted demo. On GitHub a bare `user-attachments` URL is what
+            // makes the inline player (a `<video src>` tag keeps the raw
+            // github.com URL that signed-in readers' `media-src` CSP blocks).
+            // The app has no media surface and makes no network request, so the
+            // line would only ever show as a naked link: drop it. Whatever the
+            // video shows is covered by the Feature section's prose.
+            if line.hasPrefix("https://github.com/user-attachments/assets/") { continue }
             // Elsewhere in the document, a line whose tags can be removed
             // leaving nothing but whitespace goes too. Removing the tags first
             // is what makes this safe: real prose containing a tag

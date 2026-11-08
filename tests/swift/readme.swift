@@ -60,6 +60,14 @@ enum ReadmeTests {
         check("no <img> markup survives", !shown.contains("<img"))
         check("no <sub> markup survives", !shown.contains("<sub"))
         check("no html comment survives", !shown.contains("<!--"))
+        check("no comment marker survives", !shown.contains("-->"))
+        check("the demo URL is not left as a naked link",
+              !shown.contains("user-attachments/assets/"),
+              "the app has no media surface; the bare URL exists for GitHub's player")
+        check("the demo is still embedded for GitHub",
+              raw.contains("https://github.com/user-attachments/assets/") &&
+              !raw.contains("<video"),
+              "GitHub only signs the bare URL form; a video tag is CSP-blocked when signed in")
 
         // --- The header's terminator is exclusive -----------------------------
         // The in-app skip ends at the header's explicit `<!-- /header -->`
@@ -396,6 +404,32 @@ enum ReadmeTests {
         check("a document starting with an autolink still renders",
               autolinkOut.contains("# Heading") && autolinkOut.contains("prose"),
               "rendered: \(autolinkOut.prefix(80))")
+
+        // --- Comments are invisible, so their contents must not render --------
+        // The README carries an inline note above the demo URL explaining why it
+        // is a bare link. Foundation has no HTML support, so without an explicit
+        // skip the comment's prose and its closing `-->` leak into the viewer.
+        // Both comment shapes are covered: one line, and a block whose text
+        // spans several.
+        let oneLine = "Before.\n\n<!-- one-line note with a <b>tag</b> -->\n\nAfter.\n"
+        let oneLineOut = Readme.forDisplay(oneLine)
+        check("a one-line comment is dropped whole",
+              !oneLineOut.contains("one-line note") && !oneLineOut.contains("-->"),
+              "rendered: \(oneLineOut)")
+        check("text around a one-line comment survives",
+              oneLineOut.contains("Before.") && oneLineOut.contains("After."),
+              "rendered: \(oneLineOut)")
+
+        let multiLine = "Before.\n\n<!-- first line\nsecond line with <video>\n-->\n\nAfter.\n"
+        let multiLineOut = Readme.forDisplay(multiLine)
+        check("a multi-line comment is dropped whole",
+              !multiLineOut.contains("first line") && !multiLineOut.contains("second line"),
+              "rendered: \(multiLineOut)")
+        check("a multi-line comment does not leave its closing marker",
+              !multiLineOut.contains("-->"), "rendered: \(multiLineOut)")
+        check("text around a multi-line comment survives",
+              multiLineOut.contains("Before.") && multiLineOut.contains("After."),
+              "rendered: \(multiLineOut)")
 
         print("\(passed) passed, \(failed) failed")
         exit(failed == 0 ? 0 : 1)

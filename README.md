@@ -8,11 +8,9 @@ Shows you what's safe to delete, not just what's big.</p>
 
 <!-- /header -->
 
-<p align="center">
-  <video src="https://github.com/user-attachments/assets/b84b2e17-49c1-4e30-a355-3f6b20de20f8" width="90%" controls>
-    Your browser does not support embedded video.
-  </video>
-</p>
+<!-- demo: bare URL on purpose — see ReadmeMarkdown.forDisplay and github.com/orgs/community/discussions/209976 -->
+
+https://github.com/user-attachments/assets/b84b2e17-49c1-4e30-a355-3f6b20de20f8
 
 ## Features
 
